@@ -147,22 +147,117 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 DefaultDirName={localappdata}\Programs\StreamingCommunityDownloader
 DefaultGroupName=StreamingCommunity Downloader
-Uninstallable=not IsTaskSelected('portablemode')
+Uninstallable=yes
+CreateUninstallRegKey=not IsPortable
 OutputDir="$DistDir"
 OutputBaseFilename=StreamingCommunityDownloader-Setup
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\$AppName.exe
 LicenseFile="$ProjectRoot\LICENSE"
+[Languages]
+Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
+[CustomMessages]
+italian.ModeTitle=Modalità di installazione
+italian.ModeSubtitle=Scegli come vuoi usare StreamingCommunity Downloader.
+italian.ModeInstall=&Installa (menu Start, disinstallazione da Impostazioni)
+italian.ModePortable=&Solo versione portable (file in una cartella scelta)
+italian.PortableDirName=StreamingCommunityDownloader-Portable
+italian.DesktopIcon=Crea un collegamento sul &desktop
+italian.LinkTitle=Collegamenti portable
+italian.LinkSubtitle=Vuoi creare anche collegamenti per la versione portable?
+italian.UninstallName=Disinstalla StreamingCommunity Downloader
+italian.LaunchApp=Avvia StreamingCommunity Downloader
+english.ModeTitle=Installation mode
+english.ModeSubtitle=Choose how you want to use StreamingCommunity Downloader.
+english.ModeInstall=&Install (Start menu, uninstall from Settings)
+english.ModePortable=&Portable only (files in a folder of your choice)
+english.PortableDirName=StreamingCommunityDownloader-Portable
+english.DesktopIcon=Create a &desktop shortcut
+english.LinkTitle=Portable shortcuts
+english.LinkSubtitle=Would you also like shortcuts for the portable version?
+english.UninstallName=Uninstall StreamingCommunity Downloader
+english.LaunchApp=Launch StreamingCommunity Downloader
 [Files]
 Source: "$exePath"; DestDir: "{app}"; Flags: ignoreversion
 [Tasks]
-Name: "portablemode"; Description: "Modalità portable (nessuna disinstallazione registrata)"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 [Icons]
-Name: "{autoprograms}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Tasks: not portablemode
-Name: "{autodesktop}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Tasks: not portablemode
+Name: "{group}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: not IsPortable
+Name: "{group}\{cm:UninstallName}"; Filename: "{uninstallexe}"; Check: not IsPortable
+Name: "{autodesktop}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Tasks: desktopicon; Check: not IsPortable
+Name: "{userprograms}\StreamingCommunity Downloader (portable)\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: IsPortable
+Name: "{userprograms}\StreamingCommunity Downloader (portable)\{cm:UninstallName}"; Filename: "{uninstallexe}"; Check: IsPortable
+Name: "{userdesktop}\StreamingCommunity Downloader (portable)"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: PortableDesktop
 [Run]
-Filename: "{app}\$AppName.exe"; Description: "Avvia StreamingCommunity Downloader"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\$AppName.exe"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent runascurrentuser
+[Code]
+var
+  ModePage: TInputOptionWizardPage;
+  LinkPage: TInputOptionWizardPage;
+  InstallDir: String;
+  LastPortable: Boolean;
+
+function IsPortable: Boolean;
+begin
+  Result := Assigned(ModePage) and ModePage.Values[1];
+end;
+
+function PortableDesktop: Boolean;
+begin
+  Result := IsPortable and LinkPage.Values[0];
+end;
+
+procedure ApplyModeDir;
+begin
+  if IsPortable = LastPortable then Exit;
+  if ExpandConstant('{param:DIR|}') <> '' then Exit;
+  LastPortable := IsPortable;
+  if IsPortable then begin
+    InstallDir := WizardForm.DirEdit.Text;
+    WizardForm.DirEdit.Text := ExpandConstant('{src}\') + CustomMessage('PortableDirName');
+  end else begin
+    WizardForm.DirEdit.Text := InstallDir;
+  end;
+end;
+
+procedure InitializeWizard;
+begin
+  ModePage := CreateInputOptionPage(wpWelcome, CustomMessage('ModeTitle'), CustomMessage('ModeSubtitle'), '', True, False);
+  ModePage.Add(CustomMessage('ModeInstall'));
+  ModePage.Add(CustomMessage('ModePortable'));
+  ModePage.Values[0] := True;
+  if ExpandConstant('{param:PORTABLE|0}') = '1' then begin
+    ModePage.Values[0] := False;
+    ModePage.Values[1] := True;
+  end;
+
+  LinkPage := CreateInputOptionPage(wpSelectDir, CustomMessage('LinkTitle'), CustomMessage('LinkSubtitle'), '', False, False);
+  LinkPage.Add(CustomMessage('DesktopIcon'));
+  LinkPage.Values[0] := Pos('desktopicon', ExpandConstant('{param:TASKS|}')) > 0;
+  InstallDir := WizardForm.DirEdit.Text;
+  LastPortable := False;
+  ApplyModeDir;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = ModePage.ID then ApplyModeDir;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpSelectDir then ApplyModeDir;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (PageID = wpSelectTasks) and IsPortable then Result := True;
+  if Assigned(LinkPage) and (PageID = LinkPage.ID) and not IsPortable then Result := True;
+end;
 "@
             [IO.File]::WriteAllText($issPath, $iss, [Text.UTF8Encoding]::new($false))
             & $iscc /Qp $issPath
