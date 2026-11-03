@@ -123,7 +123,8 @@ if getattr(sys, "frozen", False):
         '--collect-all', 'uvicorn',
         '--collect-all', 'fastapi',
         '--collect-all', 'starlette',
-        '--collect-all', 'mcp',
+        '--collect-submodules', 'mcp.server',
+        '--collect-submodules', 'mcp.types',
         (Join-Path $ProjectRoot 'main.py')
     )
     & $venvPython -m PyInstaller @pyinstallerArgs
