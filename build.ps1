@@ -132,6 +132,7 @@ if getattr(sys, "frozen", False):
 
     $exePath = Join-Path $DistDir "$AppName.exe"
     if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) { throw "Eseguibile non trovato: $exePath" }
+    $outputPath = $exePath
 
     if (-not $SkipInnoSetup) {
         $iscc = Find-InnoCompiler
@@ -146,6 +147,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 DefaultDirName={localappdata}\Programs\StreamingCommunityDownloader
 DefaultGroupName=StreamingCommunity Downloader
+Uninstallable=not IsTaskSelected('portablemode')
 OutputDir="$DistDir"
 OutputBaseFilename=StreamingCommunityDownloader-Setup
 PrivilegesRequired=lowest
@@ -154,19 +156,26 @@ UninstallDisplayIcon={app}\$AppName.exe
 LicenseFile="$ProjectRoot\LICENSE"
 [Files]
 Source: "$exePath"; DestDir: "{app}"; Flags: ignoreversion
+[Tasks]
+Name: "portablemode"; Description: "Modalità portable (nessuna disinstallazione registrata)"; Flags: unchecked
 [Icons]
-Name: "{autoprograms}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Tasks: not portablemode
+Name: "{autodesktop}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Tasks: not portablemode
+[Run]
+Filename: "{app}\$AppName.exe"; Description: "Avvia StreamingCommunity Downloader"; Flags: postinstall nowait skipifsilent
 "@
             [IO.File]::WriteAllText($issPath, $iss, [Text.UTF8Encoding]::new($false))
             & $iscc /Qp $issPath
             if ($LASTEXITCODE -ne 0) { throw 'Compilazione installer Inno Setup fallita.' }
+            $outputPath = Join-Path $DistDir 'StreamingCommunityDownloader-Setup.exe'
+            if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Installer Inno Setup non trovato.' }
+            Remove-Item -LiteralPath $exePath -Force
         } else {
             Write-Warning 'Inno Setup non trovato: creato solo eseguibile PyInstaller.'
         }
     }
 
-    Write-Host "Eseguibile: $exePath" -ForegroundColor Green
+    Write-Host "Artefatto: $outputPath" -ForegroundColor Green
 } finally {
     Remove-SafeTemporaryPath $WorkDir
     Remove-SafeTemporaryPath (Join-Path $ProjectRoot 'build')
