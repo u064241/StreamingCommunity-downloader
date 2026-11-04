@@ -22,7 +22,8 @@ Uso:
   .\build.ps1 -Release                     Crea gli artefatti release
   .\build.ps1 -Release -CleanReleaseArtifacts
                                              Rimuove gli eseguibili intermedi e i vecchi ZIP
-  .\build.ps1 -Release -PublishRelease     Pubblica la release sul fork GitHub
+  .\build.ps1 -Release -CleanReleaseArtifacts -PublishRelease
+                                             Compila, pulisce e pubblica sul fork GitHub
   .\build.ps1 -SkipInnoSetup               Salta la compilazione dell'installer
   .\build.ps1 -Help                        Mostra questo aiuto
 
