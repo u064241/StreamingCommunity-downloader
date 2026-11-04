@@ -291,7 +291,7 @@ belongs to the panel itself, so an open installation still sees its own download
 
 **Outward**, any number of channels can be configured in **Impostazioni → Notifiche** by pasting an
 [Apprise](https://github.com/caronc/apprise/wiki) URL — Discord, Telegram, ntfy, Gotify, Slack,
-email, and everything else Apprise supports. No key in the compose file, no restart. Each channel
+email, and everything else Apprise supports. No key in a configuration file, no restart. Each channel
 chooses **which events it wants**; selecting none means all of them. Messages carry a title and are
 coloured by outcome where the service supports it, and errors have their query strings stripped
 before they leave the panel, since external channels are somebody else's servers.
