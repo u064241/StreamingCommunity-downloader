@@ -389,6 +389,9 @@ end;
         Write-Host "Release manifest: $manifestPath" -ForegroundColor Green
         if ($CleanReleaseArtifacts -and $outputPath -ne $exePath) {
             Remove-Item -LiteralPath $exePath, $helperExePath -Force
+            Get-ChildItem -LiteralPath $DistDir -Filter "$AppName-*-Portable.zip" -File |
+                Where-Object { $_.FullName -ne $portablePath } |
+                Remove-Item -Force
             Write-Host 'Artefatti intermedi rimossi: EXE principale e helper separato.' -ForegroundColor DarkGray
         }
 
