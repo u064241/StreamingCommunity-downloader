@@ -405,6 +405,9 @@ end;
             try {
                 & $gh.Source auth status --hostname github.com
                 if ($LASTEXITCODE -ne 0) { throw 'Autenticazione GitHub non disponibile. Configura SC_GITHUB_TOKEN o gh auth login.' }
+                $releaseBranch = "release/v$Version"
+                & git push origin ("HEAD:refs/heads/$releaseBranch")
+                if ($LASTEXITCODE -ne 0) { throw "Push del branch release fallito: $releaseBranch" }
                 $releaseFiles = @(
                     (Join-Path $DistDir 'StreamingCommunityDownloader-Setup.exe'),
                     (Join-Path $DistDir "$AppName-$Version-Portable.zip"),
@@ -417,7 +420,7 @@ end;
                     }
                 }
                 $tag = "v$Version"
-                & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target HEAD --title "StreamingCommunity Downloader $Version" --generate-notes --latest
+                & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target $releaseBranch --title "StreamingCommunity Downloader $Version" --generate-notes --latest
                 if ($LASTEXITCODE -ne 0) { throw "Pubblicazione GitHub fallita per $tag." }
                 Write-Host "Release GitHub pubblicata: $tag" -ForegroundColor Green
             } finally {
