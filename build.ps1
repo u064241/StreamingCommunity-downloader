@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipInnoSetup
+    [switch]$SkipInnoSetup,
+    [switch]$Release
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,9 +9,10 @@ $ProjectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
 $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
-$Version = '1.0.0'
+$Version = $null
 $versionSource = Get-Content -LiteralPath (Join-Path $ProjectRoot 'app\__init__.py') -Raw
 if ($versionSource -match '(?m)^__version__\s*=\s*"([^"]+)"') { $Version = $Matches[1] }
+if (-not $Version) { throw 'Versione mancante in app\__init__.py.' }
 $OldBytecodeSetting = $env:PYTHONDONTWRITEBYTECODE
 
 function Resolve-Python {
@@ -155,6 +157,10 @@ if getattr(sys, "frozen", False):
     $exePath = Join-Path $DistDir "$AppName.exe"
     if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) { throw "Eseguibile non trovato: $exePath" }
     $outputPath = $exePath
+
+    $portablePath = Join-Path $DistDir "$AppName-$Version-Portable.zip"
+    if (Test-Path -LiteralPath $portablePath) { Remove-Item -LiteralPath $portablePath -Force }
+    Compress-Archive -LiteralPath $exePath -DestinationPath $portablePath -CompressionLevel Optimal
 
     if (-not $SkipInnoSetup) {
         $iscc = Find-InnoCompiler
@@ -336,12 +342,36 @@ end;
             if ($LASTEXITCODE -ne 0) { throw 'Compilazione installer Inno Setup fallita.' }
             $outputPath = Join-Path $DistDir 'StreamingCommunityDownloader-Setup.exe'
             if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Installer Inno Setup non trovato.' }
-            Remove-Item -LiteralPath $exePath -Force
+            if (-not $Release) { Remove-Item -LiteralPath $exePath -Force }
         } else {
             Write-Warning 'Inno Setup non trovato: creato solo eseguibile PyInstaller.'
         }
     }
 
+    if ($Release) {
+        $assets = @($portablePath)
+        if (Test-Path -LiteralPath $outputPath -PathType Leaf -and $outputPath -ne $exePath) {
+            $assets += $outputPath
+        }
+        $assetRecords = foreach ($asset in $assets) {
+            $file = Get-Item -LiteralPath $asset
+            $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            [ordered]@{ name = $file.Name; size = $file.Length; sha256 = $hash }
+        }
+        $manifest = [ordered]@{
+            schema = 1
+            variant = 'u064241'
+            channel = 'stable'
+            version = $Version
+            repository = 'u064241/StreamingCommunity-downloader'
+            assets = @($assetRecords)
+        }
+        $manifestPath = Join-Path $DistDir 'update-manifest.json'
+        $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+        $checksums = $assetRecords | ForEach-Object { "$($_.sha256)  $($_.name)" }
+        $checksums | Set-Content -LiteralPath (Join-Path $DistDir 'SHA256SUMS.txt') -Encoding ascii
+        Write-Host "Release manifest: $manifestPath" -ForegroundColor Green
+    }
     Write-Host "Artefatto: $outputPath" -ForegroundColor Green
 } finally {
     Remove-SafeTemporaryPath $WorkDir
