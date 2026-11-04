@@ -1,5 +1,10 @@
+# Compila l'app Windows, il helper updater, il portable ZIP e l'installer Inno Setup.
+# Per una release completa: .\build.ps1 -Release -CleanReleaseArtifacts
+# Per pubblicare sul fork GitHub: aggiungere -PublishRelease (richiede gh auth login).
+# L'installer viene ricreato e sovrascritto a ogni compilazione quando Inno Setup è disponibile.
 [CmdletBinding()]
 param(
+    [switch]$Help,
     [switch]$SkipInnoSetup,
     [switch]$Release,
     [switch]$CleanReleaseArtifacts,
@@ -7,6 +12,27 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($Help) {
+    @'
+StreamingCommunity Downloader - build.ps1
+
+Uso:
+  .\build.ps1                              Build locale, con installer se disponibile
+  .\build.ps1 -Release                     Crea gli artefatti release
+  .\build.ps1 -Release -CleanReleaseArtifacts
+                                             Rimuove gli eseguibili intermedi e i vecchi ZIP
+  .\build.ps1 -Release -PublishRelease     Pubblica la release sul fork GitHub
+  .\build.ps1 -SkipInnoSetup               Salta la compilazione dell'installer
+  .\build.ps1 -Help                        Mostra questo aiuto
+
+Prerequisiti:
+  Python 3.11-3.14, dipendenze del progetto e, per la pubblicazione, GitHub CLI autenticato
+  con: gh auth login
+'@ | Write-Host
+    exit 0
+}
+
 $ProjectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
 $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
