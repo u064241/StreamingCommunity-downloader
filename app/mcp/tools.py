@@ -31,7 +31,7 @@ from starlette.requests import Request
 from app import __version__
 from app.auth.deps import OPEN_MODE_USER
 from app.auth.permissions import Permission
-from app.config import VIDEOS_DIR, configured_domain
+from app.config import download_dir, VIDEOS_DIR, configured_domain
 from app.core import page, tv
 from app.jobs import job_manager
 from app.mcp import auth
@@ -584,11 +584,11 @@ async def get_system_status() -> dict:
             except Exception:
                 version = None
         try:
-            usage = shutil.disk_usage(VIDEOS_DIR)
-            storage = {"path": str(VIDEOS_DIR), "free_gb": round(usage.free / 1024**3, 1),
+            usage = shutil.disk_usage(download_dir(VIDEOS_DIR))
+            storage = {"path": str(download_dir(VIDEOS_DIR)), "free_gb": round(usage.free / 1024**3, 1),
                        "total_gb": round(usage.total / 1024**3, 1)}
         except OSError:
-            storage = {"path": str(VIDEOS_DIR), "free_gb": None, "total_gb": None}
+            storage = {"path": str(download_dir(VIDEOS_DIR)), "free_gb": None, "total_gb": None}
         return version, storage
 
     version, storage = await asyncio.to_thread(probe)

@@ -45,6 +45,8 @@ OPEN_MODE_USER = models.User(
 # Reachable without a session. Everything not listed here needs one.
 PUBLIC_PATHS = {
     "/login",
+    "/api/portal/heartbeat",
+    "/api/portal/close",
     "/favicon.ico",
     "/api/auth/status",
     "/api/auth/setup",

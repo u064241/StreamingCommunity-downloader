@@ -13,7 +13,7 @@ const _SETTINGS_FEEDBACK_IDS = [
   'jf-connect-feedback', 'jf-reconnect-feedback', 'notif-channels-feedback',
   'domain-recovery-feedback', 'hosts-feedback',
   'jf-refresh-feedback', 'hooks-feedback', 'naming-feedback',
-  'output-feedback', 'mcp-feedback', 'updates-feedback',
+  'output-feedback', 'mcp-feedback', 'video-settings-feedback', 'logs-feedback', 'download-directory-feedback',
 ];
 
 function _feedback(id, message = '', kind = 'muted') {
@@ -31,17 +31,17 @@ const _SETTINGS_TAB_LOADERS = {
   // Loaded here rather than at boot. It was the one settings pane fed by a
   // prefetch the whole application waited on before it could show any page
   // at all, for data only this tab reads.
-  librerie: () => loadLibraries().then(renderLibrariesList),
+  librerie: () => Promise.all([loadLibraries().then(renderLibrariesList), loadDownloadDirectory()]),
+  log: () => loadApplicationLogs(),
   associazioni: () => loadLibraryAssociations(),
   nomi: () => loadNamingTemplates(),
   // Both read the same endpoint, and _loadAppSettings() shares the promise, so
   // this is still one fetch.
-  download: () => Promise.all([loadPerfSettings(), loadOutputSettings()]),
+  download: () => Promise.all([loadPerfSettings(), loadOutputSettings(), loadVideoSettings()]),
   accesso: () => loadJellyfinSettings(),
   notifiche: () => loadNotificationChannels(),
   hook: () => Promise.all([loadJellyfinRefresh(), loadHooks()]),
   mcp: () => loadMcpSettings(),
-  aggiornamenti: () => loadUpdateSettings(),
 };
 
 // Two panes read the same endpoint. Shared per modal-open so switching between
@@ -57,7 +57,7 @@ function _loadAppSettings() {
 
 // Tabs whose panes only talk to MANAGE_SETTINGS endpoints: without it they would
 // render as empty panes fed by 403s.
-const _SETTINGS_TABS_NEED_MANAGE = ['sorgente', 'librerie', 'associazioni', 'nomi', 'download', 'notifiche', 'hook', 'mcp', 'aggiornamenti'];
+const _SETTINGS_TABS_NEED_MANAGE = ['sorgente', 'librerie', 'associazioni', 'nomi', 'download', 'notifiche', 'hook', 'mcp', 'log'];
 
 let _settingsTab = 'sorgente';
 const _settingsLoaded = new Set();
@@ -446,7 +446,7 @@ async function loadDomainRecoverySettings() {
     data.domain_auto_check_enabled !== false;
   document.getElementById('domain-auto-apply').checked = !!data.domain_auto_apply;
   document.getElementById('domain-check-interval').value =
-    data.domain_check_interval_minutes ?? 360;
+    data.domain_check_interval_minutes ?? 1;
 }
 
 
@@ -735,8 +735,8 @@ async function testHook(id) {
 async function saveDomainRecovery() {
   const btn = document.getElementById('save-domain-recovery-btn');
   const interval = parseInt(document.getElementById('domain-check-interval').value, 10);
-  if (!(interval >= 30 && interval <= 1440)) {
-    _feedback('domain-recovery-feedback', 'Intervallo tra 30 e 1440 minuti.', 'danger');
+  if (!(interval >= 1 && interval <= 1440)) {
+    _feedback('domain-recovery-feedback', 'Intervallo tra 1 e 1440 minuti.', 'danger');
     return;
   }
   const autoApply = document.getElementById('domain-auto-apply').checked;
@@ -831,7 +831,7 @@ async function saveDomain() {
     badge.textContent = data.domain;
     showToast('Domain salvato', 'success');
   } catch(e) {
-    _feedback('domain-feedback', 'Errore di rete', 'danger');
+    _feedback('domain-feedback', errText(e, 'Errore di rete'), 'danger');
   } finally { btn.disabled = false; }
 }
 
@@ -1015,73 +1015,13 @@ async function _copyWithToast(text, what) {
 }
 
 
-// ── New versions ─────────────────────────────────────────────────────────────
-
-function _renderUpdateStatus(info) {
-  const installed = `Versione installata: v${info.current}.`;
-  let text;
-  if (info.update_available) text = `${installed} Disponibile: v${info.latest}.`;
-  else if (info.checked_at) text = `${installed} È la più recente.`;
-  else text = `${installed} Nessun controllo ancora riuscito.`;
-  if (info.checked_at) {
-    text += ` Ultimo controllo: ${new Date(info.checked_at * 1000).toLocaleString('it-IT')}.`;
-  }
-  document.getElementById('update-status').textContent = text;
-  const updater = info.updater;
-  document.getElementById('updater-status').textContent = updater?.ready
-    ? 'Aggiornamento dal pannello: disponibile.'
-    : updater
-      ? `Aggiornamento dal pannello: non disponibile. ${updater.problem}`
-      : 'Aggiornamento dal pannello: servizio updater non configurato (vedi il README).';
-}
-
-async function loadUpdateSettings() {
-  const [settings, info] = await Promise.all([
-    _loadAppSettings(), api.get('/api/updates').catch(() => null),
-  ]);
-  if (settings) {
-    document.getElementById('update-check-enabled').checked =
-      settings.update_check_enabled !== false;
-  }
-  if (info) _renderUpdateStatus(info);
-}
-
-async function saveUpdateSettings() {
-  const btn = document.getElementById('save-updates-btn');
-  btn.disabled = true;
-  _feedback('updates-feedback', 'Salvataggio...');
-  try {
-    await api.put('/api/domain/settings', {
-      update_check_enabled: document.getElementById('update-check-enabled').checked,
-    });
-    _feedback('updates-feedback', 'Salvato.', 'success');
-    showToast('Impostazioni salvate', 'success');
-  } catch (e) { _feedback('updates-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
-  finally { btn.disabled = false; }
-}
-
-async function checkUpdatesNow() {
-  const btn = document.getElementById('update-check-btn');
-  btn.disabled = true;
-  _feedback('updates-feedback', 'Controllo in corso...');
-  try {
-    const info = await api.post('/api/updates/check');
-    _renderUpdateStatus(info);
-    renderUpdateBadge(info);
-    if (info.failed) _feedback('updates-feedback', 'GitHub non ha risposto. Riprova più tardi.', 'danger');
-    else if (info.update_available) _feedback('updates-feedback', `Disponibile la v${info.latest}.`, 'success');
-    else _feedback('updates-feedback', 'Il pannello è aggiornato.', 'success');
-  } catch (e) { _feedback('updates-feedback', errText(e, 'Controllo fallito.'), 'danger'); }
-  finally { btn.disabled = false; }
-}
-
-
 // ── Delegated handlers ───────────────────────────────────────────────────────
 
 registerActions({
+  'cfg:refreshLogs': () => loadApplicationLogs(),
+  'cfg:browseDownloadDirectory': () => browseDownloadDirectory(),
+  'cfg:saveDownloadDirectory': () => saveDownloadDirectory(),
   'settings:open':        () => openSettings(),
-  'cfg:saveUpdates':      () => saveUpdateSettings(),
-  'cfg:checkUpdates':     () => checkUpdatesNow(),
   'cfg:saveDomain':       () => saveDomain(),
   'cfg:saveHosts':        () => saveHosts(),
   'cfg:saveRecovery':     () => saveDomainRecovery(),
@@ -1092,6 +1032,8 @@ registerActions({
   'cfg:saveNaming':       () => saveNamingTemplates(),
   'cfg:resetNaming':      () => resetNamingTemplates(),
   'cfg:savePerf':         () => savePerfSettings(),
+  'cfg:saveVideo': () => saveVideoSettings(),
+  'cfg:refreshVideoEncoders': () => loadVideoEncoders(true),
   'cfg:saveOutput':       () => saveOutputSettings(),
   'cfg:jfConnect':        d => connectJellyfin(d.reconfigure === '1'),
   'cfg:jfReconfigure':    () => toggleJellyfinReconfigure(),
@@ -1122,3 +1064,113 @@ registerActions({
 registerPageHash('settings', {
   read: () => ({ extra: [_settingsTab] }),
 });
+
+
+async function loadDownloadDirectory() {
+  try {
+    const data = await api.get('/api/domain/download-directory');
+    document.getElementById('download-directory').value = data.path;
+    document.getElementById('browse-download-directory').style.display = data.can_browse ? '' : 'none';
+  } catch (e) { _feedback('download-directory-feedback', errText(e), 'danger'); }
+}
+
+async function saveDownloadDirectory() {
+  const btn = document.getElementById('save-download-directory');
+  btn.disabled = true;
+  try {
+    const data = await api.put('/api/domain/download-directory', {
+      path: document.getElementById('download-directory').value.trim(),
+    });
+    document.getElementById('download-directory').value = data.path;
+    _feedback('download-directory-feedback', 'Cartella salvata per i nuovi download.', 'success');
+  } catch (e) { _feedback('download-directory-feedback', errText(e), 'danger'); }
+  finally { btn.disabled = false; }
+}
+
+let _logsLoading = false;
+async function loadApplicationLogs() {
+  if (_logsLoading) return;
+  _logsLoading = true;
+  try {
+    const data = await api.get('/api/domain/logs');
+    const el = document.getElementById('application-log');
+    const follow = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+    el.textContent = data.lines.join('\n') || 'Nessun evento registrato.';
+    if (follow) el.scrollTop = el.scrollHeight;
+    _feedback('logs-feedback');
+  } catch (e) { _feedback('logs-feedback', errText(e), 'danger'); }
+  finally { _logsLoading = false; }
+}
+setInterval(() => {
+  if (!document.hidden && _settingsTab === 'log' &&
+      document.getElementById('page-settings')?.style.display !== 'none') loadApplicationLogs();
+}, 3000);
+
+
+async function browseDownloadDirectory() {
+  const button = document.getElementById('browse-download-directory');
+  const save = document.getElementById('save-download-directory');
+  button.disabled = true;
+  save.disabled = true;
+  _feedback('download-directory-feedback', 'Seleziona una cartella nella finestra di Windows.');
+  try {
+    const result = await api.post('/api/domain/download-directory/browse', {
+      path: document.getElementById('download-directory').value.trim(),
+    });
+    if (!result.cancelled && result.path) {
+      document.getElementById('download-directory').value = result.path;
+      _feedback('download-directory-feedback', 'Cartella selezionata. Premi Salva cartella per applicarla.');
+    } else {
+      _feedback('download-directory-feedback', 'Selezione annullata.');
+    }
+  } catch (e) { _feedback('download-directory-feedback', errText(e), 'danger'); }
+  finally { button.disabled = false; save.disabled = false; }
+}
+
+
+async function loadVideoSettings() {
+  const data = await _loadAppSettings();
+  if (data) {
+    document.getElementById('video-conversion').value = data.video_conversion || 'copy';
+    document.getElementById('video-encoder').value = data.video_encoder || 'auto';
+    document.getElementById('video-quality').value = data.video_quality || 'balanced';
+    document.getElementById('video-cpu-fallback').checked = data.video_cpu_fallback !== false;
+  }
+  await loadVideoEncoders();
+}
+
+async function loadVideoEncoders(refresh = false) {
+  const button = document.getElementById('refresh-video-encoders');
+  const status = document.getElementById('video-encoder-status');
+  button.disabled = true;
+  status.textContent = 'Prova degli encoder in corso…';
+  try {
+    const data = refresh ? await api.post('/api/domain/video-encoders/refresh', {})
+                         : await api.get('/api/domain/video-encoders');
+    status.replaceChildren();
+    for (const encoder of data.encoders) {
+      const line = document.createElement('div');
+      line.textContent = `${encoder.label} · ${encoder.codec === 'hevc' ? 'H.265' : 'H.264'}: ${encoder.available ? 'disponibile (verificato)' : 'non disponibile'}`;
+      line.title = encoder.reason || '';
+      status.appendChild(line);
+    }
+  } catch (e) { status.textContent = errText(e, 'Rilevamento non riuscito'); }
+  finally { button.disabled = false; }
+}
+
+async function saveVideoSettings() {
+  const button = document.getElementById('save-video-settings');
+  button.disabled = true;
+  _feedback('video-settings-feedback', 'Verifica e salvataggio…');
+  try {
+    await api.put('/api/domain/settings', {
+      video_conversion: document.getElementById('video-conversion').value,
+      video_encoder: document.getElementById('video-encoder').value,
+      video_quality: document.getElementById('video-quality').value,
+      video_cpu_fallback: document.getElementById('video-cpu-fallback').checked,
+    });
+    _appSettingsPromise = null;
+    _feedback('video-settings-feedback', 'Salvato. Si applica ai nuovi download.', 'success');
+  } catch (e) { _feedback('video-settings-feedback', errText(e), 'danger'); }
+  finally { button.disabled = false; }
+}

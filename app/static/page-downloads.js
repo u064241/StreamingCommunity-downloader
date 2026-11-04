@@ -109,23 +109,23 @@ function connectGlobalStream() {
 // colour, its border and its label. tests/test_assets.py now checks the set.
 const PHASE_LABELS = {
   scheduled:'Programmato', queued:'In attesa', paused:'In pausa', running:'In corso',
-  video:'Video', joining:'Finalizzazione',
+  video:'Video', joining:'Finalizzazione', converting:'Conversione',
   audio:'Audio', merging:'Unione', done:'Completato', error:'Errore', cancelled:'Annullato',
 };
 const PHASE_BADGE = {
   scheduled:'bg-yellow-lt', queued:'bg-secondary-lt', paused:'bg-orange-lt', running:'bg-blue-lt',
-  video:'bg-blue-lt', joining:'bg-yellow-lt',
+  video:'bg-blue-lt', joining:'bg-yellow-lt', converting:'bg-purple-lt',
   audio:'bg-teal-lt', merging:'bg-purple-lt', done:'bg-success-lt',
   error:'bg-danger-lt', cancelled:'bg-secondary-lt',
 };
 const PHASE_BAR = {
-  running:'bg-blue', video:'bg-blue', joining:'phase-bar-joining bg-warning',
+  converting:'bg-purple', running:'bg-blue', video:'bg-blue', joining:'phase-bar-joining bg-warning',
   audio:'phase-bar-audio bg-teal', merging:'phase-bar-merging bg-purple',
   done:'phase-bar-done bg-success', error:'phase-bar-error bg-danger',
 };
 const PHASE_BORDER_MAP = {
   scheduled:'var(--yellow)', queued:'var(--text-dim)', paused:'var(--orange)', running:'var(--blue)',
-  video:'var(--blue)', joining:'var(--yellow)',
+  converting:'var(--purple)', video:'var(--blue)', joining:'var(--yellow)',
   audio:'var(--teal)', merging:'var(--purple)', done:'var(--green)',
   error:'var(--danger)', cancelled:'var(--text-dim)',
 };
@@ -134,7 +134,7 @@ const PHASE_BORDER_MAP = {
 // is named by its language alone - "ITA" reads faster than "Audio ITA" when
 // there are three of them in a row.
 function _stepLabel(phase) {
-  const map = { video:'Video', joining:'Join', merging:'Merge', done:'Fine', audio:'Audio' };
+  const map = { converting:'Conversione', video:'Video', joining:'Join', merging:'Merge', done:'Fine', audio:'Audio' };
   if (map[phase]) return map[phase];
   if (phase && phase.startsWith('audio_')) return 'Audio ' + phase.slice(6).toUpperCase();
   return phase;
@@ -212,6 +212,9 @@ function _phaseBorder(phase) {
 function _jobInfoText(progress, status) {
   if (!progress) return '';
   const active = status === 'running';
+  if (active && progress.phase === 'converting') {
+    return [progress.encoder || 'Conversione in attesa', `${progress.pct || 0}%`, progress.eta ? fmtEta(progress.eta) : ''].filter(Boolean).join(' · ');
+  }
   const done = progress.bytes_done || 0;
   const expected = progress.bytes_total;
 
@@ -279,7 +282,7 @@ function _failedBtnsHtml(jobId) {
 }
 
 function _buildJobCard(j) {
-  const phase = _jobPhases[j.job_id] || j.status;
+  const phase = j.status === 'running' ? (_jobPhases[j.job_id] || j.progress?.phase || 'running') : j.status;
   const isActive = _isUnfinished(j);
   const isMovie = j.type==='film';
   const isAnimeJob = j.type==='anime';
@@ -581,7 +584,7 @@ function refreshCardAppearance(jobId) {
   const card = document.getElementById(`job-card-${jobId}`);
   if (!card) return;
 
-  const phase = _jobPhases[j.job_id] || j.status;
+  const phase = j.status === 'running' ? (_jobPhases[j.job_id] || j.progress?.phase || 'running') : j.status;
   const isActive = _isUnfinished(j);
 
   // Update card classes and border
@@ -650,7 +653,7 @@ function updateActiveBadge() {
 function handleProgressEvent(msg) {
   const job = _jobs.get(msg.job_id);
   if (job) {
-    job.progress = { current:msg.current, total:msg.total, pct:msg.pct, speed:msg.speed||0,
+    job.progress = { phase:msg.phase, encoder:msg.encoder, current:msg.current, total:msg.total, pct:msg.pct, speed:msg.speed||0,
                      bytes_speed:msg.bytes_speed||0, eta:msg.eta||null,
                      bytes_done:msg.bytes_done||0, bytes_total:msg.bytes_total ?? null,
                      bytes_total_estimated:msg.bytes_total_estimated !== false };
@@ -671,7 +674,10 @@ function handleProgressEvent(msg) {
 function handlePhaseEvent(jobId, phase) {
   _jobPhases[jobId] = phase;
   const job = _jobs.get(jobId);
-  if (job) job.status = 'running';
+  if (job) {
+    job.status = 'running';
+    if (phase === 'converting') job.progress = {...job.progress, phase, pct:0, encoder:null};
+  }
 
   const badge = document.getElementById(`job-badge-${jobId}`);
   if (badge) {
@@ -685,11 +691,13 @@ function handlePhaseEvent(jobId, phase) {
     bar.className = `progress-bar ${_phaseBar(phase)} progress-bar-striped progress-bar-animated job-progress-bar`;
     const isIndeterminate = phase === 'joining' || phase === 'merging' || phase.startsWith('audio_');
     if (isIndeterminate) bar.style.width = '100%';
+    if (phase === 'converting') bar.style.width = '0%';
   }
   const info = document.getElementById(`job-info-${jobId}`);
   if (info) {
     const isIndeterminate = phase === 'joining' || phase === 'merging';
     if (isIndeterminate) info.textContent = _phaseLabel(phase) + '...';
+    if (phase === 'converting') info.textContent = 'Conversione in attesa…';
   }
   _updateSteps(jobId, phase);
 }

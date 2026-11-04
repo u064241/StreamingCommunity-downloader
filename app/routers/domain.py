@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -38,6 +39,31 @@ def _read_data() -> dict:
 
 
 _update_data = config.update_data
+
+
+def _domain_host(value: str) -> str:
+    """Accept either a hostname or a pasted HTTP(S) URL; store only its host."""
+    value = value.strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Domain cannot be empty")
+
+    try:
+        if "://" in value:
+            parsed = urlsplit(value)
+            if parsed.scheme.lower() not in {"http", "https"}:
+                raise ValueError("Use an HTTP or HTTPS URL")
+        else:
+            parsed = urlsplit(f"//{value}")
+        if not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Enter a valid domain or HTTP(S) URL")
+        hostname = parsed.hostname.encode("idna").decode("ascii").lower()
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if ":" in hostname:  # Preserve IPv6 bracket syntax if a port is supplied.
+        hostname = f"[{hostname}]"
+    return f"{hostname}:{port}" if port is not None else hostname
 
 
 class DomainUpdate(BaseModel):
@@ -233,6 +259,10 @@ class SettingsUpdate(BaseModel):
     # against app.core.container, so the table and the API cannot drift.
     output_container: Literal["mkv", "mp4"] | None = None
     subtitle_mode: Literal["embed", "external"] | None = None
+    video_conversion: Literal["copy", "h264", "hevc"] | None = None
+    video_encoder: Literal["auto", "nvenc", "qsv", "amf", "cpu"] | None = None
+    video_quality: Literal["high", "balanced", "compact"] | None = None
+    video_cpu_fallback: bool | None = None
     # Declared late. It was in SETTINGS_DEFAULTS, read by downloads_hooks and
     # PUT by the settings page, but missing here — and pydantic ignores unknown
     # fields, so the switch reported "Salvato." and saved nothing.
@@ -300,7 +330,7 @@ _SETTING_RANGES = (
     # Floored well above the throttle in domain_recovery: a check any more often
     # than this is hammering somebody else's page for a domain that rotates
     # every few weeks.
-    ("domain_check_interval_minutes", 30, 1440),
+    ("domain_check_interval_minutes", 1, 1440),
 )
 
 
@@ -321,6 +351,14 @@ def set_app_settings(body: SettingsUpdate):
             )
 
     new_settings = {**get_settings(), **provided}
+    if new_settings.get("video_conversion", "copy") != "copy" and any(
+        key in provided for key in ("video_conversion", "video_encoder", "video_quality", "video_cpu_fallback")
+    ):
+        from app.core.transcode import select_backend, TranscodeError
+        try:
+            select_backend(new_settings)
+        except (TranscodeError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_settings(new_settings)
     from app.jobs import job_manager
     job_manager.update_max_concurrent(new_settings["max_concurrent_downloads"])
@@ -329,9 +367,7 @@ def set_app_settings(body: SettingsUpdate):
 
 @router.put("", dependencies=CAN_MANAGE)
 async def set_domain(body: DomainUpdate):
-    domain = body.domain.strip()
-    if not domain:
-        raise HTTPException(status_code=400, detail="Domain cannot be empty")
+    domain = _domain_host(body.domain)
     try:
         version = await asyncio.to_thread(get_domain_version, domain)
     except RuntimeError as e:
@@ -341,3 +377,70 @@ async def set_domain(body: DomainUpdate):
     home.clear_cache("streamingcommunity")
     metadata.clear_cache()
     return {"domain": domain, "version": version, "valid": True}
+
+
+class DownloadDirectoryUpdate(BaseModel):
+    path: str
+
+
+@router.get("/download-directory", dependencies=CAN_MANAGE)
+def get_download_directory():
+    from app.windows_folder_picker import available
+    return {"path": str(config.download_dir().resolve()), "can_browse": available()}
+
+
+@router.put("/download-directory", dependencies=CAN_MANAGE)
+def set_download_directory(body: DownloadDirectoryUpdate):
+    from pathlib import Path
+    import tempfile
+    try:
+        path = Path(validate_library_path(body.path)).expanduser()
+        if not path.is_absolute():
+            raise ValueError("Indica un percorso assoluto per la cartella download.")
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryFile(dir=path):
+            pass
+        path = path.resolve()
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=f"Cartella download non utilizzabile: {exc}") from exc
+    _update_data({"download_dir": str(path)})
+    from app.routers.files import _disk_usage_cache
+    _disk_usage_cache["data"] = None
+    return {"path": str(path)}
+
+
+@router.get("/logs", dependencies=CAN_MANAGE)
+def get_logs():
+    from app.log_view import buffer, install_log_buffer
+    install_log_buffer()
+    return {"lines": buffer.snapshot()}
+
+
+@router.post("/download-directory/browse", dependencies=CAN_MANAGE)
+async def browse_download_directory(body: DownloadDirectoryUpdate):
+    from app.windows_folder_picker import choose_folder, available
+    if not available():
+        raise HTTPException(status_code=400, detail="La scelta cartella nativa è disponibile solo su Windows.")
+    try:
+        selected = await asyncio.to_thread(choose_folder, body.path or str(config.download_dir().resolve()))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"path": selected, "cancelled": selected is None}
+
+
+@router.get("/video-encoders", dependencies=CAN_MANAGE)
+async def video_encoders():
+    from app.core.transcode import capabilities
+    try:
+        return await asyncio.to_thread(capabilities)
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/video-encoders/refresh", dependencies=CAN_MANAGE)
+async def refresh_video_encoders():
+    from app.core.transcode import capabilities
+    try:
+        return await asyncio.to_thread(capabilities, True)
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

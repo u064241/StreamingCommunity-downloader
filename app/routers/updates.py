@@ -1,93 +1,87 @@
-import logging
-import os
-import sqlite3
+"""Read-only release information for the fork distribution."""
 
-from fastapi import APIRouter, Depends, HTTPException
+import ipaddress
+import secrets
+import zipfile
+from urllib.parse import urlsplit
 
-from app import db, updater_client, updates
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, StrictBool
+import requests
+
 from app.auth.deps import require
 from app.auth.permissions import Permission
-from app.jobs import job_manager
+from app.updates import check
+from app import distribution, portable_updates
+from app.update_download import UpdateDownloadError
 
-logger = logging.getLogger(__name__)
-
-router = APIRouter(
-    prefix="/api/updates",
-    tags=["updates"],
-    # Whoever cannot act on a new version has no use for the badge.
-    dependencies=[Depends(require(Permission.MANAGE_SETTINGS))],
-)
-
-# Held in memory, so a restart loses them. A scheduled job is not here: it is
-# stored, and comes back.
-_LOST_IN_A_RESTART = ("running", "queued", "paused")
+router = APIRouter(prefix="/api/updates", tags=["updates"])
+CAN_READ = [
+    Depends(require(Permission.REQUEST, Permission.DOWNLOAD, Permission.MANAGE_SETTINGS, mode="or"))
+]
 
 
-def _report(info: dict) -> dict:
-    return {
-        **info,
-        # Baked into the image. A source checkout has no container to replace,
-        # so its instructions differ.
-        "install": os.getenv("SCPANEL_INSTALL", "source"),
-        "updater": updater_client.status(),
-    }
+@router.get("", dependencies=CAN_READ)
+def get_update_status():
+    return check()
 
 
-def _backup_database() -> None:
-    """Migrations only go forward, and the new version runs them on boot. One
-    copy, overwritten each time: this is a way back from an update, not a backup
-    strategy."""
-    target = sqlite3.connect(f"{db.current_path()}.pre-update")
+@router.post("/check", dependencies=CAN_READ)
+def check_for_update():
+    return check(force=True)
+
+
+_local_token = secrets.token_urlsafe(32)
+MANAGE = Depends(require(Permission.MANAGE_SETTINGS))
+
+
+def _local(request: Request):
     try:
-        db.get_conn().backup(target)
-    finally:
-        target.close()
+        host = request.url.hostname
+        if host != "localhost" and not ipaddress.ip_address(host).is_loopback:
+            raise ValueError()
+        if not request.client or not ipaddress.ip_address(request.client.host).is_loopback:
+            raise ValueError()
+        # Never accept forwarded origins/clients for binary replacement.
+        if any(h in request.headers for h in ("forwarded", "x-forwarded-for", "x-forwarded-host")):
+            raise ValueError()
+        if request.method == "POST":
+            origin = urlsplit(request.headers.get("origin", ""))
+            if (origin.scheme, origin.netloc) != (request.url.scheme, request.url.netloc):
+                raise ValueError()
+            if not secrets.compare_digest(request.headers.get("x-portable-update-token", ""), _local_token):
+                raise ValueError()
+    except (TypeError, ValueError):
+        raise HTTPException(403, "Aggiornamento consentito solo dal pannello locale")
 
 
-@router.get("")
-def get_status():
-    return _report(updates.status())
+class ApplyUpdate(BaseModel):
+    token: str = Field(min_length=20, max_length=128)
+    confirmed: StrictBool = False
 
 
-@router.post("/check")
-def check_now():
-    return _report(updates.check_now())
-
-
-@router.post("/install", status_code=202)
-def install():
-    # In open mode this is reachable by every visitor, who must not be able to
-    # restart the panel at will or cut a download short: with nothing new there
-    # is nothing to do, and a busy panel refuses.
-    if not updates.status()["update_available"]:
-        raise HTTPException(status_code=409, detail="Nessuna nuova versione da installare.")
-    busy = sum(job["status"] in _LOST_IN_A_RESTART for job in job_manager.list_jobs())
-    if busy:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Ci sono {busy} download in corso o in attesa: l'aggiornamento riavvia il "
-                   "pannello e li interromperebbe. Attendi che finiscano o annullali.",
-        )
-
-    updater = updater_client.status()
-    if updater is None:
-        raise HTTPException(status_code=503, detail="Il servizio updater non è configurato.")
-    if not updater["ready"]:
-        raise HTTPException(status_code=503, detail=updater["problem"])
-
+def _run(operation, *args):
     try:
-        _backup_database()
-    except (sqlite3.Error, OSError):
-        logger.exception("Database backup before the update failed")
-        raise HTTPException(
-            status_code=500,
-            detail="Impossibile salvare una copia del database: aggiornamento annullato.",
-        )
+        return operation(*args)
+    except (UpdateDownloadError, OSError, ValueError, KeyError, TypeError, AttributeError, zipfile.BadZipFile,
+            requests.RequestException) as exc:
+        raise HTTPException(409, f"Aggiornamento non disponibile: {exc}") from exc
 
-    try:
-        status, payload = updater_client.start()
-    except updater_client.UpdaterUnavailable:
-        raise HTTPException(status_code=503, detail="Il servizio updater non risponde.")
-    if status != 202:
-        raise HTTPException(status_code=status, detail=payload.get("error", "Aggiornamento rifiutato."))
-    return payload
+
+@router.get("/portable", dependencies=[MANAGE, Depends(_local)])
+def portable_status():
+    mode = distribution.mode()
+    return {"mode": mode, "available": mode == "portable", "token": _local_token}
+
+
+@router.post("/portable/prepare", dependencies=[Depends(_local)])
+def prepare_portable(user=MANAGE):
+    return _run(portable_updates.prepare, user.id)
+
+
+@router.post("/portable/apply", dependencies=[Depends(_local)])
+def apply_portable(body: ApplyUpdate, user=MANAGE):
+    if body.confirmed is not True:
+        raise HTTPException(400, "Conferma esplicita richiesta")
+    return _run(portable_updates.apply, user.id, body.token)
+

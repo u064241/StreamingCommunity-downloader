@@ -112,7 +112,8 @@ async function loadTitlePage(route) {
         const audio = dedupeLangs(info.audio);
         const subs = dedupeLangs(info.subtitles);
         const preferred = preferredSubSelection(subs);
-        _tp.audio = audio.map(c => ({ code: c, on: c === 'ita' || audio.length === 1 }));
+        const defaultAudio = audio.find(c => ['ita', 'it'].includes(c)) || audio[0];
+        _tp.audio = audio.map(c => ({ code: c, on: c === defaultAudio }));
         _tp.subs  = subs.map(c => ({ code: c, on: preferred.has(c) }));
         _tp.tracksLoaded = true;
         _tpRender();
@@ -231,7 +232,7 @@ function _tpSyncEpCtx(token) {
 
 function _tpPicked(which) {
   const picked = (_tp[which] || []).filter(t => t.on).map(t => t.code);
-  return which === 'audio' ? (picked.length ? picked : ['ita']) : picked;
+  return which === 'audio' ? (picked.length ? picked : (_tp.audio?.length ? [_tp.audio[0].code] : ['ita'])) : picked;
 }
 
 // ── Tracks ────────────────────────────────────────────────────────────────────
@@ -248,9 +249,17 @@ function tpSetSchedule(value) {
 function tpToggleTrack(which, code) {
   const t = (_tp[which] || []).find(x => x.code === code);
   if (!t) return;
+  if (which === 'audio' && t.on && (_tp.audio || []).filter(x => x.on).length === 1) return;
   t.on = !t.on;
   if (_tp.type === 'anime') { if (_animeCtx) { _animeCtx.audioLangs = _tpPicked('audio'); _animeCtx.subLangs = _tpPicked('subs'); } }
   else if (_epCtx) { _epCtx.audioLangs = _tpPicked('audio'); _epCtx.subLangs = _tpPicked('subs'); }
+  _tpRenderTracks();
+}
+
+function tpSelectTracks(which, enabled) {
+  if (!['audio', 'subs'].includes(which) || (which === 'audio' && !enabled)) return;
+  (_tp[which] || []).forEach(t => { t.on = enabled; });
+  if (_epCtx) { _epCtx.audioLangs = _tpPicked('audio'); _epCtx.subLangs = _tpPicked('subs'); }
   _tpRenderTracks();
 }
 
@@ -437,6 +446,7 @@ function _tpRenderTracks() {
       : `<span class="th-empty" style="padding:0">${empty}</span>`;
     return `<div class="th-track-group">
         <div class="th-track-h"><i class="ti ${icon}"></i>${title}</div>
+        ${list.length ? `<div class="th-track-chips mb-2"><button class="th-track" data-action="tp:tracks-all" data-which="${which}">Seleziona tutte</button>${which === 'subs' ? '<button class="th-track" data-action="tp:tracks-none" data-which="subs">Nessuno</button>' : ''}</div>` : ''}
         <div class="th-track-chips">${chips}</div>
       </div>`;
   };
@@ -895,6 +905,8 @@ registerActions({
   'tp:primary':       () => tpPrimary(),
   'tp:follow':        () => tpToggleFollow(),
   'tp:tab':           d => tpSetTab(d.tab),
+  'tp:tracks-all': d => tpSelectTracks(d.which, true),
+  'tp:tracks-none': d => tpSelectTracks(d.which, false),
   'tp:track':         d => tpToggleTrack(d.which, d.code),
   'tp:trailer':       () => tpPlayTrailer(),
   'tp:season':        d => tpLoadSeason(Number(d.n)),

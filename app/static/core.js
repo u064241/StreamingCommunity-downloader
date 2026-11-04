@@ -363,7 +363,10 @@ const LANG_NAMES = {
 };
 const langName = c => c.startsWith('forced-')
   ? `${langName(c.slice(7))} (forzati)`
-  : LANG_NAMES[c] || c;
+  : LANG_NAMES[c] || (() => {
+      try { return new Intl.DisplayNames(['it'], { type: 'language' }).of(c) || c; }
+      catch { return c; }
+    })();
 
 
 // formatSize() stops at GB and is used for file rows; volumes are routinely in

@@ -90,10 +90,7 @@ SETTINGS_DEFAULTS = {
     # page we do not control is proposed to an administrator, never applied on
     # its own. See app.core.domain_recovery.
     "domain_auto_apply": False,
-    "domain_check_interval_minutes": 360,
-    # Whether to ask GitHub periodically for a newer release. A switch because
-    # it is the one call a self-hosted panel makes that its job does not need.
-    "update_check_enabled": True,
+    "domain_check_interval_minutes": 1,
     # Ask Jellyfin to scan when a download lands, instead of waiting for its
     # own schedule. Inert unless Jellyfin is connected.
     "jellyfin_refresh_on_download": False,
@@ -101,6 +98,10 @@ SETTINGS_DEFAULTS = {
     # muxed in or left beside the video as .vtt. The vocabulary and the
     # fallbacks live in app.core.container, which is the only thing that reads
     # these — app.config must not import app.core.
+    "video_conversion": "copy",
+    "video_encoder": "auto",
+    "video_quality": "balanced",
+    "video_cpu_fallback": True,
     "output_container": "mkv",
     "subtitle_mode": "embed",
     # The MCP endpoint at /mcp. Off by default: it lets an agent act as a user.
@@ -183,3 +184,8 @@ def update_data(changes: dict):
 
 def save_settings(new_settings: dict):
     update_data({"settings": new_settings})
+
+
+def download_dir(default=None) -> Path:
+    """Current fallback destination, resolved on each operation."""
+    return Path(read_data().get("download_dir") or (VIDEOS_DIR if default is None else default))

@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
+import hmac
 import logging
+import os
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -9,9 +11,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from app import __version__, config, db, downloads_hooks, downloads_notify, library, updates, writable
+from app import __version__, config, db, downloads_hooks, downloads_notify, library, writable
+from app import portal_lifecycle
 from app.auth import models as auth_models
 from app.auth import router as auth_router
 from app.auth import session as auth_session
@@ -34,6 +37,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+from app.log_view import install_log_buffer
+install_log_buffer()
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +99,7 @@ def _library_dirs() -> list[Path]:
     libraries = config.read_data().get("libraries", [])
     dirs = {Path(lib["path"]) for lib in libraries if lib.get("path")}
     if not {"film", "tv", "anime"} <= {lib.get("type") for lib in libraries}:
-        dirs.add(config.VIDEOS_DIR)
+        dirs.add(config.download_dir())
     return sorted(dirs)
 
 
@@ -108,6 +114,7 @@ def check_writable_paths() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    install_log_buffer()
     # First: a database the process cannot write fails migrations with SQLite's
     # "unable to open database file", which names neither the path nor the uid.
     check_writable_paths()
@@ -138,7 +145,9 @@ async def lifespan(app: FastAPI):
     # anything in it, and both sleep before their first pass so the lifespan
     # never does network I/O.
     domain_task = asyncio.create_task(domain_recovery.domain_watch_loop())
-    update_task = asyncio.create_task(updates.update_check_loop())
+    portal_task = None
+    if os.environ.get("SC_PANEL_PORTAL_TOKEN"):
+        portal_task = asyncio.create_task(portal_lifecycle.stop_server_when_idle(app))
     try:
         # Always running, whatever the switch says: the endpoint reads the
         # switch per request, so turning MCP on or off needs no restart.
@@ -147,7 +156,8 @@ async def lifespan(app: FastAPI):
     finally:
         poller_task.cancel()
         domain_task.cancel()
-        update_task.cancel()
+        if portal_task is not None:
+            portal_task.cancel()
 
 
 app = FastAPI(title="StreamingCommunity Web Panel", version=__version__, lifespan=lifespan)
@@ -159,6 +169,7 @@ app.add_middleware(AuthMiddleware)
 app.mount("/static", VersionedStaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["asset"] = asset
+templates.env.globals["portal_token"] = os.environ.get("SC_PANEL_PORTAL_TOKEN", "")
 
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
@@ -182,6 +193,40 @@ app.include_router(progress.router)
 app.include_router(files.router)
 app.include_router(images.router)
 app.include_router(anime.router)
+
+
+@app.post("/api/portal/heartbeat", include_in_schema=False)
+async def portal_heartbeat(request: Request):
+    expected = os.environ.get("SC_PANEL_PORTAL_TOKEN", "")
+    supplied = request.headers.get("X-Portal-Token", "")
+    if not expected or not hmac.compare_digest(expected, supplied):
+        return Response(status_code=404)
+    try:
+        payload = await request.json()
+        client_id = payload.get("client_id", "")
+    except (ValueError, AttributeError):
+        return Response(status_code=400)
+    if not isinstance(client_id, str) or not client_id or len(client_id) > 80:
+        return Response(status_code=400)
+    portal_lifecycle.heartbeat(client_id)
+    return Response(status_code=204)
+
+
+@app.post("/api/portal/close", include_in_schema=False)
+async def portal_close(request: Request):
+    try:
+        payload = await request.json()
+        token = payload.get("token", "")
+        client_id = payload.get("client_id", "")
+    except (ValueError, AttributeError):
+        return Response(status_code=400)
+    expected = os.environ.get("SC_PANEL_PORTAL_TOKEN", "")
+    if not expected or not isinstance(token, str) or not hmac.compare_digest(expected, token):
+        return Response(status_code=404)
+    if not isinstance(client_id, str) or not client_id or len(client_id) > 80:
+        return Response(status_code=400)
+    portal_lifecycle.close(client_id)
+    return Response(status_code=204)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -253,6 +253,9 @@ def test_public_allowlist_stays_small():
     """The allowlist is security-critical; growth should be deliberate."""
     assert PUBLIC_PATHS == {
         "/login",
+        # Standalone lifecycle endpoints authenticate with the per-run portal token.
+        "/api/portal/heartbeat",
+        "/api/portal/close",
         "/favicon.ico",
         "/api/auth/status",
         "/api/auth/setup",

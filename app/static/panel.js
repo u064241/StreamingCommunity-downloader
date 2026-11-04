@@ -1,5 +1,79 @@
 'use strict';
 
+let _updateStatus = null;
+let _portableStatus = null;
+let _portableBusy = false;
+
+async function checkForkUpdate(force = false) {
+  try {
+    _updateStatus = await api[force ? 'post' : 'get'](
+      force ? '/api/updates/check' : '/api/updates', force ? {} : undefined);
+    const badge = document.getElementById('update-badge');
+    if (badge) badge.style.display = _updateStatus.status === 'update_available' ? '' : 'none';
+  } catch (e) { /* update checks are best-effort */ }
+  return _updateStatus;
+}
+
+function showForkUpdate() {
+  if (!_updateStatus || _updateStatus.status !== 'update_available') return;
+  document.getElementById('update-version').textContent =
+    `Versione ${_updateStatus.version} disponibile (attuale ${_updateStatus.current_version})`;
+  document.getElementById('update-notes').textContent = _updateStatus.notes || 'Nessuna nota pubblicata.';
+  const url = _updateStatus.url || '';
+  document.getElementById('update-release-link').href =
+    url.startsWith('https://github.com/u064241/StreamingCommunity-downloader/releases/') ? url : '#';
+  showModal('updates-modal');
+  loadPortableUpdate();
+}
+
+async function loadPortableUpdate() {
+  const button = document.getElementById('portable-update-button');
+  const message = document.getElementById('portable-update-message');
+  button.hidden = true;
+  if (!can('MANAGE_SETTINGS')) return;
+  try {
+    _portableStatus = await api.get('/api/updates/portable');
+    button.hidden = !_portableStatus.available;
+    message.textContent = _portableStatus.available
+      ? 'Aggiorna il programma portable conservando il vecchio EXE come backup.'
+      : 'Per questa distribuzione scarica la release ed esegui l’aggiornamento guidato.';
+  } catch (_) { message.textContent = 'Aggiornamento diretto disponibile solo dal pannello locale portable.'; }
+}
+
+async function installPortableUpdate() {
+  if (_portableBusy || !_portableStatus?.available) return;
+  if (!await scConfirm('Scaricare e verificare la nuova versione portable?')) return;
+  _portableBusy = true;
+  const button = document.getElementById('portable-update-button');
+  const message = document.getElementById('portable-update-message');
+  button.disabled = true;
+  async function post(path, body) {
+    // api.js has no custom-header option; keep the global fetch CSRF wrapper.
+    const response = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json',
+        'X-Portable-Update-Token': _portableStatus.token }, body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Aggiornamento fallito');
+    return data;
+  }
+  try {
+    message.textContent = 'Download e verifica in corso…';
+    const prepared = await post('/api/updates/portable/prepare', {});
+    if (!await scConfirm(`Versione ${prepared.version} verificata. Applicarla? Dovrai chiudere tutte le schede del pannello entro 5 minuti e riaprire l’app dopo la sostituzione.`)) {
+      message.textContent = 'Aggiornamento annullato. Nessun file dell’app sostituito.';
+      return;
+    }
+    const result = await post('/api/updates/portable/apply', { token: prepared.token, confirmed: true });
+    message.textContent = result.message;
+    button.hidden = true;
+    _portableStatus.available = false;
+  } catch (error) { message.textContent = error.message || 'Aggiornamento non riuscito'; }
+  finally { _portableBusy = false; button.disabled = false; }
+}
+
+registerActions({ 'updates:show': () => showForkUpdate(), 'updates:portable': installPortableUpdate });
+
 // The shell's live parts: the in-app notification bell and the sidebar's
 // pending-requests badge. Both run on every page, which is why they are not
 // in any page-*.js. Relies on core.js for escapeHtml/showToast/can and on
@@ -148,9 +222,15 @@ async function installUpdate() {
 
 // ── Notifications ──────────────────────────────────────────────────────────────
 
+let _notifRefreshGeneration = 0;
+let _notifDeleting = false;
+
 async function refreshNotifications() {
+  if (_notifDeleting) return;
+  const generation = ++_notifRefreshGeneration;
   try {
     const payload = await api.get('/api/notifications');
+    if (_notifDeleting || generation !== _notifRefreshGeneration) return;
     const badge = document.getElementById('notif-badge');
     badge.textContent = payload.unread || '';
     badge.style.display = payload.unread ? '' : 'none';
@@ -191,14 +271,19 @@ async function markAllNotificationsRead() {
 }
 
 async function _deleteNotifications(body) {
-  let result;
+  if (_notifDeleting) return null;
+  _notifDeleting = true;
+  ++_notifRefreshGeneration; // Discard GET responses started before the deletion.
+  const buttons = document.querySelectorAll('#notif-panel button');
+  buttons.forEach(button => { button.disabled = true; });
+  let result = null;
   try {
-    // Always {deleted, unread}, so the object itself is the success signal
-    // the caller checks - as res.json() was before.
     result = await api.post('/api/notifications/delete', body);
   } catch (e) {
     showToast(errText(e, 'Eliminazione fallita'), 'danger');
-    return null;
+  } finally {
+    _notifDeleting = false;
+    buttons.forEach(button => { button.disabled = false; });
   }
   await refreshNotifications();
   return result;
@@ -211,7 +296,11 @@ async function deleteNotification(id) {
 }
 
 async function clearAllNotifications() {
-  if (!await scConfirm('Eliminare tutte le notifiche?')) return;
+  const panel = document.getElementById('notif-panel');
+  panel.style.display = 'none';
+  const confirmed = await scConfirm('Eliminare tutte le notifiche?');
+  panel.style.display = 'block';
+  if (!confirmed) return;
   const result = await _deleteNotifications({});
   if (result) showToast('Notifiche eliminate', 'info');
 }

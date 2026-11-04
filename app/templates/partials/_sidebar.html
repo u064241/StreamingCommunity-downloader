@@ -84,12 +84,11 @@
             <i class="ti ti-settings" style="font-size:15px;flex-shrink:0"></i>
             Impostazioni
           </button>
-          <div class="sidebar-version-row">
-            <span id="app-version" class="sidebar-version" title="Versione del pannello"></span>
-            <button type="button" id="update-badge" class="update-badge" data-action="updates:open" hidden>
-              <i class="ti ti-arrow-up"></i><span id="update-badge-version"></span>
-            </button>
-          </div>
+          <span id="app-version" class="sidebar-version" title="Versione del pannello"></span>
+          <button id="update-badge" class="badge bg-yellow border-0 mt-1" style="display:none;cursor:pointer"
+                  data-action="updates:show" title="Nuova versione disponibile">
+            Aggiornamento disponibile
+          </button>
         </div>
       </div>
     </div>
