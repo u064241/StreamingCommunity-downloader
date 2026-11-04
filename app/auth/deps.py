@@ -46,6 +46,7 @@ OPEN_MODE_USER = models.User(
 PUBLIC_PATHS = {
     "/login",
     "/api/portal/heartbeat",
+    "/api/portal/close",
     "/favicon.ico",
     "/api/auth/status",
     "/api/auth/setup",

@@ -25,9 +25,15 @@ async function refreshQueueBadge() {
 
 // ── Notifications ──────────────────────────────────────────────────────────────
 
+let _notifRefreshGeneration = 0;
+let _notifDeleting = false;
+
 async function refreshNotifications() {
+  if (_notifDeleting) return;
+  const generation = ++_notifRefreshGeneration;
   try {
     const payload = await api.get('/api/notifications');
+    if (_notifDeleting || generation !== _notifRefreshGeneration) return;
     const badge = document.getElementById('notif-badge');
     badge.textContent = payload.unread || '';
     badge.style.display = payload.unread ? '' : 'none';
@@ -68,14 +74,19 @@ async function markAllNotificationsRead() {
 }
 
 async function _deleteNotifications(body) {
-  let result;
+  if (_notifDeleting) return null;
+  _notifDeleting = true;
+  ++_notifRefreshGeneration; // Discard GET responses started before the deletion.
+  const buttons = document.querySelectorAll('#notif-panel button');
+  buttons.forEach(button => { button.disabled = true; });
+  let result = null;
   try {
-    // Always {deleted, unread}, so the object itself is the success signal
-    // the caller checks - as res.json() was before.
     result = await api.post('/api/notifications/delete', body);
   } catch (e) {
     showToast(errText(e, 'Eliminazione fallita'), 'danger');
-    return null;
+  } finally {
+    _notifDeleting = false;
+    buttons.forEach(button => { button.disabled = false; });
   }
   await refreshNotifications();
   return result;
@@ -88,7 +99,11 @@ async function deleteNotification(id) {
 }
 
 async function clearAllNotifications() {
-  if (!await scConfirm('Eliminare tutte le notifiche?')) return;
+  const panel = document.getElementById('notif-panel');
+  panel.style.display = 'none';
+  const confirmed = await scConfirm('Eliminare tutte le notifiche?');
+  panel.style.display = 'block';
+  if (!confirmed) return;
   const result = await _deleteNotifications({});
   if (result) showToast('Notifiche eliminate', 'info');
 }

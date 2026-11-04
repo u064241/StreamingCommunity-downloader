@@ -5,7 +5,8 @@ tqdm
 rich
 random-user-agent
 ffmpeg-python
-imageio-ffmpeg
+# Bundles FFmpeg 7.1: NVENC compatible with Pascal GPUs on NVIDIA R580 drivers.
+imageio-ffmpeg==0.6.0
 cryptography==3.4.8  # Pinned: newer versions (40+) removed default_backend(), requires API change in m3u8.py
 filelock>=3.12.0
 m3u8

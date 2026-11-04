@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from app.config import VIDEOS_DIR, TMP_DIR, get_settings
+from app.config import download_dir, VIDEOS_DIR, TMP_DIR, get_settings
 from app.progress import DownloadCancelledError, WebProgressBar
 
 
@@ -20,12 +20,12 @@ def _get_library_path(type_: str) -> str:
     for lib in _read_data().get("libraries", []):
         if lib.get("type") == type_:
             return lib["path"]
-    return str(VIDEOS_DIR)
+    return str(download_dir(VIDEOS_DIR))
 
 def _library_roots() -> list[str]:
     from app.routers.domain import _read_data
     roots = [lib["path"] for lib in _read_data().get("libraries", []) if lib.get("path")]
-    return [os.path.realpath(p) for p in (*roots, str(VIDEOS_DIR))]
+    return [os.path.realpath(p) for p in (*roots, str(download_dir(VIDEOS_DIR)))]
 
 
 def _inside(path: str, root: str) -> bool:
@@ -175,6 +175,9 @@ def _worth_retrying(exc: Exception) -> bool:
     away. Never all of OSError: ``requests.ConnectionError`` is one too.
     """
     from app.core._shared import MissingAudioTrackError
+    from app.core.transcode import TranscodeError
+    if isinstance(exc, TranscodeError):
+        return False
     if isinstance(exc, MissingAudioTrackError):
         return False
     if isinstance(exc, PermissionError) and getattr(exc, "winerror", None) is None:
@@ -251,6 +254,7 @@ class JobManager:
         self._jobs: dict[str, DownloadJob] = {}
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=64)
+        self._workers = set()
         self._slots = DownloadSlots(get_settings().get("max_concurrent_downloads", 3))
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._subscribers: list[asyncio.Queue] = []
@@ -261,6 +265,8 @@ class JobManager:
     def _compute_phases(audio_languages: list) -> list:
         """Return the ordered list of phase names that will be emitted for this job."""
         steps = ["video", "joining"] + [f"audio_{l}" for l in (audio_languages or ["ita"])] + ["merging", "done"]
+        if get_settings().get("video_conversion", "copy") != "copy":
+            steps.insert(-1, "converting")
         return steps
 
     def update_max_concurrent(self, n: int):
@@ -283,6 +289,21 @@ class JobManager:
     def list_jobs(self) -> list[dict]:
         with self._lock:
             return [self._job_to_dict(j) for j in self._jobs.values()]
+
+    def _submit_worker(self, fn, *args, **kwargs):
+        future = self._executor.submit(fn, *args, **kwargs)
+        with self._lock:
+            self._workers.add(future)
+        def finished(completed):
+            with self._lock:
+                self._workers.discard(completed)
+        future.add_done_callback(finished)
+        return future
+
+    def has_active_work(self) -> bool:
+        """Include final notifications/cleanup after a job's status becomes done."""
+        with self._lock:
+            return bool(self._workers) or any(job.status in {"running", "queued"} for job in self._jobs.values())
 
     def _job_to_dict(self, job: DownloadJob) -> dict:
         return {
@@ -400,8 +421,13 @@ class JobManager:
         bars: list = []
 
         def on_event(ev: dict):
+            if ev.get("type") == "status" and ev.get("phase") == "converting":
+                job.progress = {**job.progress, "phase": "converting", "encoder": None,
+                                "pct": 0, "speed": 0, "bytes_speed": 0, "eta": None}
             if ev.get("type") == "progress":
                 job.progress = {
+                    "phase": ev.get("phase"),
+                    "encoder": ev.get("encoder"),
                     "current": ev["current"],
                     "total": ev["total"],
                     "pct": ev["pct"],
@@ -461,7 +487,7 @@ class JobManager:
                 self._schedule_store.mark_fired(job.schedule_id)
         self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "queued"})
         self._remember_call(job, fn, args, kwargs)
-        self._executor.submit(self._run_download, job, fn, *args, **kwargs)
+        self._submit_worker(self._run_download, job, fn, *args, **kwargs)
 
     def _build_call(self, type_: str, params: dict, job: DownloadJob):
         pf = self._make_progress_factory(job)
@@ -572,7 +598,7 @@ class JobManager:
         # A job not parked yet is still on its thread and goes back in line by
         # itself (_attempt); a parked one needs a thread again.
         for job, (fn, args, kwargs) in parked:
-            self._executor.submit(self._run_download, job, fn, *args, **kwargs)
+            self._submit_worker(self._run_download, job, fn, *args, **kwargs)
         return len(jobs)
 
     def cancel_batch(self, batch_id: str, delete_files: bool = False) -> tuple[int, int]:
@@ -767,7 +793,7 @@ class JobManager:
             self._jobs[job.job_id] = job
         self._remember_call(job, fn, args, kwargs)
         self._broadcast({"type": "job_created", "job": self._job_to_dict(job)})
-        self._executor.submit(self._run_download, job, fn, *args, **kwargs)
+        self._submit_worker(self._run_download, job, fn, *args, **kwargs)
         return job.job_id
 
     def _make_job(self, title: str, type_: str, scheduled_at: Optional[datetime] = None,

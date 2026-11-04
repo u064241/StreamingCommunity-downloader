@@ -19,7 +19,7 @@ from cryptography.hazmat.backends import default_backend
 
 from app.config import get_settings
 from app.core import container
-from app.core.ffmpeg_path import ffmpeg_file_arg, get_ffmpeg_exe
+from app.core.ffmpeg_path import run_ffmpeg, ffmpeg_file_arg, get_ffmpeg_exe
 from app.core.headers import get_headers
 from app.core.paths import windows_path_problem
 from app.progress import DownloadCancelledError
@@ -326,10 +326,10 @@ class M3U8_Parser:
                         "type": media.type,
                         "name": media.name,
                         "default": media.default,
-                        "language": media.language,
+                        "language": ("forced-" + media.language if media.language and str(media.forced).upper() == "YES" and not media.language.startswith("forced-") else media.language),
                         "uri": media.uri,
                     })
-                else:
+                elif media.type == "AUDIO":
                     self.audio_ts.append({
                         "type": media.type,
                         "name": media.name,
@@ -359,7 +359,7 @@ class M3U8_Parser:
     def available_languages(self) -> dict:
         """Return available audio and subtitle language codes from the master playlist."""
         audio = [t.get("language") for t in self.audio_ts if t.get("language")]
-        subtitles = [s.get("language") for s in self.subtitle_playlist if s.get("language") and s.get("language") != "auto"]
+        subtitles = [s.get("language") for s in self.subtitle_playlist if s.get("language")]
         return {"audio": audio, "subtitles": subtitles}
 
     def get_track_audio(self, language_name):
@@ -821,10 +821,10 @@ class M3U8_Segments:
         # movflags is mov/mp4-private — handing it to the matroska muxer is not
         # ignored, it is fatal, and it would fail after every byte is fetched.
         try:
-            ffmpeg.input(combined_ts, fflags="+genpts", avoid_negative_ts="make_zero").output(
+            run_ffmpeg(ffmpeg.input(combined_ts, fflags="+genpts", avoid_negative_ts="make_zero").output(
                 ffmpeg_file_arg(output_filename),
                 **container.join_options(output_filename),
-            ).overwrite_output().run(cmd=get_ffmpeg_exe(), capture_stdout=True, capture_stderr=True)
+            ).overwrite_output())
         except ffmpeg.Error as e:
             stderr = e.stderr.decode(errors="replace") if e.stderr else "(no stderr)"
             if len(stderr) > 500:
@@ -1018,7 +1018,7 @@ class M3U8_Downloader:
         merged_path = stem + "_merged" + ext
         audio_path = os.path.join(self.temp_dir, "_audio_tmp.mp4")
         try:
-            (
+            run_ffmpeg(
                 ffmpeg
                 .output(
                     ffmpeg.input(ffmpeg_file_arg(self.video_path)),
@@ -1030,7 +1030,6 @@ class M3U8_Downloader:
                 )
                 .global_args("-map", "0:v:0", "-map", "1:a:0", "-shortest", "-strict", "experimental")
                 .overwrite_output()
-                .run(cmd=get_ffmpeg_exe())
             )
             logger.info("Audio merge completed.")
         except ffmpeg.Error as e:
@@ -1091,7 +1090,13 @@ def download_m3u8(**kwargs):
         logger.info("Waiting for another download to finish writing %s", destination)
         lock.acquire()
     try:
-        return _download_m3u8(**kwargs)
+        from app.config import get_settings
+        from app.core.transcode import convert_video
+        settings = dict(get_settings())
+        result = _download_m3u8(**kwargs)
+        if settings.get("video_conversion", "copy") == "copy":
+            return result
+        return convert_video(result or destination, settings, kwargs.get("progress_factory"), kwargs.get("cancel_event"))
     finally:
         lock.release()
 

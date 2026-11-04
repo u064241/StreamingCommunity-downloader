@@ -6,7 +6,7 @@ import requests
 import ffmpeg
 
 from app.core import container
-from app.core.ffmpeg_path import ffmpeg_file_arg, get_ffmpeg_exe
+from app.core.ffmpeg_path import hidden_process_options, ffmpeg_file_arg, get_ffmpeg_exe
 from app.core.m3u8 import M3U8_Parser
 
 logger = logging.getLogger(__name__)
@@ -142,7 +142,7 @@ def remux(video_path: str, audio_tracks: list[dict] = None,
 
     logger.info("Remuxing into %s: video + %d audio + %d subtitle tracks",
                 os.path.splitext(video_path)[1] or "?", len(audio_tracks), len(subtitle_tracks))
-    proc = subprocess.run(cmd, capture_output=True)
+    proc = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, **hidden_process_options())
     if proc.returncode != 0:
         # Never leave the half-written sibling behind: it sits in the library
         # folder, where Jellyfin would index it as a second copy of the title.

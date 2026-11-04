@@ -81,3 +81,21 @@ def ffmpeg_file_arg(path: str) -> str:
     """
     text = str(path)
     return text if text.startswith("file:") else f"file:{text}"
+
+
+def hidden_process_options() -> dict:
+    """Suppress console windows for FFmpeg and FFprobe on Windows."""
+    import subprocess
+    return {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
+
+def run_ffmpeg(stream):
+    import ffmpeg
+    import subprocess
+    result = subprocess.run(
+        ffmpeg.compile(stream, cmd=get_ffmpeg_exe(), overwrite_output=True),
+        capture_output=True, stdin=subprocess.DEVNULL, **hidden_process_options(),
+    )
+    if result.returncode:
+        raise ffmpeg.Error("ffmpeg", result.stdout, result.stderr)
+    return result.stdout, result.stderr

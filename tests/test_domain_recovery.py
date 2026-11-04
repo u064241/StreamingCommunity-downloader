@@ -417,6 +417,6 @@ def test_a_too_frequent_check_interval_is_refused(client, admin):
     res = client.put("/api/domain/settings", headers=_csrf(admin), json={
         "max_concurrent_downloads": 3,
         "max_segment_workers": 16,
-        "domain_check_interval_minutes": 5,
+        "domain_check_interval_minutes": 0,
     })
     assert res.status_code == 400

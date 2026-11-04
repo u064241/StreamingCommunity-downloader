@@ -37,6 +37,9 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+from app.log_view import install_log_buffer
+install_log_buffer()
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent
@@ -95,7 +98,7 @@ def _library_dirs() -> list[Path]:
     libraries = config.read_data().get("libraries", [])
     dirs = {Path(lib["path"]) for lib in libraries if lib.get("path")}
     if not {"film", "tv", "anime"} <= {lib.get("type") for lib in libraries}:
-        dirs.add(config.VIDEOS_DIR)
+        dirs.add(config.download_dir())
     return sorted(dirs)
 
 
@@ -110,6 +113,7 @@ def check_writable_paths() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    install_log_buffer()
     # First: a database the process cannot write fails migrations with SQLite's
     # "unable to open database file", which names neither the path nor the uid.
     check_writable_paths()
@@ -203,6 +207,23 @@ async def portal_heartbeat(request: Request):
     if not isinstance(client_id, str) or not client_id or len(client_id) > 80:
         return Response(status_code=400)
     portal_lifecycle.heartbeat(client_id)
+    return Response(status_code=204)
+
+
+@app.post("/api/portal/close", include_in_schema=False)
+async def portal_close(request: Request):
+    try:
+        payload = await request.json()
+        token = payload.get("token", "")
+        client_id = payload.get("client_id", "")
+    except (ValueError, AttributeError):
+        return Response(status_code=400)
+    expected = os.environ.get("SC_PANEL_PORTAL_TOKEN", "")
+    if not expected or not isinstance(token, str) or not hmac.compare_digest(expected, token):
+        return Response(status_code=404)
+    if not isinstance(client_id, str) or not client_id or len(client_id) > 80:
+        return Response(status_code=400)
+    portal_lifecycle.close(client_id)
     return Response(status_code=204)
 
 

@@ -100,6 +100,14 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Installazione di PyInstaller fallita.' }
     }
 
+    # Reused environments must also bundle the pinned FFmpeg version. Newer
+    # imageio-ffmpeg releases require NVENC APIs absent from Pascal R580 drivers.
+    & $venvPython -c "import importlib.metadata,sys; sys.exit(0 if importlib.metadata.version('imageio-ffmpeg') == '0.6.0' else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        & $venvPython -m pip install --disable-pip-version-check 'imageio-ffmpeg==0.6.0'
+        if ($LASTEXITCODE -ne 0) { throw 'Installazione di FFmpeg compatibile fallita.' }
+    }
+
     $runtimeHook = Join-Path $WorkDir 'runtime_hook.py'
     @'
 import os
@@ -107,11 +115,21 @@ import sys
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
-    os.chdir(Path(sys.executable).resolve().parent)
+    executable_dir = Path(sys.executable).resolve().parent
+    data_dir = executable_dir
+    # Program Files is read-only for the application after installation.
+    # Keep settings, databases and relative download paths in the user profile.
+    for variable in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
+        program_files = os.environ.get(variable)
+        if program_files and executable_dir.is_relative_to(Path(program_files).resolve()):
+            data_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "StreamingCommunityDownloader"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            break
+    os.chdir(data_dir)
 '@ | Set-Content -LiteralPath $runtimeHook -Encoding utf8
 
     $pyinstallerArgs = @(
-        '--noconfirm', '--clean', '--onefile', '--console',
+        '--noconfirm', '--clean', '--onefile', '--windowed',
         '--name', $AppName,
         '--distpath', $DistDir,
         '--workpath', (Join-Path $WorkDir 'pyinstaller'),
@@ -123,6 +141,10 @@ if getattr(sys, "frozen", False):
         '--collect-all', 'uvicorn',
         '--collect-all', 'fastapi',
         '--collect-all', 'starlette',
+        # random-user-agent loads this archive at runtime from package data;
+        # without it the frozen app cannot build request headers, so saving a
+        # source URL fails even though the same code works from Python.
+        '--collect-data', 'random_user_agent',
         '--collect-submodules', 'mcp.server',
         '--collect-submodules', 'mcp.types',
         (Join-Path $ProjectRoot 'main.py')
@@ -145,13 +167,16 @@ if getattr(sys, "frozen", False):
 AppId={{4C51C76A-2F6D-4B0E-A0DD-39AC03C3F60C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-DefaultDirName={localappdata}\Programs\StreamingCommunityDownloader
+DefaultDirName={commonpf64}\StreamingCommunity Downloader
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 DefaultGroupName=StreamingCommunity Downloader
 Uninstallable=yes
+AppMutex=Local\StreamingCommunityDownloaderRunning
 CreateUninstallRegKey=not IsPortable
 OutputDir="$DistDir"
 OutputBaseFilename=StreamingCommunityDownloader-Setup
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\$AppName.exe
 LicenseFile="$ProjectRoot\LICENSE"
@@ -163,22 +188,28 @@ italian.ModeTitle=Modalità di installazione
 italian.ModeSubtitle=Scegli come vuoi usare StreamingCommunity Downloader.
 italian.ModeInstall=&Installa (menu Start, disinstallazione da Impostazioni)
 italian.ModePortable=&Solo versione portable (file in una cartella scelta)
-italian.PortableDirName=StreamingCommunityDownloader-Portable
+italian.PortableDirName=StreamingCommunity Downloader
 italian.DesktopIcon=Crea un collegamento sul &desktop
 italian.LinkTitle=Collegamenti portable
 italian.LinkSubtitle=Vuoi creare anche collegamenti per la versione portable?
 italian.UninstallName=Disinstalla StreamingCommunity Downloader
 italian.LaunchApp=Avvia StreamingCommunity Downloader
+italian.RemoveData=Vuoi eliminare log e file temporanei di StreamingCommunity Downloader? Impostazioni e database saranno conservati.
+italian.RemoveDownloads=Vuoi eliminare anche i file scaricati nelle cartelle videos dell'applicazione e del suo profilo utente? Questa operazione è definitiva. Le cartelle esterne a queste due posizioni non saranno toccate.
+italian.CloseBeforeUninstall=StreamingCommunity Downloader è ancora in esecuzione. Chiudi tutte le schede del portale e attendi il termine dei download, poi ripeti la disinstallazione.
 english.ModeTitle=Installation mode
 english.ModeSubtitle=Choose how you want to use StreamingCommunity Downloader.
 english.ModeInstall=&Install (Start menu, uninstall from Settings)
 english.ModePortable=&Portable only (files in a folder of your choice)
-english.PortableDirName=StreamingCommunityDownloader-Portable
+english.PortableDirName=StreamingCommunity Downloader
 english.DesktopIcon=Create a &desktop shortcut
 english.LinkTitle=Portable shortcuts
 english.LinkSubtitle=Would you also like shortcuts for the portable version?
 english.UninstallName=Uninstall StreamingCommunity Downloader
 english.LaunchApp=Launch StreamingCommunity Downloader
+english.RemoveData=Delete StreamingCommunity Downloader logs and temporary files? Settings and the database will be kept.
+english.RemoveDownloads=Also permanently delete downloaded files in the application and user profile videos folders? Folders outside these two locations will not be touched.
+english.CloseBeforeUninstall=StreamingCommunity Downloader is still running. Close all portal tabs and wait for downloads to finish, then run the uninstaller again.
 [Files]
 Source: "$exePath"; DestDir: "{app}"; Flags: ignoreversion
 [Tasks]
@@ -187,17 +218,58 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 Name: "{group}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: not IsPortable
 Name: "{group}\{cm:UninstallName}"; Filename: "{uninstallexe}"; Check: not IsPortable
 Name: "{autodesktop}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Tasks: desktopicon; Check: not IsPortable
-Name: "{userprograms}\StreamingCommunity Downloader (portable)\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: IsPortable
-Name: "{userprograms}\StreamingCommunity Downloader (portable)\{cm:UninstallName}"; Filename: "{uninstallexe}"; Check: IsPortable
-Name: "{userdesktop}\StreamingCommunity Downloader (portable)"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: PortableDesktop
+Name: "{userprograms}\StreamingCommunity Downloader\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: IsPortable
+Name: "{userprograms}\StreamingCommunity Downloader\{cm:UninstallName}"; Filename: "{uninstallexe}"; Check: IsPortable
+Name: "{userdesktop}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: PortableDesktop
 [Run]
 Filename: "{app}\$AppName.exe"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent runascurrentuser
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\tmp"; Check: ShouldRemoveTemporaryData
+Type: filesandordirs; Name: "{app}\logs"; Check: ShouldRemoveTemporaryData
+Type: filesandordirs; Name: "{app}\__pycache__"; Check: ShouldRemoveTemporaryData
+Type: filesandordirs; Name: "{app}\videos"; Check: ShouldRemoveLocalDownloads
+Type: dirifempty; Name: "{app}"
+Type: filesandordirs; Name: "{localappdata}\StreamingCommunityDownloader\tmp"; Check: ShouldRemoveTemporaryData
+Type: filesandordirs; Name: "{localappdata}\StreamingCommunityDownloader\logs"; Check: ShouldRemoveTemporaryData
+Type: filesandordirs; Name: "{localappdata}\StreamingCommunityDownloader\__pycache__"; Check: ShouldRemoveTemporaryData
+Type: filesandordirs; Name: "{localappdata}\StreamingCommunityDownloader\videos"; Check: ShouldRemoveLocalDownloads
+Type: dirifempty; Name: "{localappdata}\StreamingCommunityDownloader"
+Type: dirifempty; Name: "{userprograms}\StreamingCommunity Downloader"
+Type: dirifempty; Name: "{userprograms}\StreamingCommunity Downloader (portable)"
+Type: dirifempty; Name: "{autoprograms}\StreamingCommunity Downloader"
 [Code]
 var
   ModePage: TInputOptionWizardPage;
   LinkPage: TInputOptionWizardPage;
   InstallDir: String;
   LastPortable: Boolean;
+  RemoveTemporaryData: Boolean;
+  RemoveLocalDownloads: Boolean;
+
+function ShouldRemoveTemporaryData: Boolean;
+begin
+  Result := RemoveTemporaryData;
+end;
+
+function ShouldRemoveLocalDownloads: Boolean;
+begin
+  Result := RemoveLocalDownloads;
+end;
+
+function InitializeUninstall: Boolean;
+begin
+  Result := not CheckForMutexes('Local\StreamingCommunityDownloaderRunning');
+  if not Result then begin
+    MsgBox(CustomMessage('CloseBeforeUninstall'), mbInformation, MB_OK);
+    Exit;
+  end;
+  RemoveTemporaryData := False;
+  RemoveLocalDownloads := False;
+  if not UninstallSilent then begin
+    RemoveTemporaryData := MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+    RemoveLocalDownloads := MsgBox(CustomMessage('RemoveDownloads'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+  end;
+end;
 
 function IsPortable: Boolean;
 begin

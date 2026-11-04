@@ -69,7 +69,7 @@ _MAX_CANDIDATES = 5
 # The reactive trigger fires whenever the configured domain fails to verify,
 # which on a broken panel is every page load of every user. Without a floor
 # between checks that becomes a small stampede against someone else's page.
-_MIN_CHECK_INTERVAL = 600
+_MIN_CHECK_INTERVAL = 60
 
 _lock = threading.Lock()
 _pending: dict | None = None
@@ -104,6 +104,36 @@ def fetch_candidates(url: str | None = None) -> list[str]:
         if host not in hosts:
             hosts.append(host)
     return hosts[:_MAX_CANDIDATES]
+
+
+TELEGRAM_URL = "https://t.me/s/Streaming_community_sito"
+
+
+def fetch_telegram_candidates() -> list[str]:
+    """Read newest public Telegram messages, including domains posted as plain text."""
+    try:
+        response = requests.get(TELEGRAM_URL, headers={"user-agent": get_headers()}, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "lxml")
+        hosts = []
+        for message in reversed(soup.select(".tgme_widget_message_text")):
+            # Ignore old/replaced domains shown struck out in announcements.
+            for old in message.select("s, del, strike"):
+                old.decompose()
+            texts = [message.get_text(" ", strip=True)]
+            texts += [a.get("href", "") for a in message.find_all("a")]
+            for text in texts:
+                text = text.replace("[.]", ".")
+                for host in re.findall(r"(?i)(?<![\w.-])(?:www\.)?streaming(?:community|unity)[a-z0-9-]{0,12}\.[a-z]{2,24}(?![\w.-])", text):
+                    host = host.lower()
+                    if host not in hosts:
+                        hosts.append(host)
+            if hosts:
+                return hosts[:_MAX_CANDIDATES]
+        return []
+    except Exception as exc:
+        logger.warning("Cannot read public Telegram channel: %s", exc)
+        return []
 
 
 # ── The guard ─────────────────────────────────────────────────────────────────
@@ -288,11 +318,13 @@ def run_check(force: bool = False) -> dict:
         _set_pending(None)
         return result
 
+    candidates = fetch_telegram_candidates()
     try:
-        candidates = fetch_candidates()
+        candidates = list(dict.fromkeys(candidates + fetch_candidates()))
     except Exception as exc:
         logger.warning("Cannot read the domain source page: %s", exc)
-        return result
+        if not candidates:
+            return result
 
     for host in candidates:
         if host == result["current"]:
@@ -393,15 +425,15 @@ async def domain_watch_loop():
 
     while True:
         try:
-            interval = int(_settings().get("domain_check_interval_minutes") or 360)
+            interval = int(_settings().get("domain_check_interval_minutes") or 1)
         except (TypeError, ValueError):
-            interval = 360
-        await asyncio.sleep(max(30, interval) * 60)
+            interval = 1
+        await asyncio.sleep(max(1, interval) * 60)
 
         if not _settings().get("domain_auto_check_enabled", True):
             continue
         try:
-            await asyncio.to_thread(run_check)
+            await asyncio.to_thread(run_check, True)
         except asyncio.CancelledError:
             raise
         except Exception:

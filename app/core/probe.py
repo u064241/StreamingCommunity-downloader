@@ -15,7 +15,7 @@ import logging
 import os
 import subprocess
 
-from app.core.ffmpeg_path import get_ffprobe_exe
+from app.core.ffmpeg_path import hidden_process_options, get_ffprobe_exe
 from app.core.format import LANG_MAP, _normalize_lang
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ def media_languages(path: str) -> dict | None:
         proc = subprocess.run(
             [ffprobe, "-v", "error", "-print_format", "json",
              "-show_entries", "stream=index,codec_type:stream_tags=language", path],
-            capture_output=True, timeout=PROBE_TIMEOUT,
+            capture_output=True, timeout=PROBE_TIMEOUT, stdin=subprocess.DEVNULL, **hidden_process_options(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("ffprobe failed on %s: %s", path, exc)

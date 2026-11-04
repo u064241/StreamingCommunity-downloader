@@ -48,6 +48,7 @@
         <li class="nav-item">
           <a class="nav-link" href="#" data-settings-tab="mcp">MCP</a>
         </li>
+        <li class="nav-item"><a class="nav-link" href="#" data-settings-tab="log">Log</a></li>
       </ul>
 
       <div class="settings-pane" data-settings-pane="sorgente">
@@ -97,7 +98,7 @@
         </p>
         <p class="settings-section-hint settings-warn">
           <i class="ti ti-alert-triangle me-1"></i>
-          Il dominio viene letto da una pagina esterna che non controlliamo. Vengono presi in
+          Il dominio viene letto dal canale Telegram Streaming_community_sito e da una pagina esterna. Vengono presi in
           considerazione solo domini di secondo livello con un nome riconosciuto, e solo se
           rispondono davvero come la sorgente attesa. Con l&rsquo;applicazione automatica attiva
           nessuno rilegge quella scelta prima che abbia effetto.
@@ -114,9 +115,9 @@
 
         <label class="form-label mt-3" for="domain-check-interval">
           Intervallo del controllo (minuti)
-          <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(30&ndash;1440)</span>
+          <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(1&ndash;1440)</span>
         </label>
-        <input type="number" id="domain-check-interval" class="form-control" min="30" max="1440">
+        <input type="number" id="domain-check-interval" class="form-control" min="1" max="1440">
 
         <div class="settings-actions">
           <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveRecovery" id="save-domain-recovery-btn">
@@ -130,7 +131,30 @@
       </div>
       </div>
 
+      <div class="settings-pane" data-settings-pane="log" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-label">Log applicazione</p>
+          <p class="settings-section-hint">Ultimi eventi della sessione corrente. Aggiornamento automatico ogni 3 secondi.</p>
+          <button class="btn btn-sm btn-outline-secondary" data-action="cfg:refreshLogs">Aggiorna</button>
+          <pre id="application-log" aria-live="off" class="mt-3 p-3 border rounded" style="height:420px;overflow:auto;white-space:pre-wrap"></pre>
+          <div id="logs-feedback" class="form-text"></div>
+        </div>
+      </div>
       <div class="settings-pane" data-settings-pane="librerie" style="display:none">
+      <div class="settings-section">
+        <p class="settings-section-label">Cartella download predefinita</p>
+        <p class="settings-section-hint">Usata per i nuovi download che non hanno una libreria specifica. I file esistenti restano nella cartella precedente.</p>
+        <label class="form-label" for="download-directory">Percorso completo della cartella</label>
+        <div class="input-group">
+          <input id="download-directory" type="text" class="form-control" placeholder="C:\Download\StreamingCommunity">
+          <button type="button" class="btn btn-outline-secondary" id="browse-download-directory" data-action="cfg:browseDownloadDirectory" style="display:none">Sfoglia…</button>
+        </div>
+        <div class="settings-actions">
+          <button class="btn btn-primary btn-sm" data-action="cfg:saveDownloadDirectory" id="save-download-directory">Salva cartella</button>
+          <div id="download-directory-feedback" class="form-text"></div>
+        </div>
+      </div>
+
       <!-- ── Librerie e cartelle ───────────────────────────────────────── -->
       <div class="settings-section">
         <p class="settings-section-label">Librerie multimediali</p>
@@ -301,6 +325,43 @@
       </div>
 
       <div class="settings-pane" data-settings-pane="download" style="display:none">
+      <div class="settings-section">
+        <p class="settings-section-label">Conversione video dopo il download</p>
+        <p class="settings-section-hint">La modalità Originale conserva la qualità della sorgente. La conversione è facoltativa, richiede tempo e può ridurre qualità e dimensioni. Si applica ai nuovi download; audio e sottotitoli vengono conservati. Una conversione alla volta.</p>
+        <div class="row g-3">
+          <div class="col-sm-6"><label for="video-conversion" class="form-label">Video</label>
+            <select id="video-conversion" class="form-select">
+              <option value="copy">Originale — senza ricodifica</option>
+              <option value="h264">Converti in H.264</option>
+              <option value="hevc">Converti in H.265 / HEVC</option>
+            </select>
+          </div>
+          <div class="col-sm-6"><label for="video-encoder" class="form-label">Encoder</label>
+            <select id="video-encoder" class="form-select">
+              <option value="auto">GPU automatica</option>
+              <option value="nvenc">NVIDIA NVENC</option><option value="qsv">Intel Quick Sync</option>
+              <option value="amf">AMD AMF</option><option value="cpu">CPU</option>
+            </select>
+          </div>
+          <div class="col-sm-6"><label for="video-quality" class="form-label">Qualità</label>
+            <select id="video-quality" class="form-select">
+              <option value="high">Alta — file più grandi</option>
+              <option value="balanced">Bilanciata</option>
+              <option value="compact">Compatta — maggiore compressione</option>
+            </select>
+          </div>
+        </div>
+        <label class="form-check mt-3"><input id="video-cpu-fallback" type="checkbox" class="form-check-input" checked>
+          <span class="form-check-label">Usa la CPU se la GPU non è disponibile o la conversione GPU fallisce</span>
+        </label>
+        <div id="video-encoder-status" class="form-text mt-2">Rilevamento encoder…</div>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="save-video-settings" data-action="cfg:saveVideo">Salva conversione</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="refresh-video-encoders" data-action="cfg:refreshVideoEncoders">Rileva GPU</button>
+          <div id="video-settings-feedback" class="form-text"></div>
+        </div>
+      </div>
+
       <!-- ── Performance download ──────────────────────────────────────── -->
       <div class="settings-section">
         <p class="settings-section-label">Download</p>

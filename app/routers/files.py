@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from app.auth.deps import require
 from app.auth.permissions import Permission
-from app.config import VIDEOS_DIR, DATA_FILE
+from app.config import download_dir, VIDEOS_DIR, DATA_FILE
 from app.core import container
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ CAN_MANAGE = [Depends(require(Permission.MANAGE_FILES))]
 
 def _safe_path(rel_path: str) -> Path:
     """Resolve path and ensure it's inside VIDEOS_DIR (prevent traversal)."""
-    base = VIDEOS_DIR.resolve()
+    base = download_dir(VIDEOS_DIR).resolve()
     target = (base / rel_path).resolve()
     if not target.is_relative_to(base):
         raise HTTPException(status_code=400, detail="Invalid path")
@@ -37,7 +37,7 @@ def _safe_path(rel_path: str) -> Path:
 
 def _safe_path_strict(rel_path: str) -> Path:
     """Like _safe_path but raises ValueError/FileNotFoundError instead of HTTPException."""
-    base = VIDEOS_DIR.resolve()
+    base = download_dir(VIDEOS_DIR).resolve()
     target = (base / rel_path).resolve()
     if not target.is_relative_to(base):
         raise ValueError("Invalid path")
@@ -66,7 +66,7 @@ _disk_usage_cache: dict = {"at": 0.0, "data": None}
 
 def _library_paths() -> list[str]:
     paths = [lib["path"] for lib in _read_data().get("libraries", []) if lib.get("path")]
-    return paths or [str(VIDEOS_DIR)]
+    return paths or [str(download_dir(VIDEOS_DIR))]
 
 
 def _compute_disk_usage() -> dict:
@@ -185,18 +185,18 @@ def _search_tree(directory: Path, base: Path, query: str, excluded: set) -> list
 async def search_files(q: str):
     if not q or len(q.strip()) < 2:
         raise HTTPException(status_code=400, detail="Query troppo corta (min 2 caratteri)")
-    if not VIDEOS_DIR.exists():
+    if not download_dir(VIDEOS_DIR).exists():
         return []
     excluded = _DEFAULT_EXCLUDED | set(_read_data().get("excluded_folders", []))
-    return await asyncio.to_thread(_search_tree, VIDEOS_DIR, VIDEOS_DIR, q.strip().lower(), excluded)
+    return await asyncio.to_thread(_search_tree, download_dir(VIDEOS_DIR), download_dir(VIDEOS_DIR), q.strip().lower(), excluded)
 
 
 @router.get("", dependencies=CAN_VIEW)
 async def list_files():
-    if not VIDEOS_DIR.exists():
+    if not download_dir(VIDEOS_DIR).exists():
         return []
     excluded = _DEFAULT_EXCLUDED | set(_read_data().get("excluded_folders", []))
-    return await asyncio.to_thread(_build_tree, VIDEOS_DIR, VIDEOS_DIR, excluded)
+    return await asyncio.to_thread(_build_tree, download_dir(VIDEOS_DIR), download_dir(VIDEOS_DIR), excluded)
 
 
 @router.get("/library-tree", dependencies=CAN_VIEW)
@@ -242,7 +242,7 @@ def download_file(file_path: str):
 
 class MoveRequest(BaseModel):
     path: str
-    dest_dir_path: str | None = None  # destination dir relative to VIDEOS_DIR (empty = root)
+    dest_dir_path: str | None = None  # destination dir relative to download_dir(VIDEOS_DIR) (empty = root)
     dest_abs_path: str | None = None  # destination absolute path in a library
     library_name: str | None = None   # legacy
 
@@ -268,7 +268,7 @@ async def move_to_library(body: MoveRequest):
 
     if body.dest_dir_path is not None:
         # Move within VIDEOS_DIR
-        base = VIDEOS_DIR.resolve()
+        base = download_dir(VIDEOS_DIR).resolve()
         dest_dir = (base / body.dest_dir_path).resolve() if body.dest_dir_path else base
         if not dest_dir.is_relative_to(base) and dest_dir != base:
             raise HTTPException(status_code=400, detail="Destinazione non valida")
@@ -294,7 +294,7 @@ async def move_to_library(body: MoveRequest):
         dest_dir_root = Path(lib_map[body.library_name])
         if not dest_dir_root.exists():
             raise HTTPException(status_code=400, detail=f"Il percorso della libreria non esiste: {dest_dir_root}")
-        rel = source.relative_to(VIDEOS_DIR.resolve())
+        rel = source.relative_to(download_dir(VIDEOS_DIR).resolve())
         dest = dest_dir_root / rel
     else:
         raise HTTPException(status_code=400, detail="Specificare dest_dir_path, dest_abs_path o library_name")
@@ -327,7 +327,7 @@ async def delete_path(file_path: str):
 
 def _batch_move_sync(paths: list[str], dest_dir_path: str) -> list[dict]:
     """Move multiple paths within VIDEOS_DIR (blocking, runs in thread)."""
-    base = VIDEOS_DIR.resolve()
+    base = download_dir(VIDEOS_DIR).resolve()
     dest_dir = (base / dest_dir_path).resolve() if dest_dir_path else base
     results = []
     for p in paths:
@@ -390,7 +390,7 @@ async def rename_path(body: RenameRequest):
         await asyncio.to_thread(source.rename, dest)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rinomina fallita: {e}")
-    return {"renamed_to": str(dest.relative_to(VIDEOS_DIR.resolve()))}
+    return {"renamed_to": str(dest.relative_to(download_dir(VIDEOS_DIR).resolve()))}
 
 
 @router.post("/delete-batch", dependencies=CAN_MANAGE)

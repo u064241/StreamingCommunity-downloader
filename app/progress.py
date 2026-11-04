@@ -149,6 +149,16 @@ class WebProgressBar:
         # serialise the download behind the slowest browser watching it.
         self._emit(msg)
 
+    def emit_conversion(self, seconds, duration, encoder, elapsed):
+        fraction = min(1.0, seconds / duration) if duration > 0 else 0.0
+        eta = (duration-seconds) * elapsed/seconds if seconds > 0 and duration > seconds else None
+        self._emit({"type": "progress", "phase": "converting", "encoder": encoder,
+                    "current": int(seconds*1000), "total": int(duration*1000),
+                    "pct": round(fraction*100, 1), "speed": 0, "bytes_speed": 0,
+                    "eta": round(eta) if eta is not None else None,
+                    "bytes_done": self.prior_bytes, "bytes_total": None,
+                    "bytes_total_estimated": False})
+
     def emit_status(self, phase: str):
         msg = {"type": "status", "phase": phase}
         asyncio.run_coroutine_threadsafe(self._queue.put(msg), self._loop)

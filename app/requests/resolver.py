@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable
 
-from app.config import DATA_FILE, VIDEOS_DIR
+from app.config import download_dir, DATA_FILE, VIDEOS_DIR
 from app.core import animeunity, container, naming, paths, probe
 from app.requests import models
 
@@ -79,7 +79,7 @@ def library_dir(media_type: str) -> str:
     for library in _read_data().get("libraries", []):
         if library.get("type") == LIBRARY_TYPES.get(media_type):
             return library["path"]
-    return str(VIDEOS_DIR)
+    return str(download_dir(VIDEOS_DIR))
 
 
 def destination_path(request: models.Request, templates: dict | None = None) -> str:
