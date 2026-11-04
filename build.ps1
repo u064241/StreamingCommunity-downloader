@@ -2,7 +2,8 @@
 param(
     [switch]$SkipInnoSetup,
     [switch]$Release,
-    [switch]$CleanReleaseArtifacts
+    [switch]$CleanReleaseArtifacts,
+    [switch]$PublishRelease
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +15,7 @@ $Version = $null
 $versionSource = Get-Content -LiteralPath (Join-Path $ProjectRoot 'app\__init__.py') -Raw
 if ($versionSource -match '(?m)^__version__\s*=\s*"([^"]+)"') { $Version = $Matches[1] }
 if (-not $Version) { throw 'Versione mancante in app\__init__.py.' }
+if ($PublishRelease -and -not $Release) { throw '-PublishRelease richiede anche -Release.' }
 $OldBytecodeSetting = $env:PYTHONDONTWRITEBYTECODE
 
 function Resolve-Python {
@@ -388,6 +390,40 @@ end;
         if ($CleanReleaseArtifacts -and $outputPath -ne $exePath) {
             Remove-Item -LiteralPath $exePath, $helperExePath -Force
             Write-Host 'Artefatti intermedi rimossi: EXE principale e helper separato.' -ForegroundColor DarkGray
+        }
+
+        if ($PublishRelease) {
+            $gh = Get-Command gh.exe -ErrorAction SilentlyContinue
+            if (-not $gh) { throw 'GitHub CLI (gh.exe) non trovato. Installalo e autenticalo prima di usare -PublishRelease.' }
+            $originUrl = (& git remote get-url origin 2>$null).Trim()
+            if ($originUrl -notmatch '(?i)github\.com[/:]u064241/StreamingCommunity-downloader(?:\.git)?$') {
+                throw "origin non punta al fork u064241: $originUrl"
+            }
+            $token = $env:SC_GITHUB_TOKEN
+            $oldGhToken = $env:GH_TOKEN
+            if ($token) { $env:GH_TOKEN = $token }
+            try {
+                & $gh.Source auth status --hostname github.com
+                if ($LASTEXITCODE -ne 0) { throw 'Autenticazione GitHub non disponibile. Configura SC_GITHUB_TOKEN o gh auth login.' }
+                $releaseFiles = @(
+                    (Join-Path $DistDir 'StreamingCommunityDownloader-Setup.exe'),
+                    (Join-Path $DistDir "$AppName-$Version-Portable.zip"),
+                    (Join-Path $DistDir 'update-manifest.json'),
+                    (Join-Path $DistDir 'SHA256SUMS.txt')
+                )
+                foreach ($releaseFile in $releaseFiles) {
+                    if (-not (Test-Path -LiteralPath $releaseFile -PathType Leaf)) {
+                        throw "Artefatto release mancante: $releaseFile"
+                    }
+                }
+                $tag = "v$Version"
+                & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target HEAD --title "StreamingCommunity Downloader $Version" --generate-notes --latest
+                if ($LASTEXITCODE -ne 0) { throw "Pubblicazione GitHub fallita per $tag." }
+                Write-Host "Release GitHub pubblicata: $tag" -ForegroundColor Green
+            } finally {
+                if ($null -eq $oldGhToken) { Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue }
+                else { $env:GH_TOKEN = $oldGhToken }
+            }
         }
     }
     Write-Host "Artefatto: $outputPath" -ForegroundColor Green
