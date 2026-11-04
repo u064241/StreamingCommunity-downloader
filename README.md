@@ -139,7 +139,6 @@
 - Request queue with approval, preserving the audio and subtitle tracks the requester chose
 - Request status on the search result cards, and an in-app notification bell
 - MCP server for AI agents (Claude Code, Cursor, …): search, download, follow series and work the request queue
-- Docker ready
 - Windows installer with an Install/Portable wizard
 - Portable ZIP distribution with a dedicated updater helper
 - Update badge, release notes and manual update check from the panel
@@ -186,70 +185,6 @@ and run:
 The command publishes a `v<version>` release and uploads the installer, portable ZIP, manifest and
 checksums. It does not overwrite the upstream repository.
 
-### Docker (recommended)
-
-```bash
-curl -O https://raw.githubusercontent.com/EdoardoFiore/StreamingCommunity-downloader/main/docker-compose.template.yml
-# Edit the volume paths — create the config one — then:
-docker compose -f docker-compose.template.yml up -d
-```
-
-The panel is available at `http://localhost:8000`. Set the source domain in **Impostazioni** on first
-use: it is not shipped in the image, because it rotates.
-
-The image is published to GitHub Container Registry on every push to `main`:
-
-```
-ghcr.io/edoardofiore/streamingcommunity-downloader:latest
-```
-
-### Running as your own user
-
-By default the container runs as root, so the files it downloads belong to root. To have them
-belong to you instead, uncomment `user:` in the compose file with your uid and gid (`id -u`,
-`id -g`):
-
-```yaml
-    user: "1000:1000"
-```
-
-That user has to be able to write the library and the config folder on the host. If the panel ran
-as root before, hand them over once:
-
-```bash
-sudo chown -R 1000:1000 /srv/scpanel/config   # and the library, if root wrote files there
-```
-
-If it still cannot write its config or its temp folder, the panel does not start, and the log names
-the uid and every path it is missing. A library it cannot write is only a warning — it may be a
-network mount that comes up later — but downloads into it will fail.
-
-### Trying a branch before it is released
-
-The release image, `latest` included, is published only by a `v*` tag, so following it means getting
-releases and nothing else. A push to `main` runs the tests and publishes nothing.
-
-Every push to a branch other than `main` publishes to a **separate** package, so a work-in-progress
-build can never be pulled by a deployment pointing at the release image:
-
-```
-ghcr.io/edoardofiore/streamingcommunity-downloader-dev:dev          # the latest branch build
-ghcr.io/edoardofiore/streamingcommunity-downloader-dev:my-branch    # that branch only
-ghcr.io/edoardofiore/streamingcommunity-downloader-dev:sha-abc1234  # one exact commit
-```
-
-Tests have to pass first: a red `pytest -q` publishes nothing.
-
-```bash
-curl -O https://raw.githubusercontent.com/EdoardoFiore/StreamingCommunity-downloader/main/docker-compose.dev.template.yml
-# Point panel_config_dev at a NEW directory, then:
-docker compose -f docker-compose.dev.template.yml up -d
-```
-
-It listens on `http://localhost:8001` so it can run alongside the release panel. Give it its own
-config directory: **database migrations only run forwards**, so pointing a dev image at the
-production config volume upgrades the real database with no way back.
-
 ### From source
 
 ```bash
@@ -263,28 +198,6 @@ pytest -q
 ```
 
 **Prerequisites:** Python ≥ 3.11, FFmpeg.
-
-### Upgrading from v1
-
-v1 is the panel before the Jellyfin login existed. **Pulling the new image changes nothing by
-default**: a panel that was running without a login keeps running without one. You will see the
-redesigned interface, and you have to set the source domain once (see above).
-
-To turn the login on, copy the `/app/config` volume and the `DB_FILE` / `DATA_FILE` /
-`SCHEDULE_FILE` variables from `docker-compose.template.yml`, then connect Jellyfin from
-**Impostazioni → Accesso e utenti**. That volume is not optional: users, sessions and requests live
-in `panel.db`, which without it sits inside the container and is lost on every pull — including the
-answer to the setup question, which would then be asked again on every restart.
-
-To stay on v1, pin the tag instead of following `latest`:
-
-```yaml
-image: ghcr.io/edoardofiore/streamingcommunity-downloader:1.0.0
-```
-
-If you were running the `-jellyfin` image from the development branch, change the `image:` line to
-the main one above — that package is frozen and no longer built. Nothing else changes: the variables
-and the `/app/config` volume are the same, so `panel.db` and your users carry over as they are.
 
 ---
 
@@ -401,7 +314,7 @@ failed and why.
 | `DB_FILE` | `panel.db` | users, sessions, requests — **put this on a persistent volume** |
 | `DATA_FILE` | `data.json` | source domain, libraries, performance settings |
 | `SCHEDULE_FILE` | `schedule.json` | scheduled downloads |
-| `TMP_DIR` | `tmp` | HLS segments while a job runs, cleaned up afterwards; writable by any uid in the image |
+| `TMP_DIR` | `tmp` | HLS segments while a job runs, cleaned up afterwards |
 | `FFMPEG_PATH` | — | full path to `ffmpeg`, when it is not on `PATH` |
 | `FFPROBE_PATH` | — | full path to `ffprobe`; see the note below |
 | `DOMAIN_SOURCE_URL` | a public page | where replacement domains are read from |
@@ -412,13 +325,11 @@ failed and why.
 
 The source domain and the Jellyfin library paths are configurable from **Impostazioni** in the UI.
 
-**FFmpeg and ffprobe.** `ffmpeg` is required; the Docker image installs it. Without one on `PATH`
-the panel falls back to the static binary bundled with `imageio-ffmpeg`, which is what makes it work
-on Windows. `ffprobe` is optional but recommended: it is what lets the panel read which audio and
-subtitle tracks a file in the library already carries, so a request for a track that is missing is
-not mistaken for one that is already satisfied. Debian's `ffmpeg` package ships both, so the image
-has it; where it is absent the panel treats an existing file as satisfying the request and says so
-in the log.
+**FFmpeg and ffprobe.** `ffmpeg` is required. On Windows the release includes a conservative
+fallback through `imageio-ffmpeg`, selected for compatibility with older drivers. Users with a
+newer GPU can install a newer FFmpeg separately and set `FFMPEG_PATH` (or put it first on `PATH`);
+the application will use that executable instead. `ffprobe` is optional but recommended because it
+lets the panel inspect the audio and subtitle tracks already present in a file.
 
 `panel.db` holds the Jellyfin service API key: keep it out of any web-served directory and off
 world-readable storage.
@@ -526,55 +437,6 @@ settings, and opens the release notes of every version you are behind. The check
 **Impostazioni → Aggiornamenti** shows the last check, checks on demand and turns the periodic check
 off. It is the one call the panel makes that downloading does not need. It sends GitHub your address
 and the panel's version, as any request to it would, and needs no token.
-
-### Updating from the panel (optional)
-
-By default the dialog shows the commands to run, `docker compose pull` and `docker compose up -d`.
-For an **Aggiorna ora** button instead, add the `updater` service to your compose file: an existing
-deployment has to edit it, because a running container cannot give itself a new service. The three
-commented blocks are in [`docker-compose.template.yml`](docker-compose.template.yml):
-
-```yaml
-services:
-  web:
-    volumes:
-      - updater_socket:/run/scpanel-updater:ro
-  updater:
-    image: ghcr.io/edoardofiore/streamingcommunity-downloader-updater:latest
-    network_mode: none
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${PWD}:${PWD}:ro
-      - updater_socket:/run/scpanel-updater
-    restart: unless-stopped
-volumes:
-  updater_socket:
-```
-
-Run `docker compose up -d` once, **from the folder holding the file**.
-
-> **This service mounts the Docker socket, which is root on the host.** It has no network and does
-> one thing: pull the image your file names for `web`, and recreate that service. The panel never
-> touches the socket; it talks to the service over a Unix socket in the shared volume, with no port
-> and no parameters. On a panel running without login, every visitor can press the button, though
-> only when a new release is out and no download is running.
-
-What to expect:
-
-- **Downloads first.** The update is refused while a download is running, queued or paused, because
-  restarting would lose them. Scheduled downloads survive.
-- **A copy of the database** is saved beside it as `panel.db.pre-update`, overwritten each time.
-  Migrations only go forward: going back to an older image needs this file.
-- **No automatic rollback.** If the new version does not start, the dialog says so after a while and
-  `docker compose logs web` has the reason.
-- **A pinned tag stays pinned.** With `:2.6.0` in the file the pull changes nothing and the dialog
-  says so. The same happens for a few minutes after a release, while its image is being built.
-- **It updates the panel, not itself.** Update the `updater` service with the usual commands.
-- **One extra restart is possible.** When the host's Compose is a different version from the
-  service's, the first manual `docker compose up -d` after an update can recreate `web` once, on the
-  same image. Run it when no download is active.
-- **Not for every setup.** Stacks with no folder on the host (Portainer, for one) cannot use this
-  service, and neither can a file relying on variables exported in your shell instead of `.env`.
 
 ---
 
