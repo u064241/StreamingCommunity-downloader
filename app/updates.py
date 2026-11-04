@@ -64,6 +64,15 @@ def check(*, force: bool = False) -> dict[str, Any]:
                     url=release.get("html_url"),
                     prerelease=bool(release.get("prerelease")),
                     draft=bool(release.get("draft")),
+                    assets=[
+                        {
+                            "name": item.get("name"),
+                            "size": item.get("size"),
+                            "url": item.get("browser_download_url"),
+                        }
+                        for item in release.get("assets", [])
+                        if item.get("name") and item.get("browser_download_url")
+                    ],
                 )
         except (requests.RequestException, ValueError, TypeError) as exc:
             result = _result(status="unavailable", error=str(exc))
