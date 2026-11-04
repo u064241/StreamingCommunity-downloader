@@ -8,6 +8,15 @@
   file manager.
 </p>
 
+<p align="center">
+  <b>u064241 fork</b> — Windows installer, portable mode, verified releases and in-panel update checks.
+</p>
+
+> This repository is a customized fork of
+> [EdoardoFiore/StreamingCommunity-downloader](https://github.com/EdoardoFiore/StreamingCommunity-downloader).
+> Releases for this variant are published from
+> [u064241/StreamingCommunity-downloader](https://github.com/u064241/StreamingCommunity-downloader).
+
 ---
 
 ## Screenshots
@@ -131,10 +140,51 @@
 - Request status on the search result cards, and an in-app notification bell
 - MCP server for AI agents (Claude Code, Cursor, …): search, download, follow series and work the request queue
 - Docker ready
+- Windows installer with an Install/Portable wizard
+- Portable ZIP distribution with a dedicated updater helper
+- Update badge, release notes and manual update check from the panel
+- Portable updates with manifest validation, SHA-256 verification, backup and rollback
+- Release artifacts for this fork are published independently from the upstream project
 
 ---
 
 ## Quick Start
+
+### Windows installer and portable release
+
+Download the latest release from the
+[u064241 releases page](https://github.com/u064241/StreamingCommunity-downloader/releases/latest).
+
+- `StreamingCommunityDownloader-Setup.exe` opens a wizard where you can choose **Install** or
+  **Portable only**.
+- `StreamingCommunityDownloader-<version>-Portable.zip` is the ready-to-extract portable package.
+- The installed version receives update notices and release notes in the panel. The portable
+  version can download and verify a newer portable package, keep the previous EXE as a backup,
+  and roll back if replacement verification fails.
+- Updates are read only from this fork's releases. The upstream repository is used by the
+  maintainer for reviewing changes, not as an update source for end users.
+
+The release also contains `update-manifest.json` and `SHA256SUMS.txt`. They are used to validate
+the package before a portable update. The installer update remains user-confirmed and guided by
+Inno Setup.
+
+### Building a Windows release from source
+
+On the production Windows machine, after updating `app/__init__.py` with the new version:
+
+```powershell
+.\build.ps1 -Release -CleanReleaseArtifacts
+```
+
+To publish the four final artifacts to the fork, authenticate GitHub CLI first with `gh auth login`
+and run:
+
+```powershell
+.\build.ps1 -Release -CleanReleaseArtifacts -PublishRelease
+```
+
+The command publishes a `v<version>` release and uploads the installer, portable ZIP, manifest and
+checksums. It does not overwrite the upstream repository.
 
 ### Docker (recommended)
 
@@ -200,7 +250,7 @@ production config volume upgrades the real database with no way back.
 ### From source
 
 ```bash
-git clone https://github.com/EdoardoFiore/StreamingCommunity-downloader.git
+git clone https://github.com/u064241/StreamingCommunity-downloader.git
 cd StreamingCommunity-downloader
 pip install -r requirements.txt
 python main.py
