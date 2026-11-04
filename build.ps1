@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$SkipInnoSetup,
-    [switch]$Release
+    [switch]$Release,
+    [switch]$CleanReleaseArtifacts
 )
 
 $ErrorActionPreference = 'Stop'
@@ -384,6 +385,10 @@ end;
         $checksums = $assetRecords | ForEach-Object { "$($_.sha256)  $($_.name)" }
         $checksums | Set-Content -LiteralPath (Join-Path $DistDir 'SHA256SUMS.txt') -Encoding ascii
         Write-Host "Release manifest: $manifestPath" -ForegroundColor Green
+        if ($CleanReleaseArtifacts -and $outputPath -ne $exePath) {
+            Remove-Item -LiteralPath $exePath, $helperExePath -Force
+            Write-Host 'Artefatti intermedi rimossi: EXE principale e helper separato.' -ForegroundColor DarkGray
+        }
     }
     Write-Host "Artefatto: $outputPath" -ForegroundColor Green
 } finally {
