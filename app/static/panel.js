@@ -1,6 +1,8 @@
 'use strict';
 
 let _updateStatus = null;
+let _portableStatus = null;
+let _portableBusy = false;
 
 async function checkForkUpdate(force = false) {
   try {
@@ -17,12 +19,60 @@ function showForkUpdate() {
   document.getElementById('update-version').textContent =
     `Versione ${_updateStatus.version} disponibile (attuale ${_updateStatus.current_version})`;
   document.getElementById('update-notes').textContent = _updateStatus.notes || 'Nessuna nota pubblicata.';
-  document.getElementById('update-release-link').href = _updateStatus.url || '#';
-  const modal = document.getElementById('updates-modal');
-  if (modal && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).show();
+  const url = _updateStatus.url || '';
+  document.getElementById('update-release-link').href =
+    url.startsWith('https://github.com/u064241/StreamingCommunity-downloader/releases/') ? url : '#';
+  showModal('updates-modal');
+  loadPortableUpdate();
 }
 
-registerActions({ 'updates:show': () => showForkUpdate() });
+async function loadPortableUpdate() {
+  const button = document.getElementById('portable-update-button');
+  const message = document.getElementById('portable-update-message');
+  button.hidden = true;
+  if (!can('MANAGE_SETTINGS')) return;
+  try {
+    _portableStatus = await api.get('/api/updates/portable');
+    button.hidden = !_portableStatus.available;
+    message.textContent = _portableStatus.available
+      ? 'Aggiorna il programma portable conservando il vecchio EXE come backup.'
+      : 'Per questa distribuzione scarica la release ed esegui l’aggiornamento guidato.';
+  } catch (_) { message.textContent = 'Aggiornamento diretto disponibile solo dal pannello locale portable.'; }
+}
+
+async function installPortableUpdate() {
+  if (_portableBusy || !_portableStatus?.available) return;
+  if (!await scConfirm('Scaricare e verificare la nuova versione portable?')) return;
+  _portableBusy = true;
+  const button = document.getElementById('portable-update-button');
+  const message = document.getElementById('portable-update-message');
+  button.disabled = true;
+  async function post(path, body) {
+    // api.js has no custom-header option; keep the global fetch CSRF wrapper.
+    const response = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json',
+        'X-Portable-Update-Token': _portableStatus.token }, body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Aggiornamento fallito');
+    return data;
+  }
+  try {
+    message.textContent = 'Download e verifica in corso…';
+    const prepared = await post('/api/updates/portable/prepare', {});
+    if (!await scConfirm(`Versione ${prepared.version} verificata. Applicarla? Dovrai chiudere tutte le schede del pannello entro 5 minuti e riaprire l’app dopo la sostituzione.`)) {
+      message.textContent = 'Aggiornamento annullato. Nessun file dell’app sostituito.';
+      return;
+    }
+    const result = await post('/api/updates/portable/apply', { token: prepared.token, confirmed: true });
+    message.textContent = result.message;
+    button.hidden = true;
+    _portableStatus.available = false;
+  } catch (error) { message.textContent = error.message || 'Aggiornamento non riuscito'; }
+  finally { _portableBusy = false; button.disabled = false; }
+}
+
+registerActions({ 'updates:show': () => showForkUpdate(), 'updates:portable': installPortableUpdate });
 
 // The shell's live parts: the in-app notification bell and the sidebar's
 // pending-requests badge. Both run on every page, which is why they are not

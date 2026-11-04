@@ -165,8 +165,12 @@ if getattr(sys, "frozen", False):
     $outputPath = $exePath
 
     $portablePath = Join-Path $DistDir "$AppName-$Version-Portable.zip"
+    $portableMarker = Join-Path $WorkDir 'sc-distribution.json'
+    $installedMarker = Join-Path $WorkDir 'installed-distribution.json'
+    [IO.File]::WriteAllText($portableMarker, '{"schema":1,"repository":"u064241/StreamingCommunity-downloader","mode":"portable"}', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($installedMarker, '{"schema":1,"repository":"u064241/StreamingCommunity-downloader","mode":"installed"}', [Text.UTF8Encoding]::new($false))
     if (Test-Path -LiteralPath $portablePath) { Remove-Item -LiteralPath $portablePath -Force }
-    Compress-Archive -LiteralPath @($exePath, $helperExePath) -DestinationPath $portablePath -CompressionLevel Optimal
+    Compress-Archive -LiteralPath @($exePath, $helperExePath, $portableMarker) -DestinationPath $portablePath -CompressionLevel Optimal
 
     if (-not $SkipInnoSetup) {
         $iscc = Find-InnoCompiler
@@ -225,6 +229,8 @@ english.CloseBeforeUninstall=StreamingCommunity Downloader is still running. Clo
 [Files]
 Source: "$exePath"; DestDir: "{app}"; Flags: ignoreversion
 Source: "$helperExePath"; DestDir: "{app}"; Flags: ignoreversion
+Source: "$portableMarker"; DestDir: "{app}"; DestName: "sc-distribution.json"; Flags: ignoreversion; Check: IsPortable
+Source: "$installedMarker"; DestDir: "{app}"; DestName: "sc-distribution.json"; Flags: ignoreversion; Check: not IsPortable
 [Tasks]
 Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 [Icons]

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import os
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 import requests
 
@@ -20,8 +21,31 @@ class UpdateDownloadError(RuntimeError):
 
 def _safe_url(url: str) -> None:
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HOSTS:
+    if (parsed.scheme != "https" or parsed.hostname not in ALLOWED_HOSTS
+            or parsed.username or parsed.password or parsed.port not in (None, 443)):
         raise UpdateDownloadError("URL asset non autorizzato")
+
+
+@contextmanager
+def github_response(url):
+    """Validate each redirect before making the next request."""
+    for _ in range(6):
+        _safe_url(url)
+        response = requests.get(url, stream=True, timeout=(5, 30), allow_redirects=False)
+        if response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get("Location")
+            response.close()
+            if not location:
+                raise UpdateDownloadError("Redirect senza destinazione")
+            url = urljoin(url, location)
+            continue
+        try:
+            response.raise_for_status()
+            yield response
+        finally:
+            response.close()
+        return
+    raise UpdateDownloadError("Troppi redirect")
 
 
 def download_verified(url: str, expected_sha256: str, destination_dir: str | Path) -> Path:
@@ -38,9 +62,7 @@ def download_verified(url: str, expected_sha256: str, destination_dir: str | Pat
     total = 0
     try:
         with os.fdopen(fd, "wb") as output:
-            with requests.get(url, stream=True, timeout=(5, 30), allow_redirects=True) as response:
-                _safe_url(response.url)
-                response.raise_for_status()
+            with github_response(url) as response:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
                     if not chunk:
                         continue

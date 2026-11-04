@@ -136,7 +136,8 @@ def _stage(source: Path, exe: Path, expected: str) -> Path:
 
 def replace_portable(*, pid: int, exe: str | Path, asset: str | Path,
                      backup: str | Path, sha256: str, timeout: float = 60,
-                     current_sha256: str | None = None) -> Path:
+                     current_sha256: str | None = None,
+                     ready_file: str | Path | None = None) -> Path:
     """Wait for PID, back up EXE without overwriting, atomically replace it.
 
     Returns retained backup path. The backup directory must already exist.
@@ -163,6 +164,10 @@ def replace_portable(*, pid: int, exe: str | Path, asset: str | Path,
             if current is not None and original != current:
                 raise PortableUpdateError("Current EXE SHA256 mismatch")
             staged = _stage(source, target, expected)
+            if ready_file is not None:
+                ready = _path(ready_file, exists=False)
+                with ready.open("x", encoding="ascii") as stream:
+                    stream.write("ready")
             wait(timeout)
             if _digest(target) != original:
                 raise PortableUpdateError("Target changed while waiting")
@@ -214,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--asset")
+    parser.add_argument("--ready-file")
     parser.add_argument("--backup-sha256")
     parser.add_argument("--failed-backup")
     args = parser.parse_args(argv)
@@ -222,7 +228,8 @@ def main(argv: list[str] | None = None) -> int:
             if not args.asset:
                 parser.error("apply requires --asset")
             replace_portable(pid=args.pid, exe=args.exe, asset=args.asset,
-                             backup=args.backup, sha256=args.sha256, timeout=args.timeout)
+                             backup=args.backup, sha256=args.sha256, timeout=args.timeout,
+                             ready_file=args.ready_file)
         else:
             if not args.backup_sha256 or not args.failed_backup:
                 parser.error("rollback requires --backup-sha256 and --failed-backup")
