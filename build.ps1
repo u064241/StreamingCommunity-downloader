@@ -350,7 +350,7 @@ end;
 
     if ($Release) {
         $assets = @($portablePath)
-        if (Test-Path -LiteralPath $outputPath -PathType Leaf -and $outputPath -ne $exePath) {
+        if ((Test-Path -LiteralPath $outputPath -PathType Leaf) -and $outputPath -ne $exePath) {
             $assets += $outputPath
         }
         $assetRecords = foreach ($asset in $assets) {
