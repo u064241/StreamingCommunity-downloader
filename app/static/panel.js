@@ -1,5 +1,29 @@
 'use strict';
 
+let _updateStatus = null;
+
+async function checkForkUpdate(force = false) {
+  try {
+    _updateStatus = await api[force ? 'post' : 'get'](
+      force ? '/api/updates/check' : '/api/updates', force ? {} : undefined);
+    const badge = document.getElementById('update-badge');
+    if (badge) badge.style.display = _updateStatus.status === 'update_available' ? '' : 'none';
+  } catch (e) { /* update checks are best-effort */ }
+  return _updateStatus;
+}
+
+function showForkUpdate() {
+  if (!_updateStatus || _updateStatus.status !== 'update_available') return;
+  document.getElementById('update-version').textContent =
+    `Versione ${_updateStatus.version} disponibile (attuale ${_updateStatus.current_version})`;
+  document.getElementById('update-notes').textContent = _updateStatus.notes || 'Nessuna nota pubblicata.';
+  document.getElementById('update-release-link').href = _updateStatus.url || '#';
+  const modal = document.getElementById('updates-modal');
+  if (modal && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+
+registerActions({ 'updates:show': () => showForkUpdate() });
+
 // The shell's live parts: the in-app notification bell and the sidebar's
 // pending-requests badge. Both run on every page, which is why they are not
 // in any page-*.js. Relies on core.js for escapeHtml/showToast/can and on

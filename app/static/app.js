@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderSearchFilters();
   refreshNotifications();
   refreshQueueBadge();
+  checkForkUpdate();
 });
 
 function defaultPage() {
