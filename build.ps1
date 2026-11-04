@@ -156,11 +156,17 @@ if getattr(sys, "frozen", False):
 
     $exePath = Join-Path $DistDir "$AppName.exe"
     if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) { throw "Eseguibile non trovato: $exePath" }
+    $helperExePath = Join-Path $DistDir "$AppName-Updater.exe"
+    & $venvPython -m PyInstaller --noconfirm --clean --onefile --console `
+        --name "$AppName-Updater" --distpath $DistDir --workpath (Join-Path $WorkDir 'updater') `
+        --specpath $WorkDir (Join-Path $ProjectRoot 'app\portable_update.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Build helper aggiornamento fallita.' }
+    if (-not (Test-Path -LiteralPath $helperExePath -PathType Leaf)) { throw "Helper aggiornamento non trovato: $helperExePath" }
     $outputPath = $exePath
 
     $portablePath = Join-Path $DistDir "$AppName-$Version-Portable.zip"
     if (Test-Path -LiteralPath $portablePath) { Remove-Item -LiteralPath $portablePath -Force }
-    Compress-Archive -LiteralPath $exePath -DestinationPath $portablePath -CompressionLevel Optimal
+    Compress-Archive -LiteralPath @($exePath, $helperExePath) -DestinationPath $portablePath -CompressionLevel Optimal
 
     if (-not $SkipInnoSetup) {
         $iscc = Find-InnoCompiler
@@ -218,6 +224,7 @@ english.RemoveDownloads=Also permanently delete downloaded files in the applicat
 english.CloseBeforeUninstall=StreamingCommunity Downloader is still running. Close all portal tabs and wait for downloads to finish, then run the uninstaller again.
 [Files]
 Source: "$exePath"; DestDir: "{app}"; Flags: ignoreversion
+Source: "$helperExePath"; DestDir: "{app}"; Flags: ignoreversion
 [Tasks]
 Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 [Icons]
