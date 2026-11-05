@@ -201,6 +201,19 @@ tags and the correct fork remote. Release notes are taken from `releases/v<versi
 generated from commit titles. A GitHub or network error stops publication without assuming the tag
 is available. Local builds without `-PublishRelease` do not require a clean working tree.
 
+After publishing, GitHub keeps the packages of the latest two stable Windows releases. Once both
+retained releases have complete assets and matching manifest checksums, the publishing script
+removes this variant's package assets from older stable releases. Tags, source history and release
+notes remain available; older binary download links stop working. This retention rule does not
+manage local files. A failed retention check leaves the existing packages available.
+
+Preview or retry GitHub cleanup independently:
+
+```powershell
+.\scripts\github-release-retention.ps1 -WhatIf
+.\scripts\github-release-retention.ps1
+```
+
 ### From source
 
 ```bash

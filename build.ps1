@@ -500,6 +500,11 @@ end;
                 & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target $releaseBranch --title "StreamingCommunity Downloader $Version" --notes-file $notesPath --latest
                 if ($LASTEXITCODE -ne 0) { throw "Pubblicazione GitHub fallita per $tag." }
                 Write-Host "Release GitHub pubblicata: $tag" -ForegroundColor Green
+                try {
+                    & (Join-Path $ProjectRoot 'scripts\github-release-retention.ps1') -PublishedTag $tag -Confirm:$false
+                } catch {
+                    Write-Warning "Release pubblicata; pulizia allegati GitHub non completata: $($_.Exception.Message)"
+                }
             } finally {
                 if ($null -eq $oldGhToken) { Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue }
                 else { $env:GH_TOKEN = $oldGhToken }
