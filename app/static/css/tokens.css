@@ -68,8 +68,8 @@
 
       --text:          #E8ECF5;
       --text-sub:      #CCD5E4;
-      --text-muted:    #B6C2D6;
-      --text-dim:      #9DACBF;
+      --text-muted:    #D0D8E6;
+      --text-dim:      #B8C5D8;
 
       /* True black, and only ever behind video. The surfaces above are
          navy; a frame letterboxed against navy reads as a rendering
