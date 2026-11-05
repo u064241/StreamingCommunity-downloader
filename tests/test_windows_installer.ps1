@@ -33,7 +33,7 @@ if ($IsolateExistingProcesses) {
     $compiler = Join-Path $env:ProgramFiles 'Inno Setup 7\ISCC.exe'
     & $compiler /Qp $testRecipe
     if ($LASTEXITCODE -ne 0) { throw 'Isolated installer compilation failed' }
-    $SetupPath = Join-Path $fixture 'StreamingCommunityDownloader-Setup.exe'
+    $SetupPath = Join-Path $fixture 'StreamingCommunityDownloader-Setup-v2.8.4.exe'
 }
 $programs = Join-Path ([Environment]::GetFolderPath('Programs')) 'StreamingCommunity Downloader'
 $shortcutBackup = Join-Path $fixture 'shortcuts'
