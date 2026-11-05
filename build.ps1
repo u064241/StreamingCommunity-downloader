@@ -46,6 +46,11 @@ if ($PublishRelease -and -not $Release) { throw '-PublishRelease richiede anche 
 $OldBytecodeSetting = $env:PYTHONDONTWRITEBYTECODE
 
 function Assert-ReleaseReady {
+    $notesPath = Join-Path $ProjectRoot "releases\v$Version.md"
+    if (-not (Test-Path -LiteralPath $notesPath -PathType Leaf) -or
+        [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $notesPath -Raw))) {
+        throw "Note della release mancanti o vuote: $notesPath. Aggiorna anche le Features nel README prima di pubblicare."
+    }
     $changes = @(& git -C $ProjectRoot status --porcelain --untracked-files=all)
     if ($LASTEXITCODE -ne 0) { throw 'Impossibile verificare lo stato Git.' }
     if ($changes.Count -gt 0) {
@@ -491,7 +496,8 @@ end;
                     }
                 }
                 $tag = "v$Version"
-                & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target $releaseBranch --title "StreamingCommunity Downloader $Version" --generate-notes --latest
+                $notesPath = Join-Path $ProjectRoot "releases\v$Version.md"
+                & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target $releaseBranch --title "StreamingCommunity Downloader $Version" --notes-file $notesPath --latest
                 if ($LASTEXITCODE -ne 0) { throw "Pubblicazione GitHub fallita per $tag." }
                 Write-Host "Release GitHub pubblicata: $tag" -ForegroundColor Green
             } finally {

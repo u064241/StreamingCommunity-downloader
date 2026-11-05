@@ -117,6 +117,9 @@
 ## Features
 
 - Search and download films, TV series, and anime
+- StreamingCommunity homepage with **Coming soon** titles and **genre shelves**, loaded progressively
+- **Browse all** opens a paginated catalogue for a shelf or genre, with film/TV filters and linkable navigation
+- Upcoming-title badges distinguish unavailable titles from series with a new season on the way
 - **Recovers the source domain on its own** when it rotates: finds the new one, verifies it,
   and proposes it for one click
 - **Plot, genres, rating, artwork and trailers** on the title page — no API key required
@@ -169,7 +172,16 @@ Inno Setup.
 
 ### Building a Windows release from source
 
-On the production Windows machine, after updating `app/__init__.py` with the new version:
+Before each release:
+
+1. Implement and test the changes, then update the Features above and any affected instructions.
+2. Update `app/__init__.py` with a new version; published versions and tags must not be reused.
+3. Write user-facing release notes in `releases/v<version>.md`, including changes and known limitations.
+4. Commit the code, version, README and release notes together. Integrate the reviewed changes into
+   `main` to update the documentation displayed on the repository homepage; publishing a release
+   alone only pushes a release branch.
+
+For a local build, including when there are uncommitted changes:
 
 ```powershell
 .\build.ps1 -Release -CleanReleaseArtifacts
@@ -184,6 +196,10 @@ and run:
 
 The command publishes a `v<version>` release and uploads the installer, portable ZIP, manifest and
 checksums. It does not overwrite the upstream repository.
+Before compiling and again before publishing, it checks for uncommitted changes, existing release
+tags and the correct fork remote. Release notes are taken from `releases/v<version>.md` rather than
+generated from commit titles. A GitHub or network error stops publication without assuming the tag
+is available. Local builds without `-PublishRelease` do not require a clean working tree.
 
 ### From source
 
