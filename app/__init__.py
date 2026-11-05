@@ -11,4 +11,3 @@ Bump it together with the git tag that publishes the image.
 """
 
 __version__ = "2.8.7"
-
