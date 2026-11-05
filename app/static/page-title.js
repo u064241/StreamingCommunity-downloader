@@ -429,9 +429,15 @@ function _tpRenderCast() {
   const el = document.getElementById('th-pane-cast');
   const m = _tp.meta;
   if (!m?.cast?.length && !m?.directors?.length) { el.innerHTML = ''; return; }
+  const personLink = name => {
+    const query = `${name} informazioni attore`;
+    const href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    return `<a class="th-track th-person-link" href="${href}" target="_blank" rel="noopener noreferrer" ` +
+      `title="Cerca informazioni su ${escapeHtml(name)}">${escapeHtml(name)}</a>`;
+  };
   const row = (k, v) => `<div class="th-track-group">
       <div class="th-track-h">${k}</div>
-      <div class="th-track-chips">${v.map(n => `<span class="th-track">${escapeHtml(n)}</span>`).join('')}</div>
+      <div class="th-track-chips">${v.map(personLink).join('')}</div>
     </div>`;
   el.innerHTML = (m.directors?.length ? row('Regia', m.directors) : '')
                + (m.cast?.length ? row('Interpreti', m.cast) : '');

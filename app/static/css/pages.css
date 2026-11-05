@@ -1187,6 +1187,7 @@
       transition: background .15s, border-color .15s, color .15s;
     }
     .th-track:hover { border-color: var(--border-strong); color: var(--text); }
+    .th-person-link { text-decoration: none; }
     .th-track.on {
       background: var(--accent-dim); border-color: var(--accent); color: var(--accent);
     }
