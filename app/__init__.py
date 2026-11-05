@@ -10,4 +10,5 @@ has no use for it, and it would tell anyone which build to look up.
 Bump it together with the git tag that publishes the image.
 """
 
-__version__ = "2.8.7"
+__version__ = "2.8.8"
+
