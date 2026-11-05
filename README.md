@@ -203,8 +203,14 @@ To increment only the patch version and create a release-notes template:
 .\build.ps1 -BumpPatchVersion
 ```
 
-Review the generated `releases\v<version>.md`, update the Features above if needed, commit the
-changes, then build and publish the release with the command below.
+Add `-Commit` to create the version commit automatically after the template is generated:
+
+```powershell
+.\build.ps1 -BumpPatchVersion -Commit
+```
+
+Review the generated `releases\v<version>.md` and update the Features above if needed, then build
+and publish the release with the command below.
 
 To publish the four final artifacts to the fork, authenticate GitHub CLI first with `gh auth login`
 and run:

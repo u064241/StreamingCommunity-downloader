@@ -6,6 +6,7 @@
 param(
     [switch]$Help,
     [switch]$BumpPatchVersion,
+    [switch]$Commit,
     [switch]$SkipInnoSetup,
     [switch]$Release,
     [switch]$CleanReleaseArtifacts,
@@ -27,6 +28,7 @@ Uso:
                                              Compila, pulisce e pubblica sul fork GitHub
   .\build.ps1 -SkipInnoSetup               Salta la compilazione dell'installer
   .\build.ps1 -BumpPatchVersion            Incrementa la patch e crea il modello delle note
+  .\build.ps1 -BumpPatchVersion -Commit    Fa anche commit di versione e note generate
   .\build.ps1 -Help                        Mostra questo aiuto
 
 Prerequisiti:
@@ -43,6 +45,9 @@ $AppName = 'StreamingCommunityDownloader'
 
 if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup)) {
     throw '-BumpPatchVersion va usato da solo.'
+}
+if ($Commit -and -not $BumpPatchVersion) {
+    throw '-Commit richiede anche -BumpPatchVersion.'
 }
 if ($BumpPatchVersion) {
     $versionPath = Join-Path $ProjectRoot 'app\__init__.py'
@@ -66,6 +71,13 @@ if ($BumpPatchVersion) {
 
 - Verificare README e artefatti prima della pubblicazione.
 "@ | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+    }
+    if ($Commit) {
+        & git -C $ProjectRoot add -- app/__init__.py "releases/v$nextVersion.md"
+        if ($LASTEXITCODE -ne 0) { throw 'Impossibile preparare il commit della nuova versione.' }
+        & git -C $ProjectRoot commit -m "release: prepare version $nextVersion"
+        if ($LASTEXITCODE -ne 0) { throw 'Impossibile creare il commit della nuova versione.' }
+        Write-Host "Commit creato per la versione $nextVersion." -ForegroundColor Green
     }
     Write-Host "Versione aggiornata a $nextVersion." -ForegroundColor Green
     Write-Host "Completa le note in $notesPath, poi crea un commit e lancia la build release." -ForegroundColor Yellow
