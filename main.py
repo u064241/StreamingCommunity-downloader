@@ -39,6 +39,8 @@ import uvicorn
 from app.config import HOST, PORT
 
 if __name__ == "__main__":
+    from app.windows_registration import register_portable
+    register_portable()
     os.environ.setdefault("SC_PANEL_PORTAL_TOKEN", secrets.token_urlsafe(32))
     from app.main import app
 

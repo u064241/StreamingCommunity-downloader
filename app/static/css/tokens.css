@@ -67,9 +67,9 @@
       --orange-ring:   rgba(245,115,31,.30);
 
       --text:          #E8ECF5;
-      --text-sub:      #A3ADC2;
-      --text-muted:    #6B7690;
-      --text-dim:      #47506A;
+      --text-sub:      #CCD5E4;
+      --text-muted:    #B6C2D6;
+      --text-dim:      #9DACBF;
 
       /* True black, and only ever behind video. The surfaces above are
          navy; a frame letterboxed against navy reads as a rendering

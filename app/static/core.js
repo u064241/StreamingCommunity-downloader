@@ -74,7 +74,7 @@ async function initAuth() {
   document.getElementById('user-role').textContent = _roleLabel();
 
   const version = document.getElementById('app-version');
-  if (version) version.textContent = _me.version ? `v${_me.version}` : '';
+  if (version && _me.version) version.textContent = `SC Panel v${_me.version}`;
 
   // Menu entries follow the permissions. This is cosmetic only — every one of
   // these endpoints is checked server-side as well.

@@ -143,6 +143,10 @@
 - Request status on the search result cards, and an in-app notification bell
 - MCP server for AI agents (Claude Code, Cursor, …): search, download, follow series and work the request queue
 - Windows installer with an Install/Portable wizard
+- Portable installations can be removed from Windows Installed apps; extracted ZIPs register on first launch
+- Prominent panel version badges and highlighted **Browse all** buttons on catalogue shelves
+- Higher-contrast secondary text and placeholders throughout the dark interface
+- Floating up/down arrows for quick navigation through long card lists
 - Portable ZIP distribution with a dedicated updater helper
 - Update badge, release notes and manual update check from the panel
 - Portable updates with manifest validation, SHA-256 verification, backup and rollback
@@ -160,6 +164,11 @@ Download the latest release from the
 - `StreamingCommunityDownloader-Setup.exe` opens a wizard where you can choose **Install** or
   **Portable only**.
 - `StreamingCommunityDownloader-<version>-Portable.zip` is the ready-to-extract portable package.
+- Portable mode selected in Setup registers a separate **StreamingCommunity Downloader (Portable)**
+  entry in Windows Installed apps. It does not replace the installed edition's uninstall entry.
+- An extracted portable ZIP registers itself on first launch for the current user, without admin
+  rights. Its uninstaller preserves settings, databases and downloads. If the folder is moved,
+  uninstall the old copy before moving it and launch the new copy at its final location.
 - The installed version receives update notices and release notes in the panel. The portable
   version can download and verify a newer portable package, keep the previous EXE as a backup,
   and roll back if replacement verification fails.

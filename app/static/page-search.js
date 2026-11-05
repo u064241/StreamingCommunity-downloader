@@ -440,7 +440,7 @@ function renderShelves() {
       '</div>';
     if (currentSource === 'streamingcommunity' && ['trending', 'latest', 'top10'].includes(shelf.key)) {
       section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
-        `<button class="source-btn" data-action="catalog:open" data-section="${shelf.key}">Sfoglia tutti</button>`);
+        `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${shelf.key}">Sfoglia tutti <i class="ti ti-arrow-right" aria-hidden="true"></i></button>`);
     }
     renderResultCards(shelf.items, section.querySelector('.shelf-rail'),
                       _searchResults.length, 'shelf-item');
@@ -680,8 +680,8 @@ async function loadHomeSections() {
     const section = document.createElement('section');
     section.className = 'shelf';
     section.innerHTML = `<div class="shelf-head"><div class="shelf-title">${escapeHtml(data.title)}</div>` +
-      `<button class="source-btn" data-action="catalog:open" data-section="${spec.section}"` +
-      ` data-genre="${spec.genre_id || ''}">Sfoglia tutti</button></div>` +
+      `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${spec.section}"` +
+      ` data-genre="${spec.genre_id || ''}">Sfoglia tutti <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div>` +
       '<div class="shelf-rail-wrap"><button class="shelf-arrow shelf-arrow-prev" hidden aria-label="Titoli precedenti">‹</button>' +
       '<div class="shelf-rail"></div><button class="shelf-arrow shelf-arrow-next" hidden aria-label="Titoli successivi">›</button></div>';
     renderResultCards(data.items.slice(0, 30), section.querySelector('.shelf-rail'), _searchResults.length, 'shelf-item');

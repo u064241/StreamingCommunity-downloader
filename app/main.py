@@ -169,6 +169,7 @@ app.add_middleware(AuthMiddleware)
 app.mount("/static", VersionedStaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["asset"] = asset
+templates.env.globals["app_version"] = __version__
 templates.env.globals["portal_token"] = os.environ.get("SC_PANEL_PORTAL_TOKEN", "")
 
 app.include_router(auth_router.router)

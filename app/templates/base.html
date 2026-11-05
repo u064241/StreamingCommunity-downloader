@@ -35,12 +35,22 @@
 
 {% include 'partials/_modals.html' %}
 
+<nav id="page-scroll" class="page-scroll" aria-label="Scorrimento rapido pagina" hidden>
+  <button type="button" id="page-scroll-up" title="Torna in alto" aria-label="Torna in alto">
+    <i class="ti ti-arrow-up" aria-hidden="true"></i>
+  </button>
+  <button type="button" id="page-scroll-down" title="Vai in fondo" aria-label="Vai in fondo">
+    <i class="ti ti-arrow-down" aria-hidden="true"></i>
+  </button>
+</nav>
+
 <script src="{{ asset('vendor/tabler-1.4.0/tabler.min.js') }}"></script>
 <!-- Shared primitives, and the fetch wrapper that adds the CSRF token.
      Must load before any page script: reversing this strips CSRF from
      every call, silently. -->
 <script src="{{ asset('core.js') }}"></script>
 <script src="{{ asset('api.js') }}"></script>
+<script src="{{ asset('scroll-navigation.js') }}"></script>
 {% block scripts %}{% endblock %}
 <script src="{{ asset('portal-lifecycle.js') }}" data-token="{{ portal_token }}"></script>
 </body>

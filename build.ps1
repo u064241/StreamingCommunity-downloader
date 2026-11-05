@@ -209,6 +209,7 @@ if getattr(sys, "frozen", False):
         '--workpath', (Join-Path $WorkDir 'pyinstaller'),
         '--specpath', $WorkDir,
         '--runtime-hook', $runtimeHook,
+        '--add-data', "$(Join-Path $ProjectRoot 'scripts\Register-Portable.ps1');portable",
         '--add-data', "$(Join-Path $ProjectRoot 'app\templates');app/templates",
         '--add-data', "$(Join-Path $ProjectRoot 'app\static');app/static",
         '--collect-all', 'app',
@@ -303,6 +304,16 @@ Source: "$exePath"; DestDir: "{app}"; Flags: ignoreversion
 Source: "$helperExePath"; DestDir: "{app}"; Flags: ignoreversion
 Source: "$portableMarker"; DestDir: "{app}"; DestName: "sc-distribution.json"; Flags: ignoreversion; Check: IsPortable
 Source: "$installedMarker"; DestDir: "{app}"; DestName: "sc-distribution.json"; Flags: ignoreversion; Check: not IsPortable
+[Registry]
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "DisplayName"; ValueData: "StreamingCommunity Downloader (Portable)"; Flags: uninsdeletekey; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "{#MyAppVersion}"; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "Publisher"; ValueData: "u064241"; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "DisplayIcon"; ValueData: "{app}\$AppName.exe"; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "UninstallString"; ValueData: """{uninstallexe}"""; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "QuietUninstallString"; ValueData: """{uninstallexe}"" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: dword; ValueName: "NoModify"; ValueData: "1"; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: dword; ValueName: "NoRepair"; ValueData: "1"; Check: IsPortable
 [Tasks]
 Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 [Icons]
@@ -336,6 +347,12 @@ var
   LastPortable: Boolean;
   RemoveTemporaryData: Boolean;
   RemoveLocalDownloads: Boolean;
+
+function PortableUninstallKey(Param: String): String;
+begin
+  Result := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\StreamingCommunityDownloader-Portable-' +
+    Lowercase(GetSHA256OfUnicodeString(Lowercase(RemoveBackslashUnlessRoot(ExpandConstant('{app}')))));
+end;
 
 function ShouldRemoveTemporaryData: Boolean;
 begin

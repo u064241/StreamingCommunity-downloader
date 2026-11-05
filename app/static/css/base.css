@@ -14,6 +14,21 @@
        near-white it was actually showing as. */
     :root { color-scheme: dark; }
 
+    :root, [data-bs-theme="dark"] {
+      --tblr-secondary-color: var(--text-muted);
+      --tblr-tertiary-color: var(--text-dim);
+      --bs-secondary-color: var(--text-muted);
+      --bs-tertiary-color: var(--text-dim);
+    }
+    .text-muted, .text-secondary, .text-body-secondary {
+      color: var(--text-muted) !important;
+    }
+    .text-body-tertiary { color: var(--text-dim) !important; }
+    input::placeholder, textarea::placeholder {
+      color: var(--text-muted) !important;
+      opacity: 1;
+    }
+
     html { scroll-behavior: smooth; }
 
     body, body.antialiased {

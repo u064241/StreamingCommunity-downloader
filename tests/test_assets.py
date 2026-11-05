@@ -81,6 +81,27 @@ def test_me_reports_the_version(client, admin_credentials):
     assert client.get("/api/auth/me").json()["version"] == __version__
 
 
+def test_panel_version_is_visible_before_javascript_loads(client):
+    from tests.conftest import enable_open_mode
+    enable_open_mode()
+    body = client.get("/").text
+    assert body.count(f'SC Panel v{__version__}') == 2
+    assert 'class="panel-version"' in body
+
+
+def test_secondary_text_has_readable_contrast_on_dark_surfaces():
+    import re
+    colors = dict(re.findall(r'(--[\w-]+):\s*(#[0-9A-Fa-f]{6})', _read('static', 'css', 'tokens.css')))
+    def luminance(color):
+        channels = [int(color[i:i+2], 16) / 255 for i in (1, 3, 5)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return sum(value * weight for value, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+    for text in ('--text-sub', '--text-muted', '--text-dim'):
+        for background in ('--bg-base', '--bg-surface', '--bg-raised', '--bg-hover', '--bg-input'):
+            ratio = (luminance(colors[text]) + 0.05) / (luminance(colors[background]) + 0.05)
+            assert ratio >= 4.5, (text, background, ratio)
+
+
 def test_public_status_does_not_leak_the_version(client):
     """An unauthenticated visitor has no use for it."""
     assert "version" not in client.get("/api/auth/status").json()
