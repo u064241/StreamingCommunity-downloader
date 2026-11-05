@@ -430,10 +430,9 @@ function _tpRenderCast() {
   const m = _tp.meta;
   if (!m?.cast?.length && !m?.directors?.length) { el.innerHTML = ''; return; }
   const personLink = name => {
-    const query = `${name} informazioni attore`;
-    const href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-    return `<a class="th-track th-person-link" href="${href}" target="_blank" rel="noopener noreferrer" ` +
-      `title="Cerca informazioni su ${escapeHtml(name)}">${escapeHtml(name)}</a>`;
+    return `<button type="button" class="th-track th-person-link" data-action="tp:person" ` +
+      `data-person="${escapeHtml(name)}" title="Cerca informazioni su ${escapeHtml(name)}">` +
+      `${escapeHtml(name)}</button>`;
   };
   const row = (k, v) => `<div class="th-track-group">
       <div class="th-track-h">${k}</div>
@@ -934,6 +933,7 @@ registerActions({
   'tp:batchSeason':   d => downloadWholeSeason(Number(d.season)),
   'tp:batchAnime':    () => downloadAllAnime(),
   'tp:episode':       d => (_tp.type === 'anime' ? startAnimeDownload : startEpisodeDownload)(Number(d.index)),
+  'tp:person':        d => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${d.person} informazioni attore`)}`, '_blank', 'noopener,noreferrer'),
 });
 
 
