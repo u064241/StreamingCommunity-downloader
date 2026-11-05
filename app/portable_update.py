@@ -10,7 +10,8 @@ Run from an external Python process (not the EXE being replaced)::
 
 The caller supplies a trusted SHA256 from its already verified download. ZIPs
 must first be extracted/verified by the caller: this helper accepts EXEs only.
-It never kills/restarts processes, changes data, downloads, or invokes Setup.
+It never kills processes, changes data, downloads, or invokes Setup. On a
+successful replacement it can optionally start the verified new application.
 Rollback is automatic on a failed post-replacement check, or explicit later.
 Backup and lock files intentionally survive a helper crash. Do not remove a
 stale lock until the previous helper has been confirmed stopped.
@@ -25,6 +26,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 
 
@@ -210,6 +212,14 @@ def rollback_portable(*, pid: int, exe: str | Path, backup: str | Path,
                             timeout=timeout)
 
 
+def _restart(exe: Path) -> None:
+    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+    flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.Popen([str(exe)], cwd=exe.parent, creationflags=flags,
+                     close_fds=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("apply", "rollback"))
@@ -222,14 +232,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ready-file")
     parser.add_argument("--backup-sha256")
     parser.add_argument("--failed-backup")
+    parser.add_argument("--restart", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.operation == "apply":
             if not args.asset:
                 parser.error("apply requires --asset")
-            replace_portable(pid=args.pid, exe=args.exe, asset=args.asset,
+            target = Path(args.exe).resolve()
+            replace_portable(pid=args.pid, exe=target, asset=args.asset,
                              backup=args.backup, sha256=args.sha256, timeout=args.timeout,
                              ready_file=args.ready_file)
+            if args.restart:
+                _restart(target)
         else:
             if not args.backup_sha256 or not args.failed_backup:
                 parser.error("rollback requires --backup-sha256 and --failed-backup")

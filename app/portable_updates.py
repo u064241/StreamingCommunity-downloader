@@ -1,7 +1,7 @@
 """Prepare a pinned fork release and launch the existing standalone helper.
 
 Only the application EXE is replaced. Data and helper upgrades remain manual.
-The caller closes the portal normally; this module never kills the server.
+After a verified replacement the external helper restarts the application.
 """
 import hashlib
 import json
@@ -130,7 +130,7 @@ def prepare(owner):
             raise
 
 
-def apply(owner, token):
+def apply(owner, token, app=None):
     global _prepared, _running
     with _lock:
         state = _prepared
@@ -146,6 +146,7 @@ def apply(owner, token):
             str(helper), "apply", "--pid", str(os.getpid()), "--exe", str(exe),
             "--asset", str(state["asset"]), "--backup", str(backup),
             "--sha256", state["sha256"], "--timeout", "300", "--ready-file", str(ready),
+            "--restart",
         ], cwd=exe.parent, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         for _ in range(150):
             if ready.is_file() or process.poll() is not None:
@@ -159,5 +160,12 @@ def apply(owner, token):
             raise UpdateDownloadError("Helper non pronto: applicazione lasciata in esecuzione")
         _running = (process, state)  # retain staged files until application exit
         _prepared = None
-        return {"status": "waiting_for_exit", "backup": backup.name,
-                "message": "Chiudi tutte le schede del pannello entro 5 minuti. Attendi la chiusura del processo, poi riapri l'app. Il vecchio EXE resta come backup."}
+        if app is not None:
+            def stop_after_response():
+                time.sleep(0.8)
+                server = getattr(app.state, "uvicorn_server", None)
+                if server is not None:
+                    server.should_exit = True
+            threading.Thread(target=stop_after_response, daemon=True).start()
+        return {"status": "restarting", "backup": backup.name,
+                "message": "Aggiornamento installato. L'applicazione si sta riavviando automaticamente."}

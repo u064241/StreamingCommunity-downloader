@@ -80,8 +80,8 @@ def prepare_portable(user=MANAGE):
 
 
 @router.post("/portable/apply", dependencies=[Depends(_local)])
-def apply_portable(body: ApplyUpdate, user=MANAGE):
+def apply_portable(request: Request, body: ApplyUpdate, user=MANAGE):
     if body.confirmed is not True:
         raise HTTPException(400, "Conferma esplicita richiesta")
-    return _run(portable_updates.apply, user.id, body.token)
+    return _run(portable_updates.apply, user.id, body.token, request.app)
 

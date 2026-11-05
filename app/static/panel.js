@@ -60,7 +60,7 @@ async function installPortableUpdate() {
   try {
     message.textContent = 'Download e verifica in corso…';
     const prepared = await post('/api/updates/portable/prepare', {});
-    if (!await scConfirm(`Versione ${prepared.version} verificata. Applicarla? Dovrai chiudere tutte le schede del pannello entro 5 minuti e riaprire l’app dopo la sostituzione.`)) {
+    if (!await scConfirm(`Versione ${prepared.version} verificata. Applicarla? L'applicazione verrà riavviata automaticamente dopo la sostituzione.`)) {
       message.textContent = 'Aggiornamento annullato. Nessun file dell’app sostituito.';
       return;
     }
