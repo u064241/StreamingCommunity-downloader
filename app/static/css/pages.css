@@ -102,6 +102,8 @@
     /* ═══════════════════════════════════════════════════════
        START PAGE — the source's own shelves
        ═══════════════════════════════════════════════════════ */
+    #catalog-heading[hidden] { display: none; }
+    #home-genres { flex-wrap: wrap; }
     .shelf { margin-bottom: 26px; }
     .shelf-head {
       display: flex;

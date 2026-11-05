@@ -90,6 +90,9 @@ def _store(key: tuple, value: list) -> None:
 
 def clear_cache(source: str | None = None) -> None:
     """Drop cached shelves, for one source or all of them."""
+    from app.core import catalog
+    if source in (None, "streamingcommunity"):
+        catalog.clear_cache()
     with _cache_lock:
         if source is None:
             _cache.clear()
@@ -103,6 +106,10 @@ def clear_cache(source: str | None = None) -> None:
 def _sc_shelves(domain: str) -> list[dict]:
     """The home page's own sliders: trending, recently added, today's top ten."""
     props = page.fetch_site_props(domain)
+    _store(("streamingcommunity", domain, "genres"), [
+        {"id": g["id"], "name": g["name"], "type": g.get("type", "all")}
+        for g in (props.get("genres") or []) if isinstance(g, dict)
+        and isinstance(g.get("id"), int) and g.get("name") and not g.get("hidden")])
     shelves = []
     for slider in props.get("sliders") or []:
         key = slider.get("name") or slider.get("label")

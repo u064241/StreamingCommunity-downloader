@@ -202,6 +202,8 @@ def _from_props(props: dict) -> dict:
         "poster": _source_image(props.get("images"), "poster"),
         "type": props.get("type") or None,
         "seasons_count": props.get("seasons_count"),
+        "coming_soon": bool(props.get("coming_soon")),
+        "upcoming_seasons": props.get("upcoming_seasons") or [],
         # The pills are drawn from these, not counted up to seasons_count:
         # numbering has holes (#40).
         "season_numbers": season_numbers(props) if props.get("type") == "tv" else [],

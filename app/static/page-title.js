@@ -48,6 +48,7 @@ async function loadTitlePage(route) {
     score: seed?.score ? parseFloat(seed.score).toFixed(1) : null,
     age: seed?.age || null,
     seasonsCount: seed?.seasons_count || 0,
+    comingSoon: !!seed?.coming_soon,
     // The site's own season numbers, from the metadata. A count is not enough:
     // Bake Off Italia has 1-4 and 10-14, nine seasons (#40).
     seasonNumbers: [],
@@ -105,8 +106,11 @@ async function loadTitlePage(route) {
       .then(meta => { if (token === _tpToken) { _tpApplyMeta(meta); _tpRender(); } })
       .catch(() => {});
 
-    api.get(`/api/search/languages/${route.id}`,
-            { type: route.type, slug: route.slug, version: currentVersion || '' })
+    metaReady.then(() => {
+      if (token !== _tpToken || _tp.comingSoon) return {audio: [], subtitles: []};
+      return api.get(`/api/search/languages/${route.id}`,
+            { type: route.type, slug: route.slug, version: currentVersion || '' });
+    })
       .then(info => {
         if (token !== _tpToken) return;
         const audio = dedupeLangs(info.audio);
@@ -144,6 +148,7 @@ async function loadTitlePage(route) {
 function _tpApplyMeta(meta) {
   if (!meta) return;
   _tp.meta = meta;
+  if (typeof meta.coming_soon === 'boolean') _tp.comingSoon = meta.coming_soon;
   _tp.name = _tp.name || meta.name || '';
   _tp.plot = meta.plot || _tp.plot;
   _tp.genres = meta.genres?.length ? meta.genres : _tp.genres;
@@ -169,6 +174,7 @@ function _tpSeasons() {
 // ── Episodes ──────────────────────────────────────────────────────────────────
 
 async function tpLoadSeason(n, token = _tpToken) {
+  if (_tp.comingSoon) { _tp.episodes = []; _tpRenderEpisodes(); return; }
   _tp.season = n;
   syncHash('detail');
   _tp.episodes = null;                       // renders the loading state
@@ -357,6 +363,10 @@ function _tpRenderHero() {
 }
 
 function _tpRenderCta() {
+  if (_tp.comingSoon) {
+    document.getElementById('th-cta').innerHTML = '<span class="badge bg-orange-lt">In arrivo: contenuto non ancora disponibile</span>';
+    return;
+  }
   const wants = !can('DOWNLOAD');
   // The hero takes the broadest action available - the whole series where
   // there is one - and the season bar keeps the season. Two buttons that both
@@ -513,6 +523,7 @@ function tpPlayTrailer() {
 function _tpRenderEpisodes() {
   const el = document.getElementById('th-pane-episodes');
   if (!el || _tp.type === 'movie') { if (el) el.innerHTML = ''; return; }
+  if (_tp.comingSoon) { el.textContent = 'In arrivo: episodi non ancora disponibili.'; return; }
 
   const pills = _tp.type === 'tv' && _tp.seasonsCount > 1
     ? `<div class="th-season-pills">${_tpSeasons()
@@ -597,6 +608,7 @@ function _tpRenderEpisodes() {
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 function tpPrimary() {
+  if (_tp.comingSoon) return;
   // Without DOWNLOAD a season becomes a season's worth of requests, made
   // server-side so dedup and the library check apply to each of them.
   if (!can('DOWNLOAD') && _tp.type === 'tv') { tpRequestSeason(); return; }

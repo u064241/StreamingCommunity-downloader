@@ -29,6 +29,8 @@ function kindBadge(item) {
 // ── Source selector ────────────────────────────────────────────────────────────
 
 function setSource(src) {
+  _catalogSection = null;
+  _cancelCatalogWork();
   currentSource = src;
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
@@ -59,6 +61,8 @@ function setupSearchDebounce() {
   const input = document.getElementById('search-input');
   if (!input) return;
   input.addEventListener('input', () => {
+    _catalogSection = null;
+    _cancelCatalogWork();
     clearTimeout(_searchDebounceTimer);
     const q = input.value.trim();
     if (q.length >= 3) {
@@ -129,6 +133,7 @@ function setDubOnly(on) {
 }
 
 function _rerunSearch() {
+  if (_catalogSection) { doSearch(); return; }
   const input = document.getElementById('search-input');
   if (input && input.value.trim()) doSearch();
   else showStartPage();
@@ -141,7 +146,7 @@ function _rerunSearch() {
 function _afterFilterChange() {
   syncHash();
   const input = document.getElementById('search-input');
-  if (input && input.value.trim()) doSearch();
+  if (_catalogSection || (input && input.value.trim())) doSearch();
   else applyClientFilter();
 }
 
@@ -180,7 +185,7 @@ function renderResultCards(items, container, baseIndex,
     card.className = wrapperClass;
     card.dataset.idx = String(idx);
     const posterHtml = posterUrl
-      ? `<img src="${posterUrl}" alt="" onerror="posterError(this)">`
+      ? `<img src="${escapeHtml(posterUrl)}" alt="" loading="lazy" onerror="posterError(this)">`
       : '';
     // Movie cards carry no status ribbon: a movie can be requested again
     // freely (denied/failed/cancelled never block it), so a "richiesto" chip
@@ -202,6 +207,8 @@ function renderResultCards(items, container, baseIndex,
           <div class="card-title-text" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
           <div class="card-badges">
             <span class="badge ${kind.cls}">${escapeHtml(kind.label)}</span>
+            ${item.coming_soon ? '<span class="badge bg-orange-lt">In arrivo</span>' : ''}
+            ${!item.coming_soon && item.upcoming_seasons?.length ? '<span class="badge bg-orange-lt">Nuova stagione in arrivo</span>' : ''}
             ${score?`<span class="badge bg-yellow-lt">★ ${score}</span>`:''}
             ${year?`<span style="font-size:10px;color:var(--text-muted)">${year}</span>`:''}
           </div>
@@ -212,6 +219,8 @@ function renderResultCards(items, container, baseIndex,
 }
 
 async function doSearch(options) {
+  if (_catalogSection) return loadCatalog(!!options?.append);
+  _cancelCatalogWork();
   const append = !!(options && options.append);
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
@@ -305,7 +314,7 @@ async function doSearch(options) {
 
 async function loadMoreResults() {
   if (_loadingMore || _searchExhausted) return;
-  _searchPage += 1;
+  if (!_catalogSection) _searchPage += 1;
   await doSearch({append: true});
 }
 
@@ -336,6 +345,7 @@ function _setStartPageVisible(on) {
 // after a look at Download does not silently re-run the search you already
 // have.
 function searchPageEnter() {
+  if (_catalogSection) { doSearch(); return; }
   const input = document.getElementById('search-input');
   if (!input || !input.value.trim()) { showStartPage(); return; }
   if (!_searchResults.length) doSearch();
@@ -349,15 +359,24 @@ function _shelfSkeletons() {
 }
 
 async function showStartPage() {
+  _catalogSection = null;
+  _cancelCatalogWork();
+  const homeGeneration = _catalogGeneration;
+  if (_searchAbort) _searchAbort.abort();
   const host = document.getElementById('home-shelves');
   if (!host) return;
   if (currentSource !== 'animeunity') {
     await ensureDomain();
+    if (homeGeneration !== _catalogGeneration) return;
     if (!currentDomain) { _setStartPageVisible(false); return; }
   }
 
   _setStartPageVisible(true);
-  if (_homeCache[currentSource]) { renderShelves(); return; }
+  const cacheKey = `${currentSource}:${currentDomain || ''}`;
+  const cached = _homeCache[cacheKey];
+  if (cached && cached.expires > Date.now()) {
+    renderShelves(); renderHomeExtras(cached); return;
+  }
 
   if (_homeAbort) _homeAbort.abort();
   _homeAbort = new AbortController();
@@ -367,9 +386,10 @@ async function showStartPage() {
     // A 409 with no domain configured throws like any other refusal, and
     // lands in the catch below, which leaves the same bare search box.
     const body = await api.get('/api/home', {source}, {signal: _homeAbort.signal});
-    _homeCache[source] = body.shelves || [];
-    if (source !== currentSource) return;  // switched away while it was in flight
+    _homeCache[cacheKey] = {shelves: body.shelves || [], genres: body.genres || [], expires: Date.now() + 900000};
+    if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
     renderShelves();
+    renderHomeExtras(_homeCache[cacheKey]);
   } catch (e) {
     if (e.name === 'AbortError') return;
     host.innerHTML = '';
@@ -397,7 +417,7 @@ function _renderHeroArt(items) {
 
 function renderShelves() {
   const host = document.getElementById('home-shelves');
-  const shelves = _homeCache[currentSource] || [];
+  const shelves = _homeCache[`${currentSource}:${currentDomain || ''}`]?.shelves || [];
   host.innerHTML = '';
   // One flat array across every rail, reset once here and appended to in order,
   // so openTitle(idx) needs no special case for the start page.
@@ -418,6 +438,10 @@ function renderShelves() {
         '<button class="shelf-arrow shelf-arrow-next" hidden aria-label="Titoli successivi">' +
           '<i class="ti ti-chevron-right"></i></button>' +
       '</div>';
+    if (currentSource === 'streamingcommunity' && ['trending', 'latest', 'top10'].includes(shelf.key)) {
+      section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
+        `<button class="source-btn" data-action="catalog:open" data-section="${shelf.key}">Sfoglia tutti</button>`);
+    }
     renderResultCards(shelf.items, section.querySelector('.shelf-rail'),
                       _searchResults.length, 'shelf-item');
     _searchResults = _searchResults.concat(shelf.items);
@@ -565,6 +589,9 @@ function renderRequestRibbons() {
 // ── Delegated handlers ───────────────────────────────────────────────────────
 
 registerActions({
+  'catalog:open': d => openCatalog(d.section, d.genre),
+  'catalog:home': () => { _catalogSection = null; navigate('search'); },
+  'catalog:sections': () => loadHomeSections(),
   'search:source': d => setSource(d.source),
   'search:run':    () => doSearch(),
   'search:more':   () => loadMoreResults(),
@@ -581,6 +608,147 @@ registerActions({
 // before anything appeared, and the results of pages 1-3 are what the user
 // actually wants back first.
 
+let _catalogSection = null;
+let _catalogAbort = null;
+let _catalogGeneration = 0;
+let _homeSectionState = null;
+let _homeObserver = null;
+
+function _cancelCatalogWork() {
+  _catalogGeneration++;
+  _catalogAbort?.abort();
+  _homeAbort?.abort();
+  _homeObserver?.disconnect();
+  _homeSectionState = null;
+  _loadingMore = false;
+  const heading = document.getElementById('catalog-heading');
+  if (heading) heading.hidden = true;
+}
+
+function openCatalog(section, genre) {
+  navigate('search', [], {section, genre: genre || null});
+}
+
+function renderHomeExtras(entry) {
+  if (currentSource !== 'streamingcommunity') return;
+  const host = document.getElementById('home-shelves');
+  const extra = document.createElement('div');
+  extra.id = 'home-extra';
+  extra.innerHTML = '<div class="search-filters" id="home-genres"></div>' +
+    '<div id="home-extra-rows"></div><div class="text-center my-3">' +
+    '<button class="source-btn" data-action="catalog:sections" id="home-sections-more">Carica altri generi</button></div>';
+  host.appendChild(extra);
+  const genres = extra.querySelector('#home-genres');
+  entry.genres.forEach(g => {
+    const button = document.createElement('button');
+    button.className = 'source-btn';
+    button.textContent = g.name;
+    button.dataset.action = 'catalog:open';
+    button.dataset.section = 'genre';
+    button.dataset.genre = String(g.id);
+    genres.appendChild(button);
+  });
+  _homeSectionState = {generation: _catalogGeneration, loading: false, offset: 0,
+    sections: [{section: 'upcoming', title: 'In arrivo'},
+      ...entry.genres.map(g => ({section: 'genre', genre_id: g.id, title: g.name}))]};
+  if (typeof IntersectionObserver !== 'undefined') {
+    _homeObserver = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) loadHomeSections();
+    }, {rootMargin: '200px'});
+    _homeObserver.observe(extra.querySelector('#home-sections-more'));
+  }
+  loadHomeSections();
+}
+
+async function loadHomeSections() {
+  const state = _homeSectionState;
+  if (!state || state.loading || state.generation !== _catalogGeneration) return;
+  const batch = state.sections.slice(state.offset, state.offset + 3);
+  if (!batch.length) return;
+  state.loading = true;
+  const button = document.getElementById('home-sections-more');
+  button.disabled = true;
+  const rows = await Promise.all(batch.map(async spec => {
+    try { return {spec, data: await api.get('/api/home/section', {
+      section: spec.section, genre_id: spec.genre_id,
+    })}; } catch (error) { return {spec, error}; }
+  }));
+  if (state !== _homeSectionState || state.generation !== _catalogGeneration) return;
+  let failures = 0;
+  rows.forEach(({spec, data, error}) => {
+    if (error) { failures++; return; }
+    const section = document.createElement('section');
+    section.className = 'shelf';
+    section.innerHTML = `<div class="shelf-head"><div class="shelf-title">${escapeHtml(data.title)}</div>` +
+      `<button class="source-btn" data-action="catalog:open" data-section="${spec.section}"` +
+      ` data-genre="${spec.genre_id || ''}">Sfoglia tutti</button></div>` +
+      '<div class="shelf-rail-wrap"><button class="shelf-arrow shelf-arrow-prev" hidden aria-label="Titoli precedenti">‹</button>' +
+      '<div class="shelf-rail"></div><button class="shelf-arrow shelf-arrow-next" hidden aria-label="Titoli successivi">›</button></div>';
+    renderResultCards(data.items.slice(0, 30), section.querySelector('.shelf-rail'), _searchResults.length, 'shelf-item');
+    _searchResults.push(...data.items.slice(0, 30));
+    if (!data.items.length) section.insertAdjacentHTML('beforeend', '<p class="text-muted">Nessun titolo disponibile.</p>');
+    document.getElementById('home-extra-rows').appendChild(section);
+    _shelfSyncs.push(_wireShelfArrows(section));
+    loadRequestStatuses(data.items.filter(i => i.type !== 'movie').map(i => String(i.id)));
+  });
+  state.offset += batch.length;
+  // Failed sections remain retryable without repeating the successful rows.
+  state.sections.push(...rows.filter(row => row.error).map(row => row.spec));
+  state.loading = false;
+  button.disabled = false;
+  button.textContent = failures ? 'Riprova sezioni non disponibili' : 'Carica altri generi';
+  button.hidden = state.offset >= state.sections.length;
+  if (failures) _homeObserver?.disconnect();
+  applyClientFilter();
+}
+
+async function loadCatalog(append = false) {
+  if (append && (_loadingMore || _searchExhausted)) return;
+  if (!append) {
+    _cancelCatalogWork();
+    _homeAbort?.abort();
+    _searchAbort?.abort();
+    _catalogAbort = new AbortController();
+    _searchPage = 1;
+    _searchResults = [];
+    _searchExhausted = false;
+    _setStartPageVisible(false);
+    _showSearchSkeletons();
+    _setMoreVisible(false);
+  }
+  const generation = _catalogGeneration;
+  const spec = {..._catalogSection};
+  _loadingMore = true;
+  const more = document.getElementById('search-more-btn');
+  more.disabled = true;
+  const heading = document.getElementById('catalog-heading');
+  heading.hidden = false;
+  document.getElementById('catalog-title').textContent = 'Catalogo';
+  try {
+    await ensureDomain();
+    if (generation !== _catalogGeneration) return;
+    const data = await api.get('/api/browse', {...spec, page: append ? _searchPage + 1 : 1,
+      media_type: _kindFilter || undefined}, {signal: _catalogAbort.signal});
+    if (generation !== _catalogGeneration) return;
+    const container = document.getElementById('search-results');
+    if (!append) container.innerHTML = '';
+    renderResultCards(data.items, container, _searchResults.length);
+    _searchResults.push(...data.items);
+    _searchPage = data.page;
+    _searchExhausted = !data.has_more;
+    document.getElementById('catalog-title').textContent = data.title;
+    if (!_searchResults.length) container.innerHTML = '<p class="text-muted">Nessun titolo disponibile.</p>';
+    _setMoreVisible(data.has_more);
+    loadRequestStatuses(data.items.filter(i => i.type !== 'movie').map(i => String(i.id)));
+  } catch (error) {
+    if (error.name === 'AbortError' || generation !== _catalogGeneration) return;
+    if (!append) document.getElementById('search-results').textContent = errText(error, 'Catalogo non disponibile');
+    else showToast(errText(error), 'danger');
+  } finally {
+    if (generation === _catalogGeneration) { _loadingMore = false; more.disabled = false; }
+  }
+}
+
 registerPageHash('search', {
   read: () => ({
     params: {
@@ -588,14 +756,19 @@ registerPageHash('search', {
       src: currentSource === 'animeunity' ? 'animeunity' : null,
       type: _kindFilter || null,
       dub: _dubOnly ? '1' : null,
+      section: _catalogSection?.section || null,
+      genre: _catalogSection?.genre_id || null,
     },
   }),
   apply: params => {
+    _cancelCatalogWork();
+    _catalogSection = ['trending', 'latest', 'top10', 'upcoming', 'genre'].includes(params.section)
+      ? {section: params.section, genre_id: params.section === 'genre' ? Number(params.genre) : undefined} : null;
     const input = document.getElementById('search-input');
     if (input) input.value = params.q || '';
     // Not setSource(): that clears the grid and re-runs the search, which is
     // the opposite of restoring one. Only the parts that are state.
-    currentSource = params.src === 'animeunity' ? 'animeunity' : 'streamingcommunity';
+    currentSource = !_catalogSection && params.src === 'animeunity' ? 'animeunity' : 'streamingcommunity';
     document.getElementById('src-sc')?.classList.toggle('active', currentSource === 'streamingcommunity');
     document.getElementById('src-au')?.classList.toggle('active', currentSource === 'animeunity');
     if (input) input.placeholder = currentSource === 'animeunity' ? 'Cerca anime...' : 'Film, serie TV...';

@@ -165,6 +165,8 @@ def normalize_title(t: dict) -> dict | None:
         "age": t.get("age"),
         "seasons_count": t.get("seasons_count", 0),
         "poster": _poster(t.get("images", [])),
+        "coming_soon": bool(t.get("coming_soon")),
+        "upcoming_seasons": t.get("upcoming_seasons") or [],
     }
 
 

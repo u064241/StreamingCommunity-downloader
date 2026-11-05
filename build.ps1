@@ -45,6 +45,43 @@ if (-not $Version) { throw 'Versione mancante in app\__init__.py.' }
 if ($PublishRelease -and -not $Release) { throw '-PublishRelease richiede anche -Release.' }
 $OldBytecodeSetting = $env:PYTHONDONTWRITEBYTECODE
 
+function Assert-ReleaseReady {
+    $changes = @(& git -C $ProjectRoot status --porcelain --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) { throw 'Impossibile verificare lo stato Git.' }
+    if ($changes.Count -gt 0) {
+        throw "Pubblicazione annullata: salva prima tutte le modifiche in un commit. Per compilare soltanto, ometti -PublishRelease.`n$($changes -join "`n")"
+    }
+    $commit = & git -C $ProjectRoot rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Impossibile leggere il commit della release.' }
+    $originUrl = & git -C $ProjectRoot remote get-url origin
+    if ($LASTEXITCODE -ne 0 -or $originUrl -notmatch '(?i)github\.com[/:]u064241/StreamingCommunity-downloader(?:\.git)?$') {
+        throw "origin non punta al fork u064241: $originUrl"
+    }
+    $gh = Get-Command gh.exe -ErrorAction SilentlyContinue
+    if (-not $gh) { throw 'GitHub CLI non trovato. Installa gh e configura gh auth login.' }
+    $previousToken = $env:GH_TOKEN
+    if ($env:SC_GITHUB_TOKEN) { $env:GH_TOKEN = $env:SC_GITHUB_TOKEN }
+    try {
+        $releaseTags = @(& $gh.Source api 'repos/u064241/StreamingCommunity-downloader/releases?per_page=100' --paginate --jq '.[].tag_name')
+        if ($LASTEXITCODE -ne 0) { throw 'Impossibile controllare le release GitHub. Verifica autenticazione e connessione.' }
+        $tag = "v$Version"
+        if ($tag -in $releaseTags) {
+            throw "La release $tag esiste gia. Incrementa __version__ in app\__init__.py e crea un nuovo commit."
+        }
+        $remoteTag = & git -C $ProjectRoot ls-remote --exit-code --tags origin "refs/tags/$tag"
+        if ($LASTEXITCODE -eq 0) { throw "Il tag remoto $tag esiste gia. Scegli una nuova versione." }
+        if ($LASTEXITCODE -ne 2) { throw 'Impossibile controllare i tag remoti. Pubblicazione annullata.' }
+    } finally {
+        if ($null -eq $previousToken) { Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue }
+        else { $env:GH_TOKEN = $previousToken }
+    }
+    return ([string]$commit).Trim()
+}
+
+# Refuse inconsistent or duplicate releases before the expensive compilation.
+$ReleaseCommit = $null
+if ($PublishRelease) { $ReleaseCommit = Assert-ReleaseReady }
+
 function Resolve-Python {
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
@@ -423,6 +460,10 @@ end;
         }
 
         if ($PublishRelease) {
+            $verifiedCommit = Assert-ReleaseReady
+            if ($verifiedCommit -ne $ReleaseCommit) {
+                throw 'Il commit e cambiato durante la build. Ricompila prima di pubblicare.'
+            }
             $gh = Get-Command gh.exe -ErrorAction SilentlyContinue
             if (-not $gh) { throw 'GitHub CLI (gh.exe) non trovato. Installalo e autenticalo prima di usare -PublishRelease.' }
             $originUrl = (& git remote get-url origin 2>$null).Trim()
@@ -436,7 +477,7 @@ end;
                 & $gh.Source auth status --hostname github.com
                 if ($LASTEXITCODE -ne 0) { throw 'Autenticazione GitHub non disponibile. Configura SC_GITHUB_TOKEN o gh auth login.' }
                 $releaseBranch = "release/v$Version"
-                & git push origin ("HEAD:refs/heads/$releaseBranch")
+                & git -C $ProjectRoot push origin ("${ReleaseCommit}:refs/heads/$releaseBranch")
                 if ($LASTEXITCODE -ne 0) { throw "Push del branch release fallito: $releaseBranch" }
                 $releaseFiles = @(
                     (Join-Path $DistDir 'StreamingCommunityDownloader-Setup.exe'),
