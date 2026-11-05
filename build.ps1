@@ -5,6 +5,7 @@
 [CmdletBinding()]
 param(
     [switch]$Help,
+    [switch]$BumpPatchVersion,
     [switch]$SkipInnoSetup,
     [switch]$Release,
     [switch]$CleanReleaseArtifacts,
@@ -25,6 +26,7 @@ Uso:
   .\build.ps1 -Release -CleanReleaseArtifacts -PublishRelease
                                              Compila, pulisce e pubblica sul fork GitHub
   .\build.ps1 -SkipInnoSetup               Salta la compilazione dell'installer
+  .\build.ps1 -BumpPatchVersion            Incrementa la patch e crea il modello delle note
   .\build.ps1 -Help                        Mostra questo aiuto
 
 Prerequisiti:
@@ -38,6 +40,38 @@ $ProjectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
 $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
+
+if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup)) {
+    throw '-BumpPatchVersion va usato da solo.'
+}
+if ($BumpPatchVersion) {
+    $versionPath = Join-Path $ProjectRoot 'app\__init__.py'
+    $versionText = Get-Content -LiteralPath $versionPath -Raw
+    if ($versionText -notmatch '(?m)^__version__\s*=\s*"(\d+)\.(\d+)\.(\d+)"') {
+        throw 'Versione semantica non trovata in app\__init__.py.'
+    }
+    $nextVersion = '{0}.{1}.{2}' -f [int]$Matches[1], [int]$Matches[2], ([int]$Matches[3] + 1)
+    $updatedText = $versionText -replace '(?m)^(__version__\s*=\s*")\d+\.\d+\.\d+("\s*)$', "`${1}$nextVersion`${2}"
+    Set-Content -LiteralPath $versionPath -Value $updatedText -Encoding utf8NoBOM
+    $notesPath = Join-Path $ProjectRoot "releases\v$nextVersion.md"
+    if (-not (Test-Path -LiteralPath $notesPath)) {
+        @"
+# StreamingCommunity Downloader u064241 $nextVersion
+
+## Modifiche
+
+- Descrivere qui le modifiche principali della release.
+
+## Note
+
+- Verificare README e artefatti prima della pubblicazione.
+"@ | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+    }
+    Write-Host "Versione aggiornata a $nextVersion." -ForegroundColor Green
+    Write-Host "Completa le note in $notesPath, poi crea un commit e lancia la build release." -ForegroundColor Yellow
+    exit 0
+}
+
 $Version = $null
 $versionSource = Get-Content -LiteralPath (Join-Path $ProjectRoot 'app\__init__.py') -Raw
 if ($versionSource -match '(?m)^__version__\s*=\s*"([^"]+)"') { $Version = $Matches[1] }

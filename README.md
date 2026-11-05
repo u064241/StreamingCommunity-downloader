@@ -197,6 +197,15 @@ For a local build, including when there are uncommitted changes:
 .\build.ps1 -Release -CleanReleaseArtifacts
 ```
 
+To increment only the patch version and create a release-notes template:
+
+```powershell
+.\build.ps1 -BumpPatchVersion
+```
+
+Review the generated `releases\v<version>.md`, update the Features above if needed, commit the
+changes, then build and publish the release with the command below.
+
 To publish the four final artifacts to the fork, authenticate GitHub CLI first with `gh auth login`
 and run:
 
