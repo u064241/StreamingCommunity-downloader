@@ -310,7 +310,7 @@ Uninstallable=yes
 AppMutex=Local\StreamingCommunityDownloaderRunning
 CreateUninstallRegKey=not IsPortable
 OutputDir="$DistDir"
-OutputBaseFilename=StreamingCommunityDownloader-Setup
+OutputBaseFilename=StreamingCommunityDownloader-Setup-v$Version
 PrivilegesRequired=admin
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\$AppName.exe
@@ -488,7 +488,7 @@ end;
             [IO.File]::WriteAllText($issPath, $iss, [Text.UTF8Encoding]::new($false))
             & $iscc /Qp $issPath
             if ($LASTEXITCODE -ne 0) { throw 'Compilazione installer Inno Setup fallita.' }
-            $outputPath = Join-Path $DistDir 'StreamingCommunityDownloader-Setup.exe'
+            $outputPath = Join-Path $DistDir "$AppName-Setup-v$Version.exe"
             if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Installer Inno Setup non trovato.' }
             if (-not $Release) { Remove-Item -LiteralPath $exePath -Force }
         } else {
@@ -548,7 +548,7 @@ end;
                 & git -C $ProjectRoot push origin ("${ReleaseCommit}:refs/heads/$releaseBranch")
                 if ($LASTEXITCODE -ne 0) { throw "Push del branch release fallito: $releaseBranch" }
                 $releaseFiles = @(
-                    (Join-Path $DistDir 'StreamingCommunityDownloader-Setup.exe'),
+                    (Join-Path $DistDir "$AppName-Setup-v$Version.exe"),
                     (Join-Path $DistDir "$AppName-$Version-Portable.zip"),
                     (Join-Path $DistDir 'update-manifest.json'),
                     (Join-Path $DistDir 'SHA256SUMS.txt')

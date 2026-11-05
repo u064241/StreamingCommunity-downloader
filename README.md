@@ -161,7 +161,7 @@
 Download the latest release from the
 [u064241 releases page](https://github.com/u064241/StreamingCommunity-downloader/releases/latest).
 
-- `StreamingCommunityDownloader-Setup.exe` opens a wizard where you can choose **Install** or
+- `StreamingCommunityDownloader-Setup-v<version>.exe` opens a wizard where you can choose **Install** or
   **Portable only**.
 - `StreamingCommunityDownloader-<version>-Portable.zip` is the ready-to-extract portable package.
 - Portable mode selected in Setup registers a separate **StreamingCommunity Downloader (Portable)**

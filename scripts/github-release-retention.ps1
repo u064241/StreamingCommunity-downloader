@@ -7,7 +7,7 @@ $Repository = 'u064241/StreamingCommunity-downloader'
 
 function Get-ReleasePackageNames([string]$Tag) {
     if ($Tag -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Tag non stabile: $Tag" }
-    @('StreamingCommunityDownloader-Setup.exe',
+    @("StreamingCommunityDownloader-Setup-v$($Matches[1]).exe",
       "StreamingCommunityDownloader-$($Matches[1])-Portable.zip",
       'update-manifest.json', 'SHA256SUMS.txt')
 }
@@ -15,7 +15,7 @@ function Get-ReleasePackageNames([string]$Tag) {
 function Get-ReleaseRetentionPlan($Releases, [string]$LatestTag) {
     $stable = @($Releases | Where-Object {
         -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v\d+\.\d+\.\d+$' -and
-        @($_.assets | Where-Object { $_.name -eq 'StreamingCommunityDownloader-Setup.exe' }).Count -gt 0
+        @($_.assets | Where-Object { $_.name -match '^StreamingCommunityDownloader-Setup-v\d+\.\d+\.\d+\.exe$' }).Count -gt 0
     } | Sort-Object { [version]$_.tag_name.Substring(1) } -Descending)
     if ($stable.Count -lt 2) { return }
     if ($stable[0].tag_name -ne $LatestTag) {
@@ -58,7 +58,7 @@ try {
     $previous = @($releases | Where-Object {
         -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v\d+\.\d+\.\d+$' -and
         [version]$_.tag_name.Substring(1) -lt [version]$latest.tag_name.Substring(1) -and
-        @($_.assets | Where-Object { $_.name -eq 'StreamingCommunityDownloader-Setup.exe' }).Count -gt 0
+        @($_.assets | Where-Object { $_.name -match '^StreamingCommunityDownloader-Setup-v\d+\.\d+\.\d+\.exe$' }).Count -gt 0
     } | Sort-Object { [version]$_.tag_name.Substring(1) } -Descending | Select-Object -First 1)
     if ($plan.Count) {
         foreach ($release in @($retained) + @($previous)) {
