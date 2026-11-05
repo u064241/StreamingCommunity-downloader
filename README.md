@@ -176,7 +176,8 @@ Before each release:
 
 1. Implement and test the changes, then update the Features above and any affected instructions.
 2. Update `app/__init__.py` with a new version; published versions and tags must not be reused.
-3. Write user-facing release notes in `releases/v<version>.md`, including changes and known limitations.
+3. Write user-facing release notes **in English** in `releases/v<version>.md`, including changes and
+   known limitations. Keep release titles and any annotated tag descriptions in English as well.
 4. Commit the code, version, README and release notes together. Integrate the reviewed changes into
    `main` to update the documentation displayed on the repository homepage; publishing a release
    alone only pushes a release branch.
