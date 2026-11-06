@@ -26,6 +26,15 @@ function showForkUpdate() {
   loadPortableUpdate();
 }
 
+// Keep the release badge current while the portal remains open. GitHub checks
+// are server-side cached, so this does not issue a request for every card or
+// every navigation event.
+const UPDATE_POLL_MS = 15 * 60 * 1000;
+setInterval(() => { checkForkUpdate(true); }, UPDATE_POLL_MS);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkForkUpdate(true);
+});
+
 async function loadPortableUpdate() {
   const button = document.getElementById('portable-update-button');
   const message = document.getElementById('portable-update-message');
@@ -72,7 +81,13 @@ async function installPortableUpdate() {
   finally { _portableBusy = false; button.disabled = false; }
 }
 
-registerActions({ 'updates:show': () => showForkUpdate(), 'updates:portable': installPortableUpdate });
+registerActions({
+  'updates:show': async () => {
+    await checkForkUpdate(true);
+    showForkUpdate();
+  },
+  'updates:portable': installPortableUpdate,
+});
 
 // The shell's live parts: the in-app notification bell and the sidebar's
 // pending-requests badge. Both run on every page, which is why they are not
