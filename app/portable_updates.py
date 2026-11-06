@@ -175,6 +175,13 @@ def apply(owner, token, app=None):
                 server = getattr(app.state, "uvicorn_server", None)
                 if server is not None:
                     server.should_exit = True
+                # The standalone server normally returns from uvicorn.run()
+                # immediately.  A frozen process can nevertheless retain a
+                # thread or an event-loop resource, leaving the old EXE alive
+                # while the helper waits.  Downloads were checked idle above,
+                # so force the old process out after the graceful window.
+                time.sleep(5)
+                os._exit(0)
             threading.Thread(target=stop_after_response, daemon=True).start()
         return {"status": "restarting", "backup": backup.name,
                 "message": "Aggiornamento installato. L'applicazione si sta riavviando automaticamente."}
