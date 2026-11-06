@@ -105,6 +105,7 @@ def prepare(owner):
             if archive.stat().st_size != record["size"]:
                 raise UpdateDownloadError("Dimensione pacchetto non corrispondente")
             target = Path(folder.name) / EXE
+            staged_helper = Path(folder.name) / HELPER
             # Never extract paths supplied by ZIP entries. Only the exact root EXE.
             with zipfile.ZipFile(archive) as package:
                 entries = package.infolist()
@@ -118,12 +119,16 @@ def prepare(owner):
                 with package.open(EXE) as src, target.open("xb") as dst:
                     import shutil
                     shutil.copyfileobj(src, dst, 1024 * 1024)
+                with package.open(HELPER) as src, staged_helper.open("xb") as dst:
+                    import shutil
+                    shutil.copyfileobj(src, dst, 1024 * 1024)
             with target.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             if _prepared:
                 _prepared["folder"].cleanup()
             token = secrets.token_urlsafe(32)
-            _prepared = dict(folder=folder, asset=target, sha256=digest, token=token,
+            _prepared = dict(folder=folder, asset=target, helper=staged_helper,
+                             sha256=digest, token=token,
                              owner=owner, expires=time.monotonic() + PREPARED_TTL)
             return {"token": token, "version": release["version"]}
         except BaseException:
@@ -139,6 +144,10 @@ def apply(owner, token, app=None):
                 or not secrets.compare_digest(token, state["token"])):
             raise UpdateDownloadError("Preparazione scaduta o non autorizzata")
         exe, helper = _runtime()
+        # Use the helper from the verified release package. The helper beside
+        # the running EXE may belong to the previous release and cannot update
+        # itself while it is running.
+        helper = state["helper"]
         _idle()
         backup = exe.with_name(f"{exe.stem}.previous-{secrets.token_hex(8)}.exe")
         ready = Path(state["folder"].name) / f"ready-{secrets.token_hex(8)}"

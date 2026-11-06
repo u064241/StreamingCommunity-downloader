@@ -218,6 +218,10 @@ def _restart(exe: Path) -> None:
     flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
     environment = os.environ.copy()
     environment["SC_PANEL_RESTART"] = "1"
+    # The restarted instance must reuse the existing portal tab.  Keep this
+    # explicit as well as SC_PANEL_RESTART so older launcher logic cannot open
+    # a second browser tab accidentally.
+    environment["SC_PANEL_OPEN_BROWSER"] = "0"
     subprocess.Popen([str(exe)], cwd=exe.parent, creationflags=flags,
                      close_fds=True, env=environment)
 
