@@ -200,6 +200,7 @@ function renderResultCards(items, container, baseIndex,
           ${posterHtml}
           <div class="poster-noimg" style="${posterUrl?'display:none':''}">&#127916;</div>
           <div class="poster-overlay"></div>
+          <div class="card-preview" aria-hidden="true"></div>
           ${ribbonHtml}
           <div class="poster-play"><i class="ti ti-player-play-filled" style="font-size:16px"></i></div>
         </div>
@@ -217,6 +218,76 @@ function renderResultCards(items, container, baseIndex,
     container.appendChild(card);
   });
 }
+
+// Card previews are deliberately lazy: the catalogue can contain hundreds of
+// titles and only the card under the pointer is allowed to request metadata.
+const _cardPreviewCache = new Map();
+const _cardPreviewTimers = new WeakMap();
+
+function youtubeId(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1).split('/')[0];
+    if (parsed.hostname.endsWith('youtube.com')) {
+      if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
+      const match = parsed.pathname.match(/^\/(?:embed|shorts)\/([^/?]+)/);
+      return match ? match[1] : null;
+    }
+  } catch (_) { /* invalid trailer URL */ }
+  return null;
+}
+
+function stopCardPreview(card) {
+  const timer = _cardPreviewTimers.get(card);
+  if (timer) { clearTimeout(timer); _cardPreviewTimers.delete(card); }
+  const frame = card.querySelector('.card-preview iframe');
+  if (frame) frame.remove();
+  card.classList.remove('preview-visible');
+}
+
+async function startCardPreview(card) {
+  if (card.dataset.previewDisabled === '1') return;
+  const item = _searchResults[Number(card.dataset.idx)];
+  if (!item || String(item.type).toLowerCase() === 'anime') return;
+  const key = `${item.type}:${item.id}`;
+  let url = _cardPreviewCache.get(key);
+  if (url === undefined) {
+    _cardPreviewCache.set(key, null);
+    try {
+      const meta = await api.get(`/api/metadata/${item.type}/${item.id}`,
+        {slug: item.slug || '', version: currentVersion || ''});
+      url = meta?.trailer_url || null;
+      _cardPreviewCache.set(key, url);
+    } catch (_) { url = null; }
+  }
+  if (!url || !card.matches(':hover')) {
+    if (!url) card.dataset.previewDisabled = '1';
+    return;
+  }
+  const id = youtubeId(url);
+  if (!id || card.querySelector('.card-preview iframe')) return;
+  const frame = document.createElement('iframe');
+  frame.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&mute=1&controls=0&loop=1&playlist=${encodeURIComponent(id)}&playsinline=1&rel=0`;
+  frame.title = 'Anteprima';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.tabIndex = -1;
+  frame.allow = 'autoplay; encrypted-media';
+  card.querySelector('.card-preview').appendChild(frame);
+  card.classList.add('preview-visible');
+}
+
+document.addEventListener('pointerover', event => {
+  const card = event.target.closest?.('.result-card');
+  if (!card || card.contains(event.relatedTarget)) return;
+  const timer = setTimeout(() => startCardPreview(card), 380);
+  _cardPreviewTimers.set(card, timer);
+});
+
+document.addEventListener('pointerout', event => {
+  const card = event.target.closest?.('.result-card');
+  if (!card || card.contains(event.relatedTarget)) return;
+  stopCardPreview(card);
+});
 
 async function doSearch(options) {
   if (_catalogSection) return loadCatalog(!!options?.append);
