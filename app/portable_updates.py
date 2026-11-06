@@ -27,6 +27,7 @@ _lock = threading.Lock()
 _prepared = None
 _running = None
 PREPARED_TTL = 30 * 60
+HELPER_READY_TIMEOUT = 120
 
 
 def _release_asset(release, name):
@@ -148,7 +149,11 @@ def apply(owner, token, app=None):
             "--sha256", state["sha256"], "--timeout", "300", "--ready-file", str(ready),
             "--restart",
         ], cwd=exe.parent, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        for _ in range(150):
+        # The helper is a one-file PyInstaller executable and the staged app
+        # is roughly 100 MB. Extraction, antivirus inspection and SHA256
+        # verification can legitimately take longer than the old 15-second
+        # window, especially on the first update.
+        for _ in range(HELPER_READY_TIMEOUT * 10):
             if ready.is_file() or process.poll() is not None:
                 break
             time.sleep(0.1)
@@ -157,7 +162,11 @@ def apply(owner, token, app=None):
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=5)
-            raise UpdateDownloadError("Helper non pronto: applicazione lasciata in esecuzione")
+            raise UpdateDownloadError(
+                "Helper non pronto entro 120 secondi: applicazione lasciata in esecuzione. "
+                "Riprova dopo aver escluso la cartella portable dal controllo in tempo reale "
+                "dell'antivirus, se applicabile."
+            )
         _running = (process, state)  # retain staged files until application exit
         _prepared = None
         if app is not None:
