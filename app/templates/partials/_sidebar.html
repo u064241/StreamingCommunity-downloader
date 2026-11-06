@@ -19,27 +19,27 @@
           <li class="nav-item" data-perm="REQUEST|DOWNLOAD">
             <a class="nav-link active" href="#" data-page="search" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-search"></i></span>
-              <span class="nav-link-title">Cerca</span>
+              <span class="nav-link-title" data-i18n="nav.search">Cerca</span>
             </a>
           </li>
           <li class="nav-item" data-perm="DOWNLOAD|MANAGE_REQUESTS">
             <a class="nav-link" href="#" data-page="downloads" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-download"></i></span>
-              <span class="nav-link-title">Download</span>
+              <span class="nav-link-title" data-i18n="nav.downloads">Download</span>
               <span class="badge bg-red ms-auto" id="active-jobs-badge" style="display:none"></span>
             </a>
           </li>
           <li class="nav-item" data-perm="MANAGE_REQUESTS">
             <a class="nav-link" href="#" data-page="requests" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-inbox"></i></span>
-              <span class="nav-link-title">Richieste</span>
+              <span class="nav-link-title" data-i18n="nav.requests">Richieste</span>
               <span class="badge bg-yellow ms-auto" id="queue-pending-count" style="display:none"></span>
             </a>
           </li>
           <li class="nav-item" data-perm="REQUEST|DOWNLOAD" data-hide-perm="DOWNLOAD" data-requires-auth="1">
             <a class="nav-link" href="#" data-page="my-requests" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-send"></i></span>
-              <span class="nav-link-title">Le mie richieste</span>
+              <span class="nav-link-title" data-i18n="nav.myRequests">Le mie richieste</span>
             </a>
           </li>
           <!-- No data-requires-auth: a followed series works without Jellyfin
@@ -47,19 +47,19 @@
           <li class="nav-item" data-perm="REQUEST|DOWNLOAD">
             <a class="nav-link" href="#" data-page="watches" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-bell-ringing"></i></span>
-              <span class="nav-link-title">Serie seguite</span>
+              <span class="nav-link-title" data-i18n="nav.watches">Serie seguite</span>
             </a>
           </li>
           <li class="nav-item" data-perm="VIEW_LIBRARY">
             <a class="nav-link" href="#" data-page="files" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-folder-filled"></i></span>
-              <span class="nav-link-title">File</span>
+              <span class="nav-link-title" data-i18n="nav.files">File</span>
             </a>
           </li>
           <li class="nav-item" data-perm="MANAGE_USERS">
             <a class="nav-link" href="#" data-page="users" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-users"></i></span>
-              <span class="nav-link-title">Utenti</span>
+              <span class="nav-link-title" data-i18n="nav.users">Utenti</span>
             </a>
           </li>
         </ul>
@@ -82,7 +82,7 @@
           </div>
           <button class="btn-sidebar-settings" data-perm="MANAGE_SETTINGS" data-action="settings:open">
             <i class="ti ti-settings" style="font-size:15px;flex-shrink:0"></i>
-            Impostazioni
+            <span data-i18n="nav.settings">Impostazioni</span>
           </button>
           <span id="app-version" class="sidebar-version" title="Versione del pannello">SC Panel v{{ app_version }}</span>
           <button id="update-badge" class="badge bg-yellow border-0 mt-1" style="display:none;cursor:pointer"
@@ -92,8 +92,12 @@
           <button class="btn-sidebar-update-check" data-perm="MANAGE_SETTINGS"
                   data-action="updates:check" title="Controlla manualmente gli aggiornamenti">
             <i class="ti ti-refresh" aria-hidden="true"></i>
-            Controlla aggiornamenti
+            <span data-i18n="updates.check">Controlla aggiornamenti</span>
           </button>
+          <div class="language-switcher" role="group" aria-label="Lingua">
+            <button type="button" class="language-btn" data-language="it" title="Italiano">🇮🇹 IT</button>
+            <button type="button" class="language-btn" data-language="en" title="English">🇬🇧 EN</button>
+          </div>
         </div>
       </div>
     </div>

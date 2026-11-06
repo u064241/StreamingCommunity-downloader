@@ -11,9 +11,16 @@
 
 const $ = id => document.getElementById(id);
 
+function _loginError(error, fallback) {
+  return scLanguage.message(errText(error, fallback));
+}
+
+let _loginAlert = null;
+
 function showAlert(message, kind = 'error') {
   const el = $('auth-alert');
   el.textContent = message;
+  _loginAlert = scLanguage.describe(message);
   el.className = 'auth-alert' + (kind === 'info' ? ' info' : '');
   el.style.display = 'block';
 }
@@ -28,10 +35,28 @@ function clearAlert() {
 function busy(btn, on, busyLabel) {
   if (btn.dataset.label === undefined) btn.dataset.label = btn.innerHTML;
   btn.disabled = on;
+  btn._busyLabel = on ? scLanguage.describe(busyLabel) : null;
   btn.innerHTML = on
     ? '<span class="spinner-border spinner-border-sm me-1"></span>' + busyLabel
     : btn.dataset.label;
 }
+
+window.addEventListener('sc:language-changed', () => {
+  document.title = t('login.sign.in.sc.panel');
+  for (const [id, icon, key] of [
+    ['setup-btn', 'ti-plug-connected', 'login.set.up.and.sign.in'],
+    ['skip-setup-btn', '', 'login.continue.without.jellyfin'],
+    ['login-btn', 'ti-login', 'login.sign.in'],
+  ]) {
+    const btn = $(id);
+    const label = (icon ? `<i class="ti ${icon} me-1"></i>` : '') + escapeHtml(t(key));
+    btn.dataset.label = label;
+    btn.innerHTML = btn._busyLabel
+      ? '<span class="spinner-border spinner-border-sm me-1"></span>' + escapeHtml(scLanguage.resolve(btn._busyLabel))
+      : label;
+  }
+  if (_loginAlert) $('auth-alert').textContent = scLanguage.resolve(_loginAlert);
+});
 
 // Embedded as a Jellyfin custom tab, the parent frame already holds a valid
 // Jellyfin access token (window.ApiClient). Announce readiness — no secret in
@@ -66,7 +91,7 @@ async function init() {
     }
   } catch {
     $('auth-loading').style.display = 'none';
-    showAlert('Impossibile contattare il pannello.');
+    showAlert(t('login.unable.to.contact.the.panel'));
   }
 }
 
@@ -74,7 +99,7 @@ $('setup-form').addEventListener('submit', async e => {
   e.preventDefault();
   clearAlert();
   const btn = $('setup-btn');
-  busy(btn, true, 'Connessione...');
+  busy(btn, true, t('login.connecting'));
   try {
     await api.post('/api/auth/setup', {
       url: $('setup-url').value.trim(),
@@ -83,7 +108,7 @@ $('setup-form').addEventListener('submit', async e => {
     });
     window.location.href = '/';
   } catch (e) {
-    showAlert(errText(e, 'Configurazione fallita.'));
+    showAlert(_loginError(e, t('login.setup.failed')));
     busy(btn, false);
   }
 });
@@ -91,12 +116,12 @@ $('setup-form').addEventListener('submit', async e => {
 $('skip-setup-btn').addEventListener('click', async () => {
   clearAlert();
   const btn = $('skip-setup-btn');
-  busy(btn, true, 'Attendere...');
+  busy(btn, true, t('login.please.wait'));
   try {
     await api.post('/api/auth/skip');
     window.location.href = '/';
   } catch (e) {
-    showAlert(errText(e, 'Operazione fallita.'));
+    showAlert(_loginError(e, t('login.operation.failed')));
     busy(btn, false);
   }
 });
@@ -105,7 +130,7 @@ $('login-form').addEventListener('submit', async e => {
   e.preventDefault();
   clearAlert();
   const btn = $('login-btn');
-  busy(btn, true, 'Accesso...');
+  busy(btn, true, t('login.signing.in'));
   try {
     await api.post('/api/auth/jellyfin', {
       username: $('login-username').value.trim(),
@@ -113,7 +138,7 @@ $('login-form').addEventListener('submit', async e => {
     });
     window.location.href = '/';
   } catch (e) {
-    showAlert(errText(e, 'Accesso fallito.'));
+    showAlert(_loginError(e, t('login.sign.in.failed')));
     busy(btn, false);
   }
 });

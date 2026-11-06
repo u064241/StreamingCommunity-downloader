@@ -16,10 +16,23 @@ const _SETTINGS_FEEDBACK_IDS = [
   'output-feedback', 'mcp-feedback', 'video-settings-feedback', 'logs-feedback', 'download-directory-feedback',
 ];
 
+function _settingsError(error, fallback = t('common.error')) {
+  return scLanguage.message(errText(error, fallback));
+}
+
+// Remember translated output rather than reloading settings: a language change
+// must preserve unsaved values, generated tokens and pending operations.
+const _settingsTextBindings = new Map();
+function _settingsText(node, text) {
+  if (!node) return;
+  node.textContent = text;
+  _settingsTextBindings.set(node, scLanguage.describe(text));
+}
+
 function _feedback(id, message = '', kind = 'muted') {
   const el = document.getElementById(id);
   if (!el) return;
-  el.textContent = message;
+  _settingsText(el, message);
   el.className = 'form-text' + (message ? ` text-${kind}` : '');
 }
 
@@ -159,8 +172,8 @@ const _expandedChannels = new Set();
 // switch: without it, unchecking the last box would silently mean the opposite
 // of what it looks like.
 function _eventSummary(ch) {
-  if (!ch.events.length) return 'Tutti gli eventi';
-  return ch.events.length === 1 ? '1 evento' : `${ch.events.length} eventi`;
+  if (!ch.events.length) return t('settings.all.events');
+  return ch.events.length === 1 ? t('settings.1.event') : t('settings.events', {count: ch.events.length});
 }
 
 function _renderEventPicker(ch) {
@@ -174,12 +187,12 @@ function _renderEventPicker(ch) {
                ${all ? 'disabled' : ''}
                data-change="cfg:channelEvents" data-id="${ch.id}">
         <span class="form-check-label" style="font-size:12px">
-          <i class="ti ${NOTIFICATION_ICONS[event] || 'ti-bell'} me-1"></i>${NOTIFICATION_LABELS[event]}
+          <i class="ti ${NOTIFICATION_ICONS[event] || 'ti-bell'} me-1"></i>${escapeHtml(scLanguage.message(NOTIFICATION_LABELS[event]))}
         </span>
       </label>`).join('');
     return `
       <div class="mb-2">
-        <p class="settings-section-label mb-1">${group.label}</p>
+        <p class="settings-section-label mb-1">${escapeHtml(scLanguage.message(group.label))}</p>
         ${boxes}
       </div>`;
   }).join('');
@@ -190,7 +203,7 @@ function _renderEventPicker(ch) {
         <input class="form-check-input" type="checkbox" ${all ? 'checked' : ''}
                id="notif-all-events-${ch.id}"
                data-change="cfg:channelAllEvents" data-id="${ch.id}">
-        <span class="form-check-label" style="font-size:12px">Tutti gli eventi</span>
+        <span class="form-check-label" style="font-size:12px">${escapeHtml(t('settings.all.events'))}</span>
       </label>
       ${groups}
     </div>`;
@@ -200,7 +213,7 @@ function renderNotificationChannelsList() {
   const c = document.getElementById('notif-channels-list');
   if (!c) return;
   if (!_notifChannels.length) {
-    c.innerHTML = '<p class="text-muted small mb-0">Nessun canale configurato.</p>';
+    c.innerHTML = `<p class="text-muted small mb-0">${escapeHtml(t('settings.no.channels.configured'))}</p>`;
     return;
   }
   c.innerHTML = _notifChannels.map(ch => {
@@ -217,7 +230,7 @@ function renderNotificationChannelsList() {
           <span class="text-muted small ms-2">${escapeHtml(_maskAppriseUrl(ch.apprise_url))}</span>
         </div>
         <button type="button" class="btn btn-sm btn-ghost-secondary"
-                data-action="cfg:channelPicker" data-id="${ch.id}" title="Scegli quali notifiche ricevere">
+                data-action="cfg:channelPicker" data-id="${ch.id}" title="${escapeHtml(t('settings.choose.which.notifications.to.receive'))}">
           <i class="ti ti-${open ? 'chevron-up' : 'chevron-down'} me-1"></i>${_eventSummary(ch)}
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-action="cfg:testChannel" data-id="${ch.id}">
@@ -253,7 +266,7 @@ async function updateChannelEvents(id) {
   const chosen = _checkedEvents(id);
   if (!chosen.length) {
     // [] would be stored as "every event" — the opposite of an empty selection.
-    _feedback('notif-channels-feedback', 'Seleziona almeno un evento, oppure attiva «Tutti gli eventi».', 'danger');
+    _feedback('notif-channels-feedback', t('settings.select.at.least.one.event.or.enable.all'), 'danger');
     renderNotificationChannelsList();
     return;
   }
@@ -267,10 +280,10 @@ async function _saveChannelEvents(id, events) {
     // open picker under the cursor while the user is still clicking.
     const channel = _notifChannels.find(c => c.id === id);
     if (channel) channel.events = data.events || [];
-    _feedback('notif-channels-feedback', 'Eventi aggiornati.', 'success');
+    _feedback('notif-channels-feedback', t('settings.events.updated'), 'success');
     renderNotificationChannelsList();
   } catch (e) {
-    _feedback('notif-channels-feedback', errText(e, 'Errore aggiornamento eventi.'), 'danger');
+    _feedback('notif-channels-feedback', _settingsError(e, t('settings.failed.to.update.events')), 'danger');
     // The list is refetched only on failure: local state may now disagree
     // with the server.
     if (e instanceof ApiError) await loadNotificationChannels();
@@ -289,20 +302,20 @@ async function saveNotificationChannel() {
   const name = nameEl.value.trim();
   const apprise_url = urlEl.value.trim();
   if (!name || !apprise_url) {
-    _feedback('notif-channels-feedback', 'Compila nome e URL.', 'danger');
+    _feedback('notif-channels-feedback', t('settings.enter.a.name.and.url'), 'danger');
     return;
   }
   btn.disabled = true;
-  _feedback('notif-channels-feedback', 'Salvataggio...');
+  _feedback('notif-channels-feedback', t('settings.saving'));
   try {
     await api.post('/api/notification-channels', {name, apprise_url});
     nameEl.value = '';
     urlEl.value = '';
     document.getElementById('notif-channel-form').style.display = 'none';
-    _feedback('notif-channels-feedback', 'Canale aggiunto.', 'success');
+    _feedback('notif-channels-feedback', t('settings.channel.added'), 'success');
     await loadNotificationChannels();
   } catch (e) {
-    _feedback('notif-channels-feedback', errText(e, 'Errore salvataggio.'), 'danger');
+    _feedback('notif-channels-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger');
   }
   finally { btn.disabled = false; }
 }
@@ -310,38 +323,38 @@ async function saveNotificationChannel() {
 async function toggleNotificationChannel(id, enabled) {
   try {
     await api.patch(`/api/notification-channels/${id}`, {enabled});
-    _feedback('notif-channels-feedback', enabled ? 'Canale attivo.' : 'Canale disattivato.', 'success');
+    _feedback('notif-channels-feedback', enabled ? t('settings.channel.enabled') : t('settings.channel.disabled'), 'success');
     await loadNotificationChannels();
   } catch (e) {
-    _feedback('notif-channels-feedback', errText(e, 'Errore aggiornamento.'), 'danger');
+    _feedback('notif-channels-feedback', _settingsError(e, t('settings.update.failed')), 'danger');
     await loadNotificationChannels();
   }
 }
 
 async function deleteNotificationChannel(id) {
   const channel = _notifChannels.find(c => c.id === id);
-  if (!await scConfirm(`Eliminare il canale «${channel ? channel.name : id}»?`)) return;
+  if (!await scConfirm(t('settings.delete.channel', {name: channel ? channel.name : id}))) return;
   try {
     await api.del(`/api/notification-channels/${id}`);
-    _feedback('notif-channels-feedback', 'Canale eliminato.', 'success');
+    _feedback('notif-channels-feedback', t('settings.channel.deleted'), 'success');
     await loadNotificationChannels();
   } catch (e) {
-    _feedback('notif-channels-feedback', errText(e, 'Errore eliminazione.'), 'danger');
+    _feedback('notif-channels-feedback', _settingsError(e, t('settings.deletion.failed')), 'danger');
   }
 }
 
 async function testNotificationChannel(id) {
-  _feedback('notif-channels-feedback', 'Invio notifica di test...');
+  _feedback('notif-channels-feedback', t('settings.sending.test.notification'));
   try {
     const data = await api.post(`/api/notification-channels/${id}/test`);
     if (data.ok) {
-      _feedback('notif-channels-feedback', 'Notifica di test inviata.', 'success');
-      showToast('Notifica di test inviata', 'success');
+      _feedback('notif-channels-feedback', t('settings.test.notification.sent'), 'success');
+      showToast(t('settings.test.notification.sent.189'), 'success');
     } else {
-      _feedback('notif-channels-feedback', 'Invio fallito: controlla la URL.', 'danger');
+      _feedback('notif-channels-feedback', t('settings.sending.failed.check.the.url'), 'danger');
     }
   } catch (e) {
-    _feedback('notif-channels-feedback', errText(e, 'Invio fallito: controlla la URL.'), 'danger');
+    _feedback('notif-channels-feedback', _settingsError(e, t('settings.sending.failed.check.the.url')), 'danger');
   }
 }
 
@@ -373,26 +386,26 @@ async function connectJellyfin(reconfigure) {
   const username = document.getElementById(prefix + 'username').value.trim();
   const password = document.getElementById(prefix + 'password').value;
   if (!url || !username) {
-    _feedback(fbId, 'Compila URL e utente amministratore.', 'danger');
+    _feedback(fbId, t('settings.enter.the.url.and.administrator.username'), 'danger');
     return;
   }
 
   btn.disabled = true;
-  _feedback(fbId, 'Connessione...');
+  _feedback(fbId, t('login.connecting'));
   try {
     try {
       await api.post('/api/auth/jellyfin-connect', { url, username, password });
     } catch (e) {
-      _feedback(fbId, errText(e, 'Collegamento fallito.'), 'danger');
+      _feedback(fbId, _settingsError(e, t('settings.connection.failed')), 'danger');
       btn.disabled = false;
       return;
     }
     // A full reload re-runs initAuth() against the now-real permission set,
     // which is simpler than patching _me and the nav in place.
-    _feedback(fbId, 'Collegato. Ricaricamento...', 'success');
+    _feedback(fbId, t('settings.connected.reloading'), 'success');
     window.location.reload();
   } catch (e) {
-    _feedback(fbId, 'Errore di rete.', 'danger');
+    _feedback(fbId, t('settings.network.error'), 'danger');
     btn.disabled = false;
   }
 }
@@ -425,7 +438,7 @@ async function saveOutputSettings() {
   const outputContainer = document.getElementById('setting-output-container').value;
   const subtitleMode = document.getElementById('setting-subtitle-mode').value;
   btn.disabled = true;
-  _feedback('output-feedback', 'Salvataggio...');
+  _feedback('output-feedback', t('settings.saving'));
   try {
     // Only the two keys this section owns: set_app_settings merges over what is
     // stored, so it cannot clobber a change made seconds ago in another pane.
@@ -433,9 +446,9 @@ async function saveOutputSettings() {
       output_container: outputContainer,
       subtitle_mode: subtitleMode,
     });
-    _feedback('output-feedback', 'Salvato.', 'success');
-    showToast('Formato di uscita salvato', 'success');
-  } catch (e) { _feedback('output-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
+    _feedback('output-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.output.format.saved'), 'success');
+  } catch (e) { _feedback('output-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
   finally { btn.disabled = false; }
 }
 
@@ -466,16 +479,16 @@ async function loadHosts() {
 async function saveHosts() {
   const btn = document.getElementById('save-hosts-btn');
   btn.disabled = true;
-  _feedback('hosts-feedback', 'Verifica in corso...');
+  _feedback('hosts-feedback', t('settings.verifying'));
   try {
     const data = await api.put('/api/domain/hosts', {
       animeunity: document.getElementById('animeunity-host-input').value.trim(),
       video_host: document.getElementById('video-host-input').value.trim(),
     });
     _fillHosts(data);
-    _feedback('hosts-feedback', 'Salvato.', 'success');
-    showToast('Host salvati', 'success');
-  } catch (e) { _feedback('hosts-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
+    _feedback('hosts-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.hosts.saved'), 'success');
+  } catch (e) { _feedback('hosts-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
   finally { btn.disabled = false; }
 }
 
@@ -546,10 +559,10 @@ async function refreshNamingPreview() {
       if (!line || !slot) return;
       if (slot.error) {
         line.className = 'form-text text-danger';
-        line.textContent = slot.error;
+        _settingsText(line, scLanguage.message(slot.error));
       } else {
         line.className = 'form-text';
-        line.textContent = `Esempio: ${slot.preview}`;
+        _settingsText(line, t('settings.example', {preview: slot.preview}));
       }
     });
   } catch (e) { /* previews are a convenience; saving still validates */ }
@@ -558,21 +571,21 @@ async function refreshNamingPreview() {
 async function saveNamingTemplates() {
   const btn = document.getElementById('save-naming-btn');
   btn.disabled = true;
-  _feedback('naming-feedback', 'Salvataggio...');
+  _feedback('naming-feedback', t('settings.saving'));
   try {
     await api.put('/api/domain/settings', {naming_templates: _collectNamingTemplates()});
-    _feedback('naming-feedback', 'Salvato.', 'success');
-    showToast('Schema dei nomi salvato', 'success');
-  } catch (e) { _feedback('naming-feedback', 'Errore di rete.', 'danger'); }
+    _feedback('naming-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.naming.templates.saved'), 'success');
+  } catch (e) { _feedback('naming-feedback', t('settings.network.error'), 'danger'); }
   finally { btn.disabled = false; }
 }
 
 async function resetNamingTemplates() {
-  if (!await scConfirm('Ripristinare lo schema dei nomi predefinito?')) return;
+  if (!await scConfirm(t('settings.restore.the.default.naming.templates'))) return;
   // Blank means default, so restoring is emptying every field.
   _namingInputs().forEach(input => { input.value = ''; });
   refreshNamingPreview();
-  _feedback('naming-feedback', 'Predefiniti ripristinati: premi Salva per applicarli.');
+  _feedback('naming-feedback', t('settings.defaults.restored.press.save.to.apply.them'));
 }
 
 
@@ -585,9 +598,9 @@ async function resetNamingTemplates() {
 let _hooks = [];
 
 const HOOK_EVENT_LABELS = {
-  done: 'Completato',
-  error: 'Fallito',
-  cancelled: 'Annullato',
+  get done() { return t('settings.completed'); },
+  get error() { return t('settings.failed'); },
+  get cancelled() { return t('settings.cancelled'); },
 };
 
 async function loadJellyfinRefresh() {
@@ -605,23 +618,23 @@ function renderJellyfinRefreshAvailability(connected) {
   const toggle = document.getElementById('jf-refresh-on-download');
   if (!toggle) return;
   toggle.disabled = !connected;
-  document.getElementById('jf-refresh-status').textContent = connected
+  _settingsText(document.getElementById('jf-refresh-status'), connected
     ? ''
-    : 'Jellyfin non è collegato: collegalo da Accesso e utenti perché questa opzione abbia effetto.';
+    : t('settings.jellyfin.is.not.connected.connect.it.in.access'));
 }
 
 async function saveJellyfinRefresh() {
   const btn = document.getElementById('save-jf-refresh-btn');
   btn.disabled = true;
-  _feedback('jf-refresh-feedback', 'Salvataggio...');
+  _feedback('jf-refresh-feedback', t('settings.saving'));
   try {
     await api.put('/api/domain/settings', {
       jellyfin_refresh_on_download:
         document.getElementById('jf-refresh-on-download').checked,
     });
-    _feedback('jf-refresh-feedback', 'Salvato.', 'success');
-    showToast('Impostazione salvata', 'success');
-  } catch (e) { _feedback('jf-refresh-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
+    _feedback('jf-refresh-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.setting.saved'), 'success');
+  } catch (e) { _feedback('jf-refresh-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
   finally { btn.disabled = false; }
 }
 
@@ -637,14 +650,14 @@ async function loadHooks() {
 function _hookEventSummary(hook) {
   // An empty list means every event — the same convention the notification
   // channels use, and the one thing here that is easy to read backwards.
-  if (!hook.events || !hook.events.length) return 'Tutti gli esiti';
+  if (!hook.events || !hook.events.length) return t('settings.all.outcomes');
   return hook.events.map(e => HOOK_EVENT_LABELS[e] || e).join(', ');
 }
 
 function renderHooksList() {
   const container = document.getElementById('hooks-list');
   if (!_hooks.length) {
-    container.innerHTML = '<p class="text-muted small mb-0">Nessun webhook configurato.</p>';
+    container.innerHTML = `<p class="text-muted small mb-0">${escapeHtml(t('settings.no.webhooks.configured'))}</p>`;
     return;
   }
   container.innerHTML = _hooks.map(hook => `
@@ -679,10 +692,10 @@ async function saveHook() {
   const name = document.getElementById('hook-name').value.trim();
   const url = document.getElementById('hook-url').value.trim();
   if (!name || !url) {
-    _feedback('hooks-feedback', 'Nome e URL sono obbligatori.', 'danger'); return;
+    _feedback('hooks-feedback', t('settings.name.and.url.are.required'), 'danger'); return;
   }
   btn.disabled = true;
-  _feedback('hooks-feedback', 'Salvataggio...');
+  _feedback('hooks-feedback', t('settings.saving'));
   try {
     await api.post('/api/download-hooks', {
       name, url,
@@ -693,41 +706,41 @@ async function saveHook() {
     document.getElementById('hook-url').value = '';
     document.getElementById('hook-body').value = '';
     document.getElementById('hook-form').style.display = 'none';
-    _feedback('hooks-feedback', 'Aggiunto.', 'success');
+    _feedback('hooks-feedback', t('settings.added'), 'success');
     await loadHooks();
-  } catch (e) { _feedback('hooks-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
+  } catch (e) { _feedback('hooks-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
   finally { btn.disabled = false; }
 }
 
 async function toggleHook(id, enabled) {
   try {
     await api.patch(`/api/download-hooks/${id}`, {enabled});
-  } catch (e) { _feedback('hooks-feedback', errText(e), 'danger'); }
+  } catch (e) { _feedback('hooks-feedback', _settingsError(e), 'danger'); }
   await loadHooks();
 }
 
 async function deleteHook(id) {
-  if (!await scConfirm('Eliminare questo webhook?')) return;
+  if (!await scConfirm(t('settings.delete.this.webhook'))) return;
   try {
     await api.del(`/api/download-hooks/${id}`);
     await loadHooks();
-  } catch (e) { _feedback('hooks-feedback', errText(e), 'danger'); }
+  } catch (e) { _feedback('hooks-feedback', _settingsError(e), 'danger'); }
 }
 
 async function testHook(id) {
-  _feedback('hooks-feedback', 'Invio chiamata di prova...');
+  _feedback('hooks-feedback', t('settings.sending.test.request'));
   try {
     const data = await api.post(`/api/download-hooks/${id}/test`);
     // Only an outcome and a status code come back: the panel never relays what
     // the other end said.
     if (data.ok) {
-      _feedback('hooks-feedback', `Riuscito (HTTP ${data.status}).`, 'success');
-      showToast('Webhook raggiunto', 'success');
+      _feedback('hooks-feedback', t('settings.succeeded.http', {status: data.status}), 'success');
+      showToast(t('settings.webhook.reached'), 'success');
     } else {
       _feedback('hooks-feedback',
-        data.status ? `Fallito (HTTP ${data.status}).` : 'Nessuna risposta.', 'danger');
+        data.status ? t('settings.failed.http', {status: data.status}) : t('settings.no.response'), 'danger');
     }
-  } catch (e) { _feedback('hooks-feedback', 'Errore di rete.', 'danger'); }
+  } catch (e) { _feedback('hooks-feedback', t('settings.network.error'), 'danger'); }
 }
 
 // ── Post-download hooks end ────────────────────────────────────────────────────
@@ -736,61 +749,60 @@ async function saveDomainRecovery() {
   const btn = document.getElementById('save-domain-recovery-btn');
   const interval = parseInt(document.getElementById('domain-check-interval').value, 10);
   if (!(interval >= 1 && interval <= 1440)) {
-    _feedback('domain-recovery-feedback', 'Intervallo tra 1 e 1440 minuti.', 'danger');
+    _feedback('domain-recovery-feedback', t('settings.the.interval.must.be.between.1.and.1440'), 'danger');
     return;
   }
   const autoApply = document.getElementById('domain-auto-apply').checked;
   // Turning this on hands a page we do not control the ability to move the
   // panel's source. Worth one deliberate click.
   if (autoApply && !await scConfirm(
-      'Con l\'applicazione automatica il pannello adotta il dominio trovato senza chiedere. ' +
-      'Verranno accettati solo domini verificati e con un nome riconosciuto. Continuare?')) {
+      t('settings.automatic.application.adopts.the.discovered.domain.without.asking'))) {
     return;
   }
   btn.disabled = true;
-  _feedback('domain-recovery-feedback', 'Salvataggio...');
+  _feedback('domain-recovery-feedback', t('settings.saving'));
   try {
     await api.put('/api/domain/settings', {
       domain_auto_check_enabled: document.getElementById('domain-auto-check').checked,
       domain_auto_apply: autoApply,
       domain_check_interval_minutes: interval,
     });
-    _feedback('domain-recovery-feedback', 'Salvato.', 'success');
-    showToast('Impostazioni salvate', 'success');
-  } catch (e) { _feedback('domain-recovery-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
+    _feedback('domain-recovery-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.settings.saved'), 'success');
+  } catch (e) { _feedback('domain-recovery-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
   finally { btn.disabled = false; }
 }
 
 async function checkDomainNow() {
   const btn = document.getElementById('domain-check-btn');
   btn.disabled = true;
-  _feedback('domain-recovery-feedback', 'Controllo in corso...');
+  _feedback('domain-recovery-feedback', t('settings.checking'));
   try {
     let data;
     try {
       data = await api.post('/api/domain/check');
     } catch (e) {
-      _feedback('domain-recovery-feedback', errText(e, 'Controllo fallito.'), 'danger');
+      _feedback('domain-recovery-feedback', _settingsError(e, t('settings.check.failed')), 'danger');
       return;
     }
     if (data.applied) {
-      _feedback('domain-recovery-feedback', `Applicato ${data.candidate}.`, 'success');
+      _feedback('domain-recovery-feedback', t('settings.applied', {domain: data.candidate}), 'success');
       await loadDomainStatus();
     } else if (data.candidate) {
-      _feedback('domain-recovery-feedback', `Trovato ${data.candidate}: da applicare.`, 'success');
+      _feedback('domain-recovery-feedback', t('settings.found.awaiting.application', {domain: data.candidate}), 'success');
     } else if (data.current_ok) {
-      _feedback('domain-recovery-feedback', 'Il dominio attuale risponde.', 'success');
+      _feedback('domain-recovery-feedback', t('settings.the.current.domain.is.responding'), 'success');
     } else {
       // Rejections are shown rather than swallowed: a rebranded source and an
       // edited page look identical from here, and only a person can tell them
       // apart.
-      const why = (data.rejected || []).map(r => `${r.host} (${r.reason})`).join(', ');
+      const why = (data.rejected || []).map(r => `${r.host} (${scLanguage.message(r.reason)})`).join(', ');
       _feedback('domain-recovery-feedback',
-        why ? `Nessun dominio adottabile. Scartati: ${why}` : 'Nessun dominio trovato.',
+        why ? t('settings.no.suitable.domain.rejected', {rejected: why}) : t('settings.no.domain.found'),
         'danger');
     }
     await loadDomainCandidate();
-  } catch (e) { _feedback('domain-recovery-feedback', 'Errore di rete.', 'danger'); }
+  } catch (e) { _feedback('domain-recovery-feedback', t('settings.network.error'), 'danger'); }
   finally { btn.disabled = false; }
 }
 
@@ -800,38 +812,38 @@ async function savePerfSettings() {
   const workers = parseInt(document.getElementById('setting-max-workers').value, 10);
   const watchInterval = parseInt(document.getElementById('setting-watch-interval').value, 10);
   if (!concurrent || !workers || !watchInterval) {
-    _feedback('perf-settings-feedback', 'Valori non validi.', 'danger'); return;
+    _feedback('perf-settings-feedback', t('settings.invalid.values'), 'danger'); return;
   }
   btn.disabled = true;
-  _feedback('perf-settings-feedback', 'Salvataggio...');
+  _feedback('perf-settings-feedback', t('settings.saving'));
   try {
     await api.put('/api/domain/settings', {
       max_concurrent_downloads: concurrent,
       max_segment_workers: workers,
       series_watch_interval_minutes: watchInterval,
     });
-    _feedback('perf-settings-feedback', 'Salvato.', 'success');
-    showToast('Performance salvate', 'success');
-  } catch (e) { _feedback('perf-settings-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
+    _feedback('perf-settings-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.performance.settings.saved'), 'success');
+  } catch (e) { _feedback('perf-settings-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
   finally { btn.disabled = false; }
 }
 
 async function saveDomain() {
   const domain = document.getElementById('domain-input').value.trim();
   const btn = document.getElementById('save-domain-btn');
-  if (!domain) { _feedback('domain-feedback', 'Inserisci un domain.', 'danger'); return; }
+  if (!domain) { _feedback('domain-feedback', t('settings.enter.a.domain'), 'danger'); return; }
   btn.disabled = true;
-  _feedback('domain-feedback', 'Verifica in corso...');
+  _feedback('domain-feedback', t('settings.verifying'));
   try {
     const data = await api.put('/api/domain', {domain});
     currentDomain = data.domain; currentVersion = data.version;
-    _feedback('domain-feedback', `OK — versione ${data.version}`, 'success');
+    _feedback('domain-feedback', t('settings.ok.version', {version: data.version}), 'success');
     const badge = document.getElementById('domain-badge');
     badge.className = 'badge bg-success';
     badge.textContent = data.domain;
-    showToast('Domain salvato', 'success');
+    showToast(t('settings.domain.saved'), 'success');
   } catch(e) {
-    _feedback('domain-feedback', errText(e, 'Errore di rete'), 'danger');
+    _feedback('domain-feedback', _settingsError(e, t('settings.network.error.233')), 'danger');
   } finally { btn.disabled = false; }
 }
 
@@ -846,11 +858,11 @@ async function loadLibraries() {
     if (inp) inp.value = excl;
   } catch(e) { console.error('loadLibraries:', e); }
 }
-const _LIB_TYPE_OPTIONS = [{value:'film',label:'Film'},{value:'tv',label:'Serie TV'},{value:'anime',label:'Anime'}];
+const _LIB_TYPE_OPTIONS = [{value:'film',get label() { return t('settings.films'); }},{value:'tv',get label() { return t('settings.tv.series'); }},{value:'anime',label:'Anime'}];
 function renderLibrariesList() {
   const c = document.getElementById('libraries-list');
   if (!c) return;
-  if (!_libraries.length) { c.innerHTML = '<p class="text-muted small mb-0">Nessuna libreria.</p>'; return; }
+  if (!_libraries.length) { c.innerHTML = `<p class="text-muted small mb-0">${escapeHtml(t('settings.no.libraries'))}</p>`; return; }
   const usedTypes = _libraries.map(l => l.type);
   c.innerHTML = _libraries.map((lib, i) => {
     const opts = _LIB_TYPE_OPTIONS.map(o => {
@@ -860,7 +872,7 @@ function renderLibrariesList() {
     }).join('');
     return `
     <div class="row g-2 mb-2 align-items-center">
-      <div class="col-4"><select class="form-select form-select-sm" id="lib-type-${i}"><option value="">Tipo...</option>${opts}</select></div>
+      <div class="col-4"><select class="form-select form-select-sm" id="lib-type-${i}"><option value="">${escapeHtml(t('settings.type'))}</option>${opts}</select></div>
       <div class="col"><input type="text" class="form-control form-control-sm" id="lib-path-${i}" value="${escapeHtml(lib.path)}" placeholder="/srv/nfs/films"></div>
       <div class="col-auto"><button class="btn btn-sm btn-outline-danger" data-action="cfg:removeLibrary" data-index="${i}"><i class="ti ti-trash"></i></button></div>
     </div>`;
@@ -885,14 +897,14 @@ async function saveLibraries() {
   const excluded = (document.getElementById('excluded-input')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
   const btn = document.getElementById('save-libraries-btn');
   btn.disabled = true;
-  _feedback('libraries-feedback', 'Salvataggio...');
+  _feedback('libraries-feedback', t('settings.saving'));
   try {
     await api.put('/api/domain/libraries', {libraries:updated, excluded_folders:excluded});
     _libraries = updated;
     renderLibrariesList();
-    _feedback('libraries-feedback', 'Salvato.', 'success');
-    showToast('Librerie salvate','success');
-  } catch(e) { _feedback('libraries-feedback', errText(e), 'danger'); }
+    _feedback('libraries-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.libraries.saved'),'success');
+  } catch(e) { _feedback('libraries-feedback', _settingsError(e), 'danger'); }
   finally { btn.disabled = false; }
 }
 
@@ -928,41 +940,40 @@ async function loadMcpSettings() {
     document.getElementById('setting-mcp-enabled').checked = !!status.enabled;
     const tokenStatus = document.getElementById('mcp-token-status');
     if (!status.has_token) {
-      tokenStatus.textContent = 'Nessun token: genera un token perché un agente possa collegarsi.';
+      _settingsText(tokenStatus, t('settings.no.token.generate.one.to.allow.an.agent'));
     } else if (!status.owner) {
       // Owner disabled or removed, or minted before Jellyfin was connected.
-      tokenStatus.textContent = 'Il token non è più valido: chi l’ha generato non è più un utente attivo. Generane uno nuovo.';
+      _settingsText(tokenStatus, t('settings.the.token.is.no.longer.valid.its.owner'));
     } else {
-      tokenStatus.textContent = `Token attivo, generato da ${status.owner}: l’agente agisce con i suoi permessi.`;
+      _settingsText(tokenStatus, t('settings.active.token.generated.by.the.agent.uses.their', {owner: status.owner}));
     }
     document.getElementById('mcp-revoke-btn').style.display = status.has_token ? '' : 'none';
     document.getElementById('mcp-token-once').style.display = 'none';
     _renderMcpSnippet(_mcpPath, '');
   } catch (e) {
-    _feedback('mcp-feedback', errText(e, 'Errore nel caricamento.'), 'danger');
+    _feedback('mcp-feedback', _settingsError(e, t('settings.failed.to.load')), 'danger');
   }
 }
 
 async function saveMcpSettings() {
   const btn = document.getElementById('save-mcp-btn');
   btn.disabled = true;
-  _feedback('mcp-feedback', 'Salvataggio...');
+  _feedback('mcp-feedback', t('settings.saving'));
   try {
     await api.put('/api/domain/settings', {
       mcp_enabled: document.getElementById('setting-mcp-enabled').checked,
     });
     _appSettingsPromise = null;
-    _feedback('mcp-feedback', 'Salvato.', 'success');
-    showToast('Impostazione salvata', 'success');
-  } catch (e) { _feedback('mcp-feedback', errText(e, 'Errore salvataggio.'), 'danger'); }
+    _feedback('mcp-feedback', t('settings.saved'), 'success');
+    showToast(t('settings.setting.saved'), 'success');
+  } catch (e) { _feedback('mcp-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
   finally { btn.disabled = false; }
 }
 
 async function regenerateMcpToken() {
   const hadToken = document.getElementById('mcp-revoke-btn').style.display !== 'none';
   if (hadToken && !await scConfirm(
-    'Generare un nuovo token? Quello attuale smette subito di funzionare: '
-    + 'gli agenti che lo usano vanno riconfigurati.'
+    t('settings.generate.a.new.token.the.current.one.will')
   )) return;
   try {
     const res = await api.post('/api/mcp/token', {});
@@ -971,20 +982,20 @@ async function regenerateMcpToken() {
     document.getElementById('mcp-token-once').style.display = '';
     _renderMcpSnippet(_mcpPath, res.token);
   } catch (e) {
-    _feedback('mcp-feedback', errText(e, 'Errore nella generazione del token.'), 'danger');
+    _feedback('mcp-feedback', _settingsError(e, t('settings.failed.to.generate.the.token')), 'danger');
   }
 }
 
 async function revokeMcpToken() {
   if (!await scConfirm(
-    'Revocare il token? Nessun agente potrà collegarsi finché non ne generi uno nuovo.'
+    t('settings.revoke.the.token.no.agent.will.be.able')
   )) return;
   try {
     await api.del('/api/mcp/token');
     await loadMcpSettings();
-    showToast('Token revocato', 'success');
+    showToast(t('settings.token.revoked'), 'success');
   } catch (e) {
-    _feedback('mcp-feedback', errText(e, 'Errore nella revoca.'), 'danger');
+    _feedback('mcp-feedback', _settingsError(e, t('settings.failed.to.revoke.the.token')), 'danger');
   }
 }
 
@@ -1011,7 +1022,7 @@ async function _copyText(text) {
 
 async function _copyWithToast(text, what) {
   const ok = await _copyText(text);
-  showToast(ok ? `${what} copiato` : 'Impossibile copiare: selezionalo a mano', ok ? 'success' : 'warning');
+  showToast(ok ? t('settings.copied', {item: what}) : t('settings.unable.to.copy.select.it.manually'), ok ? 'success' : 'warning');
 }
 
 
@@ -1053,7 +1064,7 @@ registerActions({
   'cfg:deleteHook':       d => deleteHook(Number(d.id)),
   'cfg:saveMcp':          () => saveMcpSettings(),
   'cfg:copyMcpToken':     () => _copyWithToast(document.getElementById('mcp-token-display').value, 'Token'),
-  'cfg:copyMcpSnippet':   () => _copyWithToast(document.getElementById('mcp-config-snippet').textContent, 'Configurazione'),
+  'cfg:copyMcpSnippet':   () => _copyWithToast(document.getElementById('mcp-config-snippet').textContent, t('settings.configuration')),
   'cfg:regenerateMcpToken': () => regenerateMcpToken(),
   'cfg:revokeMcpToken':   () => revokeMcpToken(),
 });
@@ -1071,7 +1082,7 @@ async function loadDownloadDirectory() {
     const data = await api.get('/api/domain/download-directory');
     document.getElementById('download-directory').value = data.path;
     document.getElementById('browse-download-directory').style.display = data.can_browse ? '' : 'none';
-  } catch (e) { _feedback('download-directory-feedback', errText(e), 'danger'); }
+  } catch (e) { _feedback('download-directory-feedback', _settingsError(e), 'danger'); }
 }
 
 async function saveDownloadDirectory() {
@@ -1082,8 +1093,8 @@ async function saveDownloadDirectory() {
       path: document.getElementById('download-directory').value.trim(),
     });
     document.getElementById('download-directory').value = data.path;
-    _feedback('download-directory-feedback', 'Cartella salvata per i nuovi download.', 'success');
-  } catch (e) { _feedback('download-directory-feedback', errText(e), 'danger'); }
+    _feedback('download-directory-feedback', t('settings.folder.saved.for.new.downloads'), 'success');
+  } catch (e) { _feedback('download-directory-feedback', _settingsError(e), 'danger'); }
   finally { btn.disabled = false; }
 }
 
@@ -1095,10 +1106,13 @@ async function loadApplicationLogs() {
     const data = await api.get('/api/domain/logs');
     const el = document.getElementById('application-log');
     const follow = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
-    el.textContent = data.lines.join('\n') || 'Nessun evento registrato.';
+    if (data.lines.length) {
+      _settingsTextBindings.delete(el);
+      el.textContent = data.lines.join('\n');
+    } else _settingsText(el, t('settings.no.events.recorded'));
     if (follow) el.scrollTop = el.scrollHeight;
     _feedback('logs-feedback');
-  } catch (e) { _feedback('logs-feedback', errText(e), 'danger'); }
+  } catch (e) { _feedback('logs-feedback', _settingsError(e), 'danger'); }
   finally { _logsLoading = false; }
 }
 setInterval(() => {
@@ -1112,18 +1126,18 @@ async function browseDownloadDirectory() {
   const save = document.getElementById('save-download-directory');
   button.disabled = true;
   save.disabled = true;
-  _feedback('download-directory-feedback', 'Seleziona una cartella nella finestra di Windows.');
+  _feedback('download-directory-feedback', t('settings.select.a.folder.in.the.windows.dialog'));
   try {
     const result = await api.post('/api/domain/download-directory/browse', {
       path: document.getElementById('download-directory').value.trim(),
     });
     if (!result.cancelled && result.path) {
       document.getElementById('download-directory').value = result.path;
-      _feedback('download-directory-feedback', 'Cartella selezionata. Premi Salva cartella per applicarla.');
+      _feedback('download-directory-feedback', t('settings.folder.selected.press.save.folder.to.apply.it'));
     } else {
-      _feedback('download-directory-feedback', 'Selezione annullata.');
+      _feedback('download-directory-feedback', t('settings.selection.cancelled'));
     }
-  } catch (e) { _feedback('download-directory-feedback', errText(e), 'danger'); }
+  } catch (e) { _feedback('download-directory-feedback', _settingsError(e), 'danger'); }
   finally { button.disabled = false; save.disabled = false; }
 }
 
@@ -1142,26 +1156,32 @@ async function loadVideoSettings() {
 async function loadVideoEncoders(refresh = false) {
   const button = document.getElementById('refresh-video-encoders');
   const status = document.getElementById('video-encoder-status');
+  status.removeAttribute('data-i18n');
   button.disabled = true;
-  status.textContent = 'Prova degli encoder in corso…';
+  _settingsText(status, t('settings.testing.encoders'));
   try {
     const data = refresh ? await api.post('/api/domain/video-encoders/refresh', {})
                          : await api.get('/api/domain/video-encoders');
     status.replaceChildren();
+    _settingsTextBindings.delete(status);
     for (const encoder of data.encoders) {
       const line = document.createElement('div');
-      line.textContent = `${encoder.label} · ${encoder.codec === 'hevc' ? 'H.265' : 'H.264'}: ${encoder.available ? 'disponibile (verificato)' : 'non disponibile'}`;
+      _settingsText(line, t('settings.encoder.status', {
+        label: scLanguage.message(encoder.label),
+        codec: encoder.codec === 'hevc' ? 'H.265' : 'H.264',
+        status: encoder.available ? t('settings.available.verified') : t('settings.unavailable'),
+      }));
       line.title = encoder.reason || '';
       status.appendChild(line);
     }
-  } catch (e) { status.textContent = errText(e, 'Rilevamento non riuscito'); }
+  } catch (e) { _settingsText(status, _settingsError(e, t('settings.detection.failed'))); }
   finally { button.disabled = false; }
 }
 
 async function saveVideoSettings() {
   const button = document.getElementById('save-video-settings');
   button.disabled = true;
-  _feedback('video-settings-feedback', 'Verifica e salvataggio…');
+  _feedback('video-settings-feedback', t('settings.verifying.and.saving'));
   try {
     await api.put('/api/domain/settings', {
       video_conversion: document.getElementById('video-conversion').value,
@@ -1170,7 +1190,28 @@ async function saveVideoSettings() {
       video_cpu_fallback: document.getElementById('video-cpu-fallback').checked,
     });
     _appSettingsPromise = null;
-    _feedback('video-settings-feedback', 'Salvato. Si applica ai nuovi download.', 'success');
-  } catch (e) { _feedback('video-settings-feedback', errText(e), 'danger'); }
+    _feedback('video-settings-feedback', t('settings.saved.applies.to.new.downloads'), 'success');
+  } catch (e) { _feedback('video-settings-feedback', _settingsError(e), 'danger'); }
   finally { button.disabled = false; }
 }
+
+window.addEventListener('sc:language-changed', () => {
+  // Refresh only generated lists; no settings endpoint is called here.
+  const focused = document.activeElement;
+  const focusId = focused?.id;
+  const selection = typeof focused?.selectionStart === 'number'
+    ? [focused.selectionStart, focused.selectionEnd] : null;
+  if (document.querySelector('#libraries-list [id^="lib-path-"]')) _syncLibs();
+  renderLibrariesList();
+  renderNotificationChannelsList();
+  renderHooksList();
+  for (const [node, descriptor] of _settingsTextBindings) {
+    if (!node.isConnected) { _settingsTextBindings.delete(node); continue; }
+    node.textContent = scLanguage.resolve(descriptor);
+  }
+  const target = focusId && document.getElementById(focusId);
+  if (target && target !== focused) {
+    target.focus({preventScroll: true});
+    if (selection) target.setSelectionRange(...selection);
+  }
+});

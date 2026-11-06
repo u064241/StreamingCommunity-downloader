@@ -178,7 +178,8 @@
       .sc-toast-wrap {
         left: 0.5rem !important;
         right: 0.5rem !important;
-        bottom: 0.75rem;
+        top: 4.75rem !important;
+        bottom: auto !important;
         min-width: 0 !important;
         width: auto;
       }

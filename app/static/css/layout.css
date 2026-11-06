@@ -174,6 +174,26 @@
       gap: 6px;
     }
 
+    .sc-toast-wrap {
+      position: fixed;
+      top: 5.25rem;
+      right: 1rem;
+      left: auto;
+      z-index: 1100;
+      min-width: 280px;
+      max-width: min(440px, calc(100vw - 2rem));
+      pointer-events: none;
+    }
+    .sc-toast-wrap .alert { pointer-events: auto; }
+
+    .language-switcher { display: flex; gap: 6px; justify-content: center; }
+    .language-btn {
+      flex: 1; border: 1px solid var(--border); border-radius: 7px;
+      background: var(--bg-raised); color: var(--text-muted); padding: 5px 8px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .language-btn:hover, .language-btn.active { color: var(--text); border-color: var(--accent-ring); background: var(--accent-dim); }
+
     .update-badge {
       display: inline-flex;
       align-items: center;

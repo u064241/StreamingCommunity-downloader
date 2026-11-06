@@ -126,7 +126,7 @@ async function loadTitlePage(route) {
         if (token !== _tpToken) return;
         // Swallowing this used to leave no chips, no reason, and a download
         // button that looked perfectly fine.
-        _tp.tracksError = e.message || 'Sorgente non raggiungibile';
+        _tp.tracksError = e.message || t('title.sourceUnavailable');
         _tp.tracksLoaded = true;
         _tpRender();
       });
@@ -273,11 +273,11 @@ function tpSelectTracks(which, enabled) {
 
 function _tpTabs() {
   const tabs = [];
-  if (_tp.type !== 'movie') tabs.push(['episodes', 'Episodi']);
-  tabs.push(['about', 'Descrizione']);
+  if (_tp.type !== 'movie') tabs.push(['episodes', t('title.episodes')]);
+  tabs.push(['about', t('title.about')]);
   if (_tp.meta?.cast?.length || _tp.meta?.directors?.length) tabs.push(['cast', 'Cast']);
   // Anime tracks are chosen by the source, not here.
-  if (_tp.type !== 'anime') tabs.push(['tracks', 'Tracce']);
+  if (_tp.type !== 'anime') tabs.push(['tracks', t('title.tracks')]);
   return tabs;
 }
 
@@ -323,12 +323,12 @@ function _tpRenderHero() {
     art.classList.remove('is-loaded');
   }
 
-  const kindLabel = _tp.type === 'movie' ? 'Film' : (_tp.type === 'anime' ? 'Anime' : 'Serie TV');
+  const kindLabel = _tp.type === 'movie' ? t('catalog.movie') : (_tp.type === 'anime' ? 'Anime' : t('catalog.tv'));
   // A back control, not just a trail. The trail alone was a row of grey text
   // against artwork and read as a caption rather than as the way out.
   document.getElementById('th-crumbs').innerHTML =
-    `<button class="th-back" data-action="tp:back" title="Torna alla ricerca">
-       <i class="ti ti-arrow-left"></i>Cerca
+    `<button class="th-back" data-action="tp:back" title="${escapeHtml(t('title.back'))}">
+       <i class="ti ti-arrow-left"></i>${t('search.button')}
      </button>` +
     `<span class="sep">›</span><span>${escapeHtml(kindLabel)}</span>` +
     `<span class="sep">›</span><span class="th-crumb-here">${escapeHtml(_tp.name || '—')}</span>`;
@@ -338,11 +338,11 @@ function _tpRenderHero() {
   const chips = [['ti-movie', kindLabel]];
   if (_tp.year) chips.push(['ti-calendar', _tp.year]);
   if (_tp.type === 'tv' && _tp.seasonsCount)
-    chips.push(['ti-layout-grid', `${_tp.seasonsCount} stagion${_tp.seasonsCount === 1 ? 'e' : 'i'}`]);
+    chips.push(['ti-layout-grid', t('title.seasonCount', {count: _tp.seasonsCount})]);
   if (_tp.episodes?.length) {
     chips.push(['ti-list', _tp.type === 'tv'
-      ? `${_tp.episodes.length} episodi in S${String(_tp.season).padStart(2, '0')}`
-      : `${_tp.episodes.length} episodi`]);
+      ? t('title.seasonEpisodes', {count: _tp.episodes.length, season: String(_tp.season).padStart(2, '0')})
+      : t('title.episodeCount', {count: _tp.episodes.length})]);
   }
   if (_tp.meta?.runtime) chips.push(['ti-clock', `${_tp.meta.runtime} min`]);
   if (_tp.age) chips.push(['ti-shield', `${_tp.age}+`]);
@@ -357,27 +357,27 @@ function _tpRenderHero() {
   document.getElementById('th-score').innerHTML = _tp.score
     ? `<span class="th-score"><i class="ti ti-star-filled"></i>${escapeHtml(_tp.score)}/10</span>` : '';
   document.getElementById('th-genres').innerHTML = (_tp.genres || []).slice(0, 4)
-    .map(g => `<span class="th-genre">${escapeHtml(g)}</span>`).join('');
+    .map(g => `<span class="th-genre">${escapeHtml(catalogLabel(g))}</span>`).join('');
 
   _tpRenderCta();
 }
 
 function _tpRenderCta() {
   if (_tp.comingSoon) {
-    document.getElementById('th-cta').innerHTML = '<span class="badge bg-orange-lt">In arrivo: contenuto non ancora disponibile</span>';
+    document.getElementById('th-cta').innerHTML = `<span class="badge bg-orange-lt">${t('title.unavailable')}</span>`;
     return;
   }
   const wants = !can('DOWNLOAD');
   // The hero takes the broadest action available - the whole series where
   // there is one - and the season bar keeps the season. Two buttons that both
   // said "season" left nowhere to ask for the lot.
-  const verb = wants ? 'Richiedi' : (_tp.scheduledAt ? 'Programma' : 'Scarica');
+  const verb = wants ? t('title.request') : (_tp.scheduledAt ? t('title.schedule') : t('title.download'));
   // A requester can ask for a season but not for a series or a whole anime:
   // those two go through the batch download endpoints, which require
   // DOWNLOAD. Offering them would be a button that 403s.
   const scope = _tp.type === 'movie' ? ''
-    : (_tp.type === 'anime' ? (wants ? '' : ' tutti gli episodi')
-    : (!wants && _tp.seasonsCount > 1 ? ' la serie' : ' la stagione'));
+    : (_tp.type === 'anime' ? (wants ? '' : t('title.scopeEpisodes'))
+    : (!wants && _tp.seasonsCount > 1 ? t('title.scopeSeries') : t('title.scopeSeason')));
   const label = `${verb}${scope}`;
   const icon = wants ? 'ti-send' : (_tp.seasonsCount > 1 && _tp.type === 'tv' ? 'ti-stack-2' : 'ti-download');
   // An anime film is _tp.type 'anime'; only the source's own kind says it is a film.
@@ -386,7 +386,7 @@ function _tpRenderCta() {
   // Scheduling is part of the download privilege: a requester picks tracks and
   // an approver decides when it runs.
   const sched = can('DOWNLOAD') ? `
-    <label class="th-sched" title="Lascia vuoto per scaricare subito">
+    <label class="th-sched" title="${escapeHtml(t('title.scheduleHint'))}">
       <i class="ti ti-clock"></i>
       <input type="datetime-local" id="th-sched-at" value="${escapeHtml(_tp.scheduledRaw)}"
              data-change="tp:schedule">
@@ -405,10 +405,10 @@ function _tpRenderCta() {
     <!-- Left bare: _renderFollowButton owns this button's class and label,
          and rewriting them here would fight it. -->
     ${followable ? `<button id="th-follow-btn" data-action="tp:follow"></button>` : ''}
-    <button class="th-icon-btn" data-action="tp:tab" data-tab="tracks" title="Scegli audio e sottotitoli">
+    <button class="th-icon-btn" data-action="tp:tab" data-tab="tracks" title="${escapeHtml(t('title.tracksHint'))}">
       <i class="ti ti-adjustments"></i>
     </button>`;
-  if (followable) tpRefreshFollow();
+  if (followable && !_tpLanguageRender) tpRefreshFollow();
 }
 
 function _tpRenderTabsBar() {
@@ -422,7 +422,7 @@ function _tpRenderAbout() {
   const el = document.getElementById('th-pane-about');
   el.innerHTML = _tp.plot
     ? `<p style="color:var(--text-sub);font-size:13.5px;line-height:1.7;max-width:70ch">${escapeHtml(_tp.plot)}</p>`
-    : `<div class="th-empty">Nessuna descrizione disponibile per questo titolo.</div>`;
+    : `<div class="th-empty">${t('title.noPlot')}</div>`;
 }
 
 function _tpRenderCast() {
@@ -431,22 +431,22 @@ function _tpRenderCast() {
   if (!m?.cast?.length && !m?.directors?.length) { el.innerHTML = ''; return; }
   const personLink = name => {
     return `<button type="button" class="th-track th-person-link" data-action="tp:person" ` +
-      `data-person="${escapeHtml(name)}" title="Cerca informazioni su ${escapeHtml(name)}">` +
+      `data-person="${escapeHtml(name)}" title="${escapeHtml(t('title.person', {name}))}">` +
       `${escapeHtml(name)}</button>`;
   };
   const row = (k, v) => `<div class="th-track-group">
       <div class="th-track-h">${k}</div>
       <div class="th-track-chips">${v.map(personLink).join('')}</div>
     </div>`;
-  el.innerHTML = (m.directors?.length ? row('Regia', m.directors) : '')
-               + (m.cast?.length ? row('Interpreti', m.cast) : '');
+  el.innerHTML = (m.directors?.length ? row(t('title.directors'), m.directors) : '')
+               + (m.cast?.length ? row(t('title.cast'), m.cast) : '');
 }
 
 function _tpRenderTracks() {
   const el = document.getElementById('th-pane-tracks');
   if (_tp.type === 'anime') { el.innerHTML = ''; return; }
   if (!_tp.tracksLoaded) {
-    el.innerHTML = `<div class="th-empty"><span class="spinner-border spinner-border-sm me-2"></span>Lettura delle tracce…</div>`;
+    el.innerHTML = `<div class="th-empty"><span class="spinner-border spinner-border-sm me-2"></span>${t('title.readingTracks')}</div>`;
     return;
   }
   if (_tp.tracksError) {
@@ -457,42 +457,40 @@ function _tpRenderTracks() {
     const list = _tp[which] || [];
     const chips = list.length
       ? list.map(t => `<button class="th-track${t.on ? ' on' : ''}"
-          data-action="tp:track" data-which="${which}" data-code="${escapeHtml(t.code)}">${escapeHtml(langName(t.code))}</button>`).join('')
+          data-action="tp:track" data-which="${which}" data-code="${escapeHtml(t.code)}">${escapeHtml(_tpLangName(t.code))}</button>`).join('')
       : `<span class="th-empty" style="padding:0">${empty}</span>`;
     return `<div class="th-track-group">
         <div class="th-track-h"><i class="ti ${icon}"></i>${title}</div>
-        ${list.length ? `<div class="th-track-chips mb-2"><button class="th-track" data-action="tp:tracks-all" data-which="${which}">Seleziona tutte</button>${which === 'subs' ? '<button class="th-track" data-action="tp:tracks-none" data-which="subs">Nessuno</button>' : ''}</div>` : ''}
+        ${list.length ? `<div class="th-track-chips mb-2"><button class="th-track" data-action="tp:tracks-all" data-which="${which}">${t('title.selectAll')}</button>${which === 'subs' ? `<button class="th-track" data-action="tp:tracks-none" data-which="subs">${t('title.none')}</button>` : ''}</div>` : ''}
         <div class="th-track-chips">${chips}</div>
       </div>`;
   };
   el.innerHTML =
-    group('audio', 'Audio', 'ti-volume', 'solo la traccia originale')
-  + group('subs', 'Sottotitoli', 'ti-badge-cc', 'nessun sottotitolo disponibile')
+    group('audio', 'Audio', 'ti-volume', t('title.originalOnly'))
+  + group('subs', t('title.subtitles'), 'ti-badge-cc', t('title.noSubtitles'))
   + `<p style="color:var(--text-muted);font-size:12px;margin:0">
-       Vale per ogni download avviato da questa pagina. Una lingua audio mai
-       presente nel file non viene sostituita con un'altra: la richiesta si
-       ferma e la guarda una persona.
+       ${t('title.trackNote')}
      </p>`;
 }
 
 function _tpRenderFacts() {
   const m = _tp.meta || {};
   const rows = [];
-  if (m.original_name && m.original_name !== _tp.name) rows.push(['Titolo originale', m.original_name]);
-  if (_tp.year) rows.push(['Anno', _tp.year]);
-  if (_tp.type === 'tv' && _tp.seasonsCount) rows.push(['Stagioni', _tp.seasonsCount]);
+  if (m.original_name && m.original_name !== _tp.name) rows.push([t('title.originalName'), m.original_name]);
+  if (_tp.year) rows.push([t('title.year'), _tp.year]);
+  if (_tp.type === 'tv' && _tp.seasonsCount) rows.push([t('title.seasons'), _tp.seasonsCount]);
   // Per season, not for the series: the source gives no series-wide total, and
   // labelling one season's count "Episodi" read as if it were that total.
   if (_tp.episodes?.length) {
-    rows.push([_tp.type === 'tv' ? `Episodi (S${String(_tp.season).padStart(2, '0')})` : 'Episodi',
+    rows.push([_tp.type === 'tv' ? t('title.episodeFacts', {season: String(_tp.season).padStart(2, '0')}) : t('title.episodes'),
                _tp.episodes.length]);
   }
-  if (m.runtime) rows.push(['Durata', `${m.runtime} min`]);
-  if (m.status) rows.push(['Stato', m.status]);
+  if (m.runtime) rows.push([t('title.runtime'), `${m.runtime} min`]);
+  if (m.status) rows.push([t('title.status'), m.status]);
   if (m.studio) rows.push(['Studio', m.studio]);
-  if (m.season) rows.push(['Stagione di uscita', m.season]);
-  if (m.quality) rows.push(['Qualità', m.quality]);
-  if (_tp.genres?.length) rows.push(['Genere', _tp.genres.join(', ')]);
+  if (m.season) rows.push([t('title.releaseSeason'), m.season]);
+  if (m.quality) rows.push([t('title.quality'), m.quality]);
+  if (_tp.genres?.length) rows.push([t('title.genre'), _tp.genres.map(catalogLabel).join(', ')]);
   // Last and quiet: the id is what an association in Settings is keyed on,
   // and the only place to read it from.
   if (_tp.id) {
@@ -505,13 +503,14 @@ function _tpRenderFacts() {
 }
 
 function _tpRenderTrailer() {
+  if (_tpLanguageRender && document.querySelector('#th-trailer iframe')) return;
   const card = document.getElementById('th-trailer-card');
   const url = _tp.meta?.trailer_url;
   if (!url) { card.hidden = true; return; }
   card.hidden = false;
   const still = _tp.meta?.backdrop ? `style="background-image:url('${encodeURI(_tp.meta.backdrop)}')"` : '';
   document.getElementById('th-trailer').innerHTML =
-    `<button class="th-trailer-facade" ${still} data-action="tp:trailer" aria-label="Riproduci il trailer"></button>`;
+    `<button class="th-trailer-facade" ${still} data-action="tp:trailer" aria-label="${escapeHtml(t('title.playTrailer'))}"></button>`;
 }
 
 function tpPlayTrailer() {
@@ -520,7 +519,7 @@ function tpPlayTrailer() {
   if (!id) { window.open(url, '_blank', 'noopener'); return; }
   // Only now does anything reach YouTube, and through the no-cookie host.
   document.getElementById('th-trailer').innerHTML =
-    `<iframe class="th-trailer-frame" src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1"
+    `<iframe class="th-trailer-frame" data-title-id="${escapeHtml(String(_tp.id))}" title="Trailer" src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1"
        allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowfullscreen
        referrerpolicy="no-referrer"></iframe>`;
 }
@@ -528,7 +527,7 @@ function tpPlayTrailer() {
 function _tpRenderEpisodes() {
   const el = document.getElementById('th-pane-episodes');
   if (!el || _tp.type === 'movie') { if (el) el.innerHTML = ''; return; }
-  if (_tp.comingSoon) { el.textContent = 'In arrivo: episodi non ancora disponibili.'; return; }
+  if (_tp.comingSoon) { el.textContent = t('title.episodesUnavailable'); return; }
 
   const pills = _tp.type === 'tv' && _tp.seasonsCount > 1
     ? `<div class="th-season-pills">${_tpSeasons()
@@ -537,38 +536,38 @@ function _tpRenderEpisodes() {
 
   // Batching is a download privilege; a requester asks episode by episode.
   // The verb follows the schedule field, so the button says what will happen.
-  const verb = _tp.scheduledAt ? 'Programma' : 'Scarica';
+  const verb = _tp.scheduledAt ? t('title.schedule') : t('title.download');
   let batch = '';
   if (_tp.episodes?.length) {
     if (can('DOWNLOAD')) {
       // Only a StreamingCommunity season knows what it holds before asking:
       // its episodes arrive flagged in_library. For anime the server decides.
       const owned = _tp.type === 'tv' ? _tp.episodes.filter(e => e.in_library).length : 0;
-      const ownedHint = owned ? ` <span class="th-only-missing-n">(${owned} già presenti)</span>` : '';
+      const ownedHint = owned ? ` <span class="th-only-missing-n">${t('title.owned', {count: owned})}</span>` : '';
       batch = `<label class="form-check form-switch th-only-missing"
-                      title="Salta gli episodi il cui file è già in libreria">
+                      title="${escapeHtml(t('title.skipHint'))}">
             <input class="form-check-input" type="checkbox" data-change="tp:onlyMissing"
                    ${_tp.onlyMissing ? 'checked' : ''}>
-            <span class="form-check-label">Solo mancanti${ownedHint}</span>
+            <span class="form-check-label">${t('title.onlyMissing')}${ownedHint}</span>
           </label>` + (_tp.type === 'anime'
         ? `<button class="btn btn-sm btn-outline-primary" data-action="tp:batchAnime">
-             <i class="ti ti-download me-1"></i>${verb} tutti gli episodi</button>`
+             <i class="ti ti-download me-1"></i>${verb}${t('title.scopeEpisodes')}</button>`
         : `<button class="btn btn-sm btn-outline-primary" data-action="tp:batchSeason" data-season="${_tp.season}">
-             <i class="ti ti-download me-1"></i>${verb} la stagione</button>`);
+             <i class="ti ti-download me-1"></i>${verb}${t('title.scopeSeason')}</button>`);
     } else if (_tp.type === 'tv' && can('REQUEST')) {
       batch = `<button class="btn btn-sm btn-outline-primary" data-action="tp:requestSeason">
-                 <i class="ti ti-send me-1"></i>Richiedi la stagione</button>`;
+                 <i class="ti ti-send me-1"></i>${t('title.request')}${t('title.scopeSeason')}</button>`;
     }
   }
 
   const head = `<div class="th-season-bar">
-      <span class="th-season-label">${_tp.type === 'anime' ? 'Episodi' : `Stagione ${_tp.season}`}</span>
+      <span class="th-season-label">${_tp.type === 'anime' ? t('title.episodes') : t('title.season', {season: _tp.season})}</span>
       ${pills}
       <span class="th-season-batch">${batch}</span>
     </div>`;
 
   if (_tp.episodes === null) {
-    el.innerHTML = head + `<div class="th-empty"><span class="spinner-border spinner-border-sm me-2"></span>Caricamento episodi…</div>`;
+    el.innerHTML = head + `<div class="th-empty"><span class="spinner-border spinner-border-sm me-2"></span>${t('title.loadingEpisodes')}</div>`;
     return;
   }
   if (_tp.episodesError) {
@@ -576,7 +575,7 @@ function _tpRenderEpisodes() {
     return;
   }
   if (!_tp.episodes.length) {
-    el.innerHTML = head + `<div class="th-empty">Nessun episodio in questa stagione.</div>`;
+    el.innerHTML = head + `<div class="th-empty">${t('title.noEpisodes')}</div>`;
     return;
   }
 
@@ -591,18 +590,18 @@ function _tpRenderEpisodes() {
     const plot = ep.plot ? `<div class="th-ep-plot">${escapeHtml(ep.plot)}</div>` : '';
     const dur = ep.duration ? `<span class="th-ep-dur">${escapeHtml(String(ep.duration))}m</span>` : '';
     const owned = ep.in_library
-      ? `<i class="ti ti-circle-check-filled th-ep-owned" title="Già in libreria"></i>` : '';
+      ? `<i class="ti ti-circle-check-filled th-ep-owned" title="${escapeHtml(t('title.alreadyInLibrary'))}"></i>` : '';
     return `<div class="th-ep">
         <span class="th-ep-n">${escapeHtml(String(ep.n))}</span>
         ${still}
         <div class="th-ep-body">
-          <div class="th-ep-name">${escapeHtml(ep.name || `Episodio ${ep.n}`)}</div>
+          <div class="th-ep-name">${escapeHtml(ep.name || t('title.episode', {number: ep.n}))}</div>
           ${plot}
         </div>
         ${dur}${owned}
         <button class="btn btn-sm ${wants ? 'btn-outline-primary' : 'btn-primary'}"
                 data-action="tp:episode" data-index="${i}">
-          <i class="ti ${wants ? 'ti-send' : 'ti-download'} me-1"></i>${wants ? 'Richiedi' : 'Scarica'}
+          <i class="ti ${wants ? 'ti-send' : 'ti-download'} me-1"></i>${wants ? t('title.request') : t('title.download')}
         </button>
       </div>`;
   }).join('');
@@ -628,8 +627,8 @@ function tpPrimary() {
   }
 }
 
-async function tpToggleFollow() { await toggleFollowSeries('page'); }
-async function tpRefreshFollow() { await checkWatchStatus('page'); }
+async function tpToggleFollow() { await toggleFollowSeries('page'); _tpLocalizeFollow(); }
+async function tpRefreshFollow() { await checkWatchStatus('page'); _tpLocalizeFollow(); }
 
 // Back to wherever the visitor came from, and to the search page when they
 // arrived by pasted link and there is no history to go back to.
@@ -645,7 +644,7 @@ function tpBack() {
 // rather than duplicated, and the reply says how many of each.
 async function tpRequestSeason() {
   const n = _tp.episodes?.length || 0;
-  if (!await scConfirm(`Richiedere tutti i ${n} episodi della stagione ${_tp.season}?`)) return;
+  if (!await scConfirm(t('title.requestSeasonConfirm', {count: n, season: _tp.season}))) return;
   try {
     const r = await api.post('/api/requests/season', {
       source: 'streamingcommunity',
@@ -655,12 +654,12 @@ async function tpRequestSeason() {
       subtitle_languages: _tpPicked('subs'),
     });
     const parts = [];
-    if (r.created) parts.push(`${r.created} richiest${r.created === 1 ? 'a' : 'e'}`);
-    if (r.joined) parts.push(`${r.joined} già in coda`);
-    showToast(parts.join(', ') || 'Nessun episodio da richiedere', 'success');
+    if (r.created) parts.push(t('title.requests', {count: r.created}));
+    if (r.joined) parts.push(t('title.joined', {count: r.joined}));
+    showToast(parts.join(', ') || t('title.noRequests'), 'success');
     refreshQueueBadge();
   } catch (e) {
-    showToast(e.message || 'Richiesta non riuscita', 'danger');
+    showToast(e.message || t('title.requestFailed'), 'danger');
   }
 }
 
@@ -716,9 +715,9 @@ async function submitRequest(payload, label) {
 
   try {
     const status = data.request.status;
-    if (status === 'available') showToast(`${label} è già in libreria.`, 'info');
-    else if (!data.created) showToast(`${label} era già stato richiesto: sarai avvisato.`, 'info');
-    else showToast(`Richiesta inviata: ${label}`, 'success');
+    if (status === 'available') showToast(t('title.availableMessage', {title: label}), 'info');
+    else if (!data.created) showToast(t('title.requestedMessage', {title: label}), 'info');
+    else showToast(t('title.requestSent', {title: label}), 'success');
 
     _requestStatus[String(payload.external_id)] = { id: data.request.id, status };
     renderRequestRibbons();
@@ -754,8 +753,8 @@ async function startFilmDownload(id, title, year=null, scheduledAt=null, audioLa
     if (scheduledAt) body.scheduled_at = scheduledAt;
     await api.post(endpoint, body);
     showToast(scheduledAt
-      ? `Programmato: ${title} — ${new Date(scheduledAt).toLocaleString('it-IT')}`
-      : `Download avviato: ${title}`, 'success', DOWNLOADS_LINK);
+      ? t('title.scheduledDate', {title, date: new Date(scheduledAt).toLocaleString(scLanguage.current() === 'en' ? 'en-GB' : 'it-IT')})
+      : t('title.started', {title}), 'success', DOWNLOADS_LINK);
   } catch(e) { showToast(errText(e), 'danger'); }
 }
 
@@ -792,11 +791,11 @@ async function startEpisodeDownload(epIndex) {
   if (scheduledAt) body.scheduled_at = scheduledAt;
   try {
     await api.post(endpoint, body);
-    showToast(scheduledAt ? `Programmato: ${label}` : `In coda: ${label}`, 'success');
+    showToast(scheduledAt ? t('title.scheduled', {title: label}) : t('title.queued', {title: label}), 'success');
   } catch(e) { showToast(errText(e), 'danger'); }
 }
 
-const DOWNLOADS_LINK = { label: 'Vai ai download', page: 'downloads' };
+const DOWNLOADS_LINK = { get label() { return t('title.downloadsLink'); }, page: 'downloads' };
 
 // Whole seasons and whole series are one call: the server lists the episodes
 // itself and queues them as a batch. That is also what lets it report the season
@@ -808,12 +807,12 @@ async function _startBatch(path, body, modalId) {
   try {
     data = await api.post(path, body);
   } catch (e) {
-    showToast(errText(e, 'Errore avviando i download'), 'danger');
+    showToast(errText(e, t('title.startError')), 'danger');
     return false;
   }
-  const skipped = data.skipped ? `, ${data.skipped} già in libreria` : '';
+  const skipped = data.skipped ? t('title.skipped', {count: data.skipped}) : '';
   showToast(
-    (body.scheduled_at ? `${data.count} episodi programmati` : `${data.count} episodi in coda`)
+    (body.scheduled_at ? t('title.batchScheduled', {count: data.count}) : t('title.batchQueued', {count: data.count}))
       + skipped,
     'success',
     DOWNLOADS_LINK,
@@ -826,21 +825,21 @@ async function _startBatch(path, body, modalId) {
 
 // The "Solo mancanti" switch, and the words a confirmation adds for it.
 function _onlyMissing() { return !!_tp?.onlyMissing; }
-function _skipNote() { return _onlyMissing() ? ', saltando quelli già in libreria' : ''; }
+function _skipNote() { return _onlyMissing() ? t('title.skipNote') : ''; }
 
 async function downloadWholeSeason(season) {
   const { tvId, slug, tvName, year, episodes, scheduledAt, audioLangs, subLangs } = _epCtx;
-  const label = scheduledAt ? 'Programmare' : 'Aggiungere alla coda';
+  const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
   // The episode list says which are already there, so the question can name
   // the real number instead of promising every episode.
   const missing = episodes.filter(e => !e.in_library).length;
   if (_onlyMissing() && missing === 0) {
-    showToast('Tutti gli episodi della stagione sono già in libreria', 'info');
+    showToast(t('title.allOwned'), 'info');
     return;
   }
   const question = _onlyMissing() && missing < episodes.length
-    ? `${label} i ${missing} episodi mancanti della stagione ${season}?`
-    : `${label} tutti i ${episodes.length} episodi della stagione ${season}?`;
+    ? t('title.confirmMissing', {action: label, count: missing, season})
+    : t('title.confirmSeason', {action: label, count: episodes.length, season});
   if (!await scConfirm(question)) return;
   await _startBatch('/api/download/season', {
     tv_id: tvId, slug, tv_name: tvName, season, year,
@@ -852,8 +851,8 @@ async function downloadWholeSeason(season) {
 
 async function downloadWholeSeries() {
   const { tvId, slug, tvName, year, scheduledAt, seasonsCount, audioLangs, subLangs } = _epCtx;
-  const label = scheduledAt ? 'Programmare' : 'Aggiungere alla coda';
-  if (!await scConfirm(`${label} tutte le ${seasonsCount} stagioni${_skipNote()}?`)) return;
+  const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
+  if (!await scConfirm(t('title.confirmSeries', {action: label, count: seasonsCount, note: _skipNote()}))) return;
   await _startBatch('/api/download/series', {
     tv_id: tvId, slug, tv_name: tvName, year,
     audio_languages: audioLangs, subtitle_languages: subLangs,
@@ -890,7 +889,7 @@ async function startAnimeDownload(epIndex) {
   if (scheduledAt) body.scheduled_at = scheduledAt;
   try {
     await api.post(endpoint, body);
-    showToast(scheduledAt ? `Programmato: ${label}` : `In coda: ${label}`, 'success');
+    showToast(scheduledAt ? t('title.scheduled', {title: label}) : t('title.queued', {title: label}), 'success');
   } catch(e) { showToast(errText(e), 'danger'); }
 }
 
@@ -898,8 +897,8 @@ async function startAnimeDownload(epIndex) {
 async function downloadAllAnime() {
   const { animeId, animeName, animeType, animeYear, episodes, scheduledAt,
           audioLangs, subLangs } = _animeCtx;
-  const label = scheduledAt ? 'Programmare' : 'Aggiungere alla coda';
-  if (!await scConfirm(`${label} tutti i ${episodes.length} episodi${_skipNote()}?`)) return;
+  const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
+  if (!await scConfirm(t('title.confirmAnime', {action: label, count: episodes.length, note: _skipNote()}))) return;
   await _startBatch('/api/download/anime-all', {
     anime_id: String(animeId), anime_name: animeName, anime_type: animeType,
     year: animeYear,
@@ -933,7 +932,7 @@ registerActions({
   'tp:batchSeason':   d => downloadWholeSeason(Number(d.season)),
   'tp:batchAnime':    () => downloadAllAnime(),
   'tp:episode':       d => (_tp.type === 'anime' ? startAnimeDownload : startEpisodeDownload)(Number(d.index)),
-  'tp:person':        d => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${d.person} informazioni attore`)}`, '_blank', 'noopener,noreferrer'),
+  'tp:person':        d => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${d.person} ${t('title.actorQuery')}`)}`, '_blank', 'noopener,noreferrer'),
 });
 
 
@@ -950,4 +949,38 @@ registerPageHash('detail', {
     extra: [_tp.type, _tp.id, _tp.slug || ''],
     params: { s: _tp.season !== _tpSeasons()[0] ? _tp.season : null },
   } : {}),
+});
+
+// Translate interface labels without changing the title's selected tracks or tab.
+let _tpLanguageRender = false;
+function _tpLangName(code) {
+  if (scLanguage.current() === 'it') return langName(code);
+  const forced = /^forced[-_ ]?/i.test(code);
+  const clean = code.replace(/^forced[-_ ]?/i, '');
+  const aliases = {ita: 'it', eng: 'en', ger: 'de', deu: 'de', fre: 'fr', fra: 'fr', spa: 'es', jpn: 'ja', por: 'pt', rus: 'ru', chi: 'zh', zho: 'zh', kor: 'ko'};
+  let name;
+  try { name = new Intl.DisplayNames(['en'], {type: 'language'}).of(aliases[clean] || clean); }
+  catch (_) { name = clean; }
+  return name + (forced ? ' ' + t('title.forced') : '');
+}
+function _tpLocalizeFollow() {
+  const button = document.getElementById('th-follow-btn');
+  if (!button) return;
+  const following = button.dataset.following === '1';
+  button.innerHTML = `<i class="ti ${following ? 'ti-bell-check' : 'ti-bell-plus'} me-1"></i>${t(following ? 'title.following' : 'title.follow')}`;
+  button.title = t(following ? 'title.followingHint' : 'title.followHint');
+}
+window.addEventListener('sc:language-changed', () => {
+  if (!_tp) return;
+  const button = document.getElementById('th-follow-btn');
+  const focus = document.activeElement;
+  const schedule = document.getElementById('th-sched-at');
+  if (schedule && schedule.value !== _tp.scheduledRaw) tpSetSchedule(schedule.value);
+  _tpLanguageRender = true;
+  try {
+    _tpRender();
+    if (button) document.getElementById('th-follow-btn')?.replaceWith(button);
+    _tpLocalizeFollow();
+    if (focus?.id === 'th-sched-at') document.getElementById(focus.id)?.focus();
+  } finally { _tpLanguageRender = false; }
 });

@@ -233,7 +233,7 @@ document.addEventListener('click', (e) => {
 function showToast(message, type = 'info', link = null) {
   const colors = { success:'bg-success', danger:'bg-danger', info:'bg-info', warning:'bg-warning' };
   const toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;bottom:1rem;right:1rem;left:auto;z-index:9999;min-width:220px;max-width:calc(100vw - 2rem)';
+  toast.className = 'sc-toast-wrap';
   const go = link
     ? ` <a href="#" class="alert-link text-white ms-1" data-action="toast:go"
           data-page="${escapeHtml(link.page)}">${escapeHtml(link.label)}</a>`

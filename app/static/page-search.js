@@ -8,11 +8,11 @@
 // type that is always "anime". Looked up lower case so one table serves both.
 // One colour per kind, so a grid can be read at a glance instead of word by word.
 const KIND_BADGES = {
-  movie:   {label: 'Film',     cls: 'bg-blue-lt'},
-  tv:      {label: 'Serie TV', cls: 'bg-green-lt'},
+  movie:   {label: 'catalog.movie',     cls: 'bg-blue-lt'},
+  tv:      {label: 'catalog.tv', cls: 'bg-green-lt'},
   ova:     {label: 'OVA',      cls: 'bg-purple-lt'},
   ona:     {label: 'ONA',      cls: 'bg-teal-lt'},
-  special: {label: 'Speciale', cls: 'bg-yellow-lt'},
+  special: {label: 'catalog.special', cls: 'bg-yellow-lt'},
   anime:   {label: 'Anime',    cls: 'bg-purple-lt'},
 };
 function kindBadge(item) {
@@ -22,7 +22,7 @@ function kindBadge(item) {
   // was labelled a TV series. The source's own word first — AnimeUnity has a
   // long tail of them ("TV Short" turns up in a normal search) and its own name
   // for a thing says more than the "anime" every one of its records carries.
-  return KIND_BADGES[key] || {label: item.media_type || item.type || '?',
+  return KIND_BADGES[key] ? {...KIND_BADGES[key], label: t(KIND_BADGES[key].label)} : {label: item.media_type || item.type || '?',
                               cls: 'bg-secondary-lt'};
 }
 
@@ -35,7 +35,8 @@ function setSource(src) {
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
   const input = document.getElementById('search-input');
-  if (input) input.placeholder = src === 'animeunity' ? 'Cerca anime...' : 'Film, serie TV...';
+  if (input) input.dataset.i18nPlaceholder = src === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
+  if (input) input.placeholder = src === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
   document.getElementById('search-results').innerHTML = '';
   // The kinds are each source's own vocabulary, so a filter does not carry over.
   _searchResults = [];
@@ -99,9 +100,9 @@ let _dubOnly = false;
 // rebuilt when the source changes rather than offering one of them a filter the
 // other cannot answer.
 const KIND_FILTERS = {
-  streamingcommunity: [['', 'Tutti'], ['movie', 'Film'], ['tv', 'Serie TV']],
-  animeunity: [['', 'Tutti'], ['movie', 'Film'], ['tv', 'Serie TV'],
-               ['ova', 'OVA'], ['ona', 'ONA'], ['special', 'Speciali']],
+  streamingcommunity: [['', 'catalog.all'], ['movie', 'catalog.movie'], ['tv', 'catalog.tv']],
+  animeunity: [['', 'catalog.all'], ['movie', 'catalog.movie'], ['tv', 'catalog.tv'],
+               ['ova', 'OVA'], ['ona', 'ONA'], ['special', 'catalog.specials']],
 };
 
 function renderSearchFilters() {
@@ -109,12 +110,12 @@ function renderSearchFilters() {
   if (!bar) return;
   const chips = (KIND_FILTERS[currentSource] || []).map(([value, label]) =>
     `<button class="source-btn${value === _kindFilter ? ' active' : ''}" ` +
-    `data-action="search:kind" data-kind="${value}">${label}</button>`).join('');
+    `data-action="search:kind" data-kind="${value}">${t(label)}</button>`).join('');
   // AnimeUnity keeps an Italian dub as a record of its own, so this is a real
   // filter there and meaningless on the other source.
   const dub = currentSource === 'animeunity'
     ? `<button class="source-btn${_dubOnly ? ' active' : ''}" data-action="search:dub" data-on="${_dubOnly ? '0' : '1'}">` +
-      `<i class="ti ti-microphone"></i>Solo doppiati IT</button>`
+      `<i class="ti ti-microphone"></i>${searchLabel('catalog.dubbed')}</button>`
     : '';
   bar.innerHTML = chips + dub;
 }
@@ -207,9 +208,9 @@ function renderResultCards(items, container, baseIndex,
         <div class="card-meta">
           <div class="card-title-text" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
           <div class="card-badges">
-            <span class="badge ${kind.cls}">${escapeHtml(kind.label)}</span>
-            ${item.coming_soon ? '<span class="badge bg-orange-lt">In arrivo</span>' : ''}
-            ${!item.coming_soon && item.upcoming_seasons?.length ? '<span class="badge bg-orange-lt">Nuova stagione in arrivo</span>' : ''}
+            <span class="badge ${kind.cls}">${searchLabel(KIND_BADGES[String(item.media_type || item.type || '').toLowerCase()]?.label, kind.label)}</span>
+            ${item.coming_soon ? `<span class="badge bg-orange-lt">${searchLabel('catalog.upcoming')}</span>` : ''}
+            ${!item.coming_soon && item.upcoming_seasons?.length ? `<span class="badge bg-orange-lt">${searchLabel('catalog.upcomingSeason')}</span>` : ''}
             ${score?`<span class="badge bg-yellow-lt">★ ${score}</span>`:''}
             ${year?`<span style="font-size:10px;color:var(--text-muted)">${year}</span>`:''}
           </div>
@@ -268,7 +269,7 @@ async function startCardPreview(card) {
   if (!id || card.querySelector('.card-preview iframe')) return;
   const frame = document.createElement('iframe');
   frame.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&mute=1&controls=0&loop=1&playlist=${encodeURIComponent(id)}&playsinline=1&rel=0`;
-  frame.title = 'Anteprima';
+  frame.title = t('catalog.preview');
   frame.setAttribute('aria-hidden', 'true');
   frame.tabIndex = -1;
   frame.allow = 'autoplay; encrypted-media';
@@ -325,11 +326,11 @@ async function doSearch(options) {
     _loadingMore = true;
     if (moreBtn) {
       moreBtn.disabled = true;
-      moreBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Carico...';
+      moreBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${searchLabel('search.loading')}`;
     }
   } else {
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cerca';
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${searchLabel('search.button')}`;
     _showSearchSkeletons();
     _setMoreVisible(false);
   }
@@ -362,23 +363,23 @@ async function doSearch(options) {
     _searchExhausted = !results.length && !filterIsPerPage;
 
     if (!_searchResults.length) {
-      container.innerHTML = '<div class="col-12"><p class="text-muted">Nessun risultato.</p></div>';
+      container.innerHTML = `<div class="col-12"><p class="text-muted">${searchLabel('search.empty')}</p></div>`;
     } else if (append && !results.length) {
-      showToast('Nessun altro risultato', 'info');
+      showToast(t('search.noMore'), 'info');
     }
     _setMoreVisible(!_searchExhausted);
 
     loadRequestStatuses(results.filter(r => r.type !== 'movie').map(r => String(r.id)));
   } catch(e) {
     if (e.name === 'AbortError') return; // cancelled by new search
-    if (append) showToast('Errore di rete', 'danger');
-    else container.innerHTML=`<div class="col-12"><div class="alert alert-danger">Errore: ${escapeHtml(e.message)}</div></div>`;
+    if (append) showToast(t('search.networkError'), 'danger');
+    else container.innerHTML=`<div class="col-12"><div class="alert alert-danger">${t('common.error')}: ${escapeHtml(e.message)}</div></div>`;
   } finally {
     if (append) {
       _loadingMore = false;
-      if (moreBtn) { moreBtn.disabled = false; moreBtn.innerHTML = moreLabel; }
+      if (moreBtn) { moreBtn.disabled = false; moreBtn.innerHTML = moreLabel; scLanguage.localize(moreBtn); }
     } else {
-      btn.disabled=false; btn.innerHTML='<i class="ti ti-search me-1"></i>Cerca';
+      btn.disabled=false; btn.innerHTML=`<i class="ti ti-search me-1"></i>${searchLabel('search.button')}`;
     }
   }
 }
@@ -501,17 +502,17 @@ function renderShelves() {
     const section = document.createElement('div');
     section.className = 'shelf';
     section.innerHTML =
-      `<div class="shelf-head"><div class="shelf-title">${escapeHtml(shelf.title)}</div></div>` +
+      `<div class="shelf-head"><div class="shelf-title">${catalogLabelMarkup(shelf.title)}</div></div>` +
       '<div class="shelf-rail-wrap">' +
-        '<button class="shelf-arrow shelf-arrow-prev" hidden aria-label="Titoli precedenti">' +
+        `<button class="shelf-arrow shelf-arrow-prev" hidden data-i18n-aria-label="catalog.previous" aria-label="${t('catalog.previous')}">` +
           '<i class="ti ti-chevron-left"></i></button>' +
         '<div class="shelf-rail"></div>' +
-        '<button class="shelf-arrow shelf-arrow-next" hidden aria-label="Titoli successivi">' +
+        `<button class="shelf-arrow shelf-arrow-next" hidden data-i18n-aria-label="catalog.next" aria-label="${t('catalog.next')}">` +
           '<i class="ti ti-chevron-right"></i></button>' +
       '</div>';
     if (currentSource === 'streamingcommunity' && ['trending', 'latest', 'top10'].includes(shelf.key)) {
       section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
-        `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${shelf.key}">Sfoglia tutti <i class="ti ti-arrow-right" aria-hidden="true"></i></button>`);
+        `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${shelf.key}">${searchLabel('catalog.browse')} <i class="ti ti-arrow-right" aria-hidden="true"></i></button>`);
     }
     renderResultCards(shelf.items, section.querySelector('.shelf-rail'),
                       _searchResults.length, 'shelf-item');
@@ -598,19 +599,19 @@ function applyClientFilter() {
 // card itself, without opening anything.
 
 const STATUS_RIBBONS = {
-  pending:         { label: 'Richiesto',    cls: 'ribbon-pending',   icon: 'ti-clock' },
-  approved:        { label: 'Approvato',    cls: 'ribbon-approved',  icon: 'ti-check' },
-  downloading:     { label: 'In download',  cls: 'ribbon-download',  icon: 'ti-download' },
+  pending:         { label: 'catalog.pending',    cls: 'ribbon-pending',   icon: 'ti-clock' },
+  approved:        { label: 'catalog.approved',    cls: 'ribbon-approved',  icon: 'ti-check' },
+  downloading:     { label: 'catalog.downloading',  cls: 'ribbon-download',  icon: 'ti-download' },
   // Not "Disponibile": the panel never learns how many episodes a series has
   // without asking the source, and this ribbon is painted from one call that
   // decorates a whole page of cards. "In libreria" is what it can actually
   // vouch for — the count says how much, instead of implying all of it.
-  completed:       { label: 'In libreria',  cls: 'ribbon-available', icon: 'ti-circle-check' },
-  available:       { label: 'In libreria',  cls: 'ribbon-available', icon: 'ti-circle-check' },
-  denied:          { label: 'Rifiutato',    cls: 'ribbon-denied',    icon: 'ti-x' },
-  failed:          { label: 'Fallito',      cls: 'ribbon-denied',    icon: 'ti-alert-triangle' },
-  needs_attention: { label: 'Attenzione',   cls: 'ribbon-attention', icon: 'ti-alert-circle' },
-  cancelled:       { label: 'Annullato',    cls: 'ribbon-denied',    icon: 'ti-ban' },
+  completed:       { label: 'catalog.inLibrary',  cls: 'ribbon-available', icon: 'ti-circle-check' },
+  available:       { label: 'catalog.inLibrary',  cls: 'ribbon-available', icon: 'ti-circle-check' },
+  denied:          { label: 'catalog.denied',    cls: 'ribbon-denied',    icon: 'ti-x' },
+  failed:          { label: 'catalog.failed',      cls: 'ribbon-denied',    icon: 'ti-alert-triangle' },
+  needs_attention: { label: 'catalog.attention',   cls: 'ribbon-attention', icon: 'ti-alert-circle' },
+  cancelled:       { label: 'catalog.cancelled',    cls: 'ribbon-denied',    icon: 'ti-ban' },
 };
 
 async function loadRequestStatuses(externalIds) {
@@ -651,7 +652,7 @@ function renderRequestRibbons() {
     if (!style) { el.innerHTML = ''; el.className = 'status-ribbon'; return; }
     const detail = ribbonDetail(info);
     el.className = `status-ribbon ${style.cls}`;
-    el.innerHTML = `<i class="ti ${style.icon}"></i>${style.label}` +
+    el.innerHTML = `<i class="ti ${style.icon}"></i>${t(style.label)}` +
       (detail ? `<span class="ribbon-count">${escapeHtml(detail)}</span>` : '');
   });
 }
@@ -707,13 +708,14 @@ function renderHomeExtras(entry) {
   extra.id = 'home-extra';
   extra.innerHTML = '<div class="search-filters" id="home-genres"></div>' +
     '<div id="home-extra-rows"></div><div class="text-center my-3">' +
-    '<button class="source-btn" data-action="catalog:sections" id="home-sections-more">Carica altri generi</button></div>';
+    `<button class="source-btn" data-action="catalog:sections" id="home-sections-more">${searchLabel('catalog.moreGenres')}</button></div>`;
   host.appendChild(extra);
   const genres = extra.querySelector('#home-genres');
   entry.genres.forEach(g => {
     const button = document.createElement('button');
     button.className = 'source-btn';
-    button.textContent = g.name;
+    button.dataset.catalogLabel = g.name;
+    button.textContent = catalogLabel(g.name);
     button.dataset.action = 'catalog:open';
     button.dataset.section = 'genre';
     button.dataset.genre = String(g.id);
@@ -750,14 +752,14 @@ async function loadHomeSections() {
     if (error) { failures++; return; }
     const section = document.createElement('section');
     section.className = 'shelf';
-    section.innerHTML = `<div class="shelf-head"><div class="shelf-title">${escapeHtml(data.title)}</div>` +
+    section.innerHTML = `<div class="shelf-head"><div class="shelf-title">${catalogLabelMarkup(data.title)}</div>` +
       `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${spec.section}"` +
-      ` data-genre="${spec.genre_id || ''}">Sfoglia tutti <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div>` +
-      '<div class="shelf-rail-wrap"><button class="shelf-arrow shelf-arrow-prev" hidden aria-label="Titoli precedenti">‹</button>' +
-      '<div class="shelf-rail"></div><button class="shelf-arrow shelf-arrow-next" hidden aria-label="Titoli successivi">›</button></div>';
+      ` data-genre="${spec.genre_id || ''}">${searchLabel('catalog.browse')} <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div>` +
+      `<div class="shelf-rail-wrap"><button class="shelf-arrow shelf-arrow-prev" hidden data-i18n-aria-label="catalog.previous" aria-label="${t('catalog.previous')}">‹</button>` +
+      `<div class="shelf-rail"></div><button class="shelf-arrow shelf-arrow-next" hidden data-i18n-aria-label="catalog.next" aria-label="${t('catalog.next')}">›</button></div>`;
     renderResultCards(data.items.slice(0, 30), section.querySelector('.shelf-rail'), _searchResults.length, 'shelf-item');
     _searchResults.push(...data.items.slice(0, 30));
-    if (!data.items.length) section.insertAdjacentHTML('beforeend', '<p class="text-muted">Nessun titolo disponibile.</p>');
+    if (!data.items.length) section.insertAdjacentHTML('beforeend', `<p class="text-muted">${searchLabel('catalog.empty')}</p>`);
     document.getElementById('home-extra-rows').appendChild(section);
     _shelfSyncs.push(_wireShelfArrows(section));
     loadRequestStatuses(data.items.filter(i => i.type !== 'movie').map(i => String(i.id)));
@@ -767,7 +769,8 @@ async function loadHomeSections() {
   state.sections.push(...rows.filter(row => row.error).map(row => row.spec));
   state.loading = false;
   button.disabled = false;
-  button.textContent = failures ? 'Riprova sezioni non disponibili' : 'Carica altri generi';
+  button.dataset.i18n = failures ? 'catalog.retrySections' : 'catalog.moreGenres';
+  button.textContent = t(button.dataset.i18n);
   button.hidden = state.offset >= state.sections.length;
   if (failures) _homeObserver?.disconnect();
   applyClientFilter();
@@ -794,7 +797,8 @@ async function loadCatalog(append = false) {
   more.disabled = true;
   const heading = document.getElementById('catalog-heading');
   heading.hidden = false;
-  document.getElementById('catalog-title').textContent = 'Catalogo';
+  document.getElementById('catalog-title').dataset.catalogLabel = 'Catalogo';
+  document.getElementById('catalog-title').textContent = t('catalog.title');
   try {
     await ensureDomain();
     if (generation !== _catalogGeneration) return;
@@ -807,13 +811,14 @@ async function loadCatalog(append = false) {
     _searchResults.push(...data.items);
     _searchPage = data.page;
     _searchExhausted = !data.has_more;
-    document.getElementById('catalog-title').textContent = data.title;
-    if (!_searchResults.length) container.innerHTML = '<p class="text-muted">Nessun titolo disponibile.</p>';
+    document.getElementById('catalog-title').dataset.catalogLabel = data.title;
+    document.getElementById('catalog-title').textContent = catalogLabel(data.title);
+    if (!_searchResults.length) container.innerHTML = `<p class="text-muted">${searchLabel('catalog.empty')}</p>`;
     _setMoreVisible(data.has_more);
     loadRequestStatuses(data.items.filter(i => i.type !== 'movie').map(i => String(i.id)));
   } catch (error) {
     if (error.name === 'AbortError' || generation !== _catalogGeneration) return;
-    if (!append) document.getElementById('search-results').textContent = errText(error, 'Catalogo non disponibile');
+    if (!append) document.getElementById('search-results').textContent = errText(error, t('catalog.unavailable'));
     else showToast(errText(error), 'danger');
   } finally {
     if (generation === _catalogGeneration) { _loadingMore = false; more.disabled = false; }
@@ -842,7 +847,8 @@ registerPageHash('search', {
     currentSource = !_catalogSection && params.src === 'animeunity' ? 'animeunity' : 'streamingcommunity';
     document.getElementById('src-sc')?.classList.toggle('active', currentSource === 'streamingcommunity');
     document.getElementById('src-au')?.classList.toggle('active', currentSource === 'animeunity');
-    if (input) input.placeholder = currentSource === 'animeunity' ? 'Cerca anime...' : 'Film, serie TV...';
+    if (input) input.dataset.i18nPlaceholder = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
+    if (input) input.placeholder = currentSource === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
     _kindFilter = params.type || '';
     _dubOnly = params.dub === '1';
     _searchResults = [];
@@ -850,4 +856,63 @@ registerPageHash('search', {
     _searchExhausted = false;
     renderSearchFilters();
   },
+});
+
+// Update labels in place: card indices, paging, scroll positions and requests stay intact.
+function searchLabel(key, fallback = '') {
+  return key ? `<span data-i18n="${key}">${escapeHtml(t(key))}</span>` : escapeHtml(fallback);
+}
+const CATALOG_LABEL_KEYS = {
+  "Catalogo": "catalog.title",
+"Azione": "catalog.genre0",
+"Avventura": "catalog.genre1",
+"Animazione": "catalog.genre2",
+"Commedia": "catalog.genre3",
+"Crime": "catalog.genre4",
+"Documentario": "catalog.genre5",
+"Dramma": "catalog.genre6",
+"Drammatico": "catalog.genre7",
+"Famiglia": "catalog.genre8",
+"Fantasy": "catalog.genre9",
+"Fantascienza": "catalog.genre10",
+"Horror": "catalog.genre11",
+"Mistero": "catalog.genre12",
+"Musica": "catalog.genre13",
+"Romance": "catalog.genre14",
+"Romantico": "catalog.genre15",
+"Storia": "catalog.genre16",
+"Thriller": "catalog.genre17",
+"Guerra": "catalog.genre18",
+"Western": "catalog.genre19",
+"Sci-Fi & Fantasy": "catalog.genre20",
+"Action & Adventure": "catalog.genre21",
+"Bambini": "catalog.genre22",
+"Film TV": "catalog.genre23",
+
+  "In arrivo": "catalog.upcoming",
+  "Di tendenza": "catalog.trending",
+  "Aggiunti di recente": "catalog.latest",
+  "Top 10 di oggi": "catalog.top10",
+  "Ultimi episodi": "catalog.latestEpisodes",
+  "In evidenza": "catalog.featured"
+};
+function catalogLabel(value) {
+  return CATALOG_LABEL_KEYS[value] ? t(CATALOG_LABEL_KEYS[value]) : value;
+}
+function catalogLabelMarkup(value) {
+  return `<span data-catalog-label="${escapeHtml(value)}">${escapeHtml(catalogLabel(value))}</span>`;
+}
+window.addEventListener('sc:language-changed', () => {
+  const root = document.getElementById('page-search');
+  if (!root) return;
+  scLanguage.localize(root);
+  const input = document.getElementById('search-input');
+  const key = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
+  if (input) { input.dataset.i18nPlaceholder = key; input.placeholder = t(key); }
+  renderSearchFilters();
+  renderRequestRibbons();
+  root.querySelectorAll('[data-catalog-label]').forEach(node => {
+    node.textContent = catalogLabel(node.dataset.catalogLabel);
+  });
+  root.querySelectorAll('.card-preview iframe').forEach(frame => { frame.title = t('catalog.preview'); });
 });

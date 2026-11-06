@@ -48,8 +48,8 @@
                  only: it is filled after the shelves load and stays empty if
                  they fail. -->
             <div class="sh-art" id="search-hero-art" aria-hidden="true"></div>
-            <h1 class="sh-title">La tua prossima<br><span class="sh-accent">serie, film, anime.</span></h1>
-            <p class="sh-sub">Cerca nel catalogo, scegli audio e sottotitoli, e mandalo in libreria.</p>
+            <h1 class="sh-title"><span data-i18n="home.next">La tua prossima</span><br><span class="sh-accent" data-i18n="home.media">serie, film, anime.</span></h1>
+            <p class="sh-sub" data-i18n="home.subtitle">Cerca nel catalogo, scegli audio e sottotitoli, e mandalo in libreria.</p>
           </div>
           <div class="mb-4">
             <div class="source-selector">
@@ -62,23 +62,23 @@
             </div>
             <div class="sc-searchbar">
               <input type="text" id="search-input"
-                     placeholder="Film, serie TV..."
+                     placeholder="Film, serie TV..." data-i18n-placeholder="search.placeholder"
                      data-enter="search:run">
               <button class="sc-search-btn" data-action="search:run" id="search-btn">
-                <i class="ti ti-search"></i>Cerca
+                <i class="ti ti-search"></i><span data-i18n="search.button">Cerca</span>
               </button>
             </div>
           </div>
           <div id="search-filters" class="search-filters"></div>
           <div id="catalog-heading" class="shelf-head mb-3" hidden>
-            <h2 id="catalog-title" class="shelf-title">Catalogo</h2>
-            <button class="source-btn" data-action="catalog:home">Torna alla home</button>
+            <h2 id="catalog-title" class="shelf-title" data-catalog-label="Catalogo">Catalogo</h2>
+            <button class="source-btn" data-action="catalog:home" data-i18n="catalog.home">Torna alla home</button>
           </div>
           <div id="home-shelves" style="display:none"></div>
           <div id="search-results" class="row g-3"></div>
           <div id="search-more" class="text-center mt-4" style="display:none">
             <button class="source-btn" id="search-more-btn" data-action="search:more">
-              <i class="ti ti-plus"></i>Carica altri
+              <i class="ti ti-plus"></i><span data-i18n="catalog.more">Carica altri</span>
             </button>
           </div>
         </div>
@@ -353,5 +353,6 @@
 <script src="{{ asset('page-settings.js') }}"></script>
 <script src="{{ asset('library.js') }}"></script>
 <script src="{{ asset('panel.js') }}"></script>
+<script src="{{ asset('i18n.js') }}"></script>
 <script src="{{ asset('app.js') }}"></script>
 {% endblock %}
