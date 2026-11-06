@@ -245,8 +245,8 @@
     }
 
     .result-card:hover {
-      transform: translateY(-7px) scale(1.06) !important;
-      box-shadow: 0 14px 40px rgba(0,0,0,.35) !important;
+      transform: translateY(-10px) scale(1.10) !important;
+      box-shadow: 0 20px 52px rgba(0,0,0,.48) !important;
       border-color: var(--border-strong) !important;
       position: relative;
       z-index: 5;
