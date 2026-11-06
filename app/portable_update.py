@@ -216,8 +216,10 @@ def _restart(exe: Path) -> None:
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
     flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    environment = os.environ.copy()
+    environment["SC_PANEL_RESTART"] = "1"
     subprocess.Popen([str(exe)], cwd=exe.parent, creationflags=flags,
-                     close_fds=True)
+                     close_fds=True, env=environment)
 
 
 def main(argv: list[str] | None = None) -> int:

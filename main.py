@@ -64,6 +64,7 @@ if __name__ == "__main__":
                 browser_host = f"[{browser_host}]"
             webbrowser.open(f"http://{browser_host}:{PORT}/")
 
-    if os.environ.get("SC_PANEL_OPEN_BROWSER", "1") != "0":
+    if (os.environ.get("SC_PANEL_OPEN_BROWSER", "1") != "0"
+            and os.environ.get("SC_PANEL_RESTART") != "1"):
         threading.Thread(target=open_panel_when_ready, daemon=True).start()
     server.run()

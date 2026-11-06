@@ -77,6 +77,16 @@ async function installPortableUpdate() {
     message.textContent = result.message;
     button.hidden = true;
     _portableStatus.available = false;
+    // The external helper starts the new EXE without opening a second tab.
+    // Reload this tab once the replacement server is accepting requests again.
+    const startedAt = Date.now();
+    const waitForRestart = setInterval(async () => {
+      if (Date.now() - startedAt > 120000) { clearInterval(waitForRestart); return; }
+      try {
+        const response = await fetch('/api/updates', {cache: 'no-store'});
+        if (response.ok) { clearInterval(waitForRestart); window.location.reload(); }
+      } catch (_) { /* old process is still stopping or new one is starting */ }
+    }, 1000);
   } catch (error) { message.textContent = error.message || 'Aggiornamento non riuscito'; }
   finally { _portableBusy = false; button.disabled = false; }
 }
