@@ -97,6 +97,18 @@ registerActions({
     showForkUpdate();
   },
   'updates:portable': installPortableUpdate,
+  'updates:check': async () => {
+    const button = document.querySelector('[data-action="updates:check"]');
+    if (button) { button.disabled = true; button.classList.add('is-checking'); }
+    try {
+      const info = await checkForkUpdate(true);
+      if (info?.status === 'update_available') showForkUpdate();
+      else if (info?.status === 'up_to_date') showToast('Nessun aggiornamento disponibile.', 'success');
+      else showToast('Controllo aggiornamenti non disponibile.', 'warning');
+    } finally {
+      if (button) { button.disabled = false; button.classList.remove('is-checking'); }
+    }
+  },
 });
 
 // The shell's live parts: the in-app notification bell and the sidebar's
