@@ -582,6 +582,17 @@ present, so nothing is re-downloaded because of it.
 
 ---
 
+## Optional SoftEther installer bundle
+
+On Windows, `build.ps1 -IncludeSoftEtherInstaller` bundles the verified official
+SoftEther client setup under `tools/softether` in the Inno Setup distribution.
+It checks the pinned SHA256, size and Authenticode signer before building.
+It does not run the VPN setup; installation remains a separate guided action.
+The separate portable ZIP does not include this optional bundle.
+See [bundle preparation and limitations](tools/softether/README.md) and the
+[VPN update-check design](tools/softether/UPDATE-DESIGN.md).
+SoftEther and its dependencies retain their own licenses and notices.
+
 ## License
 
 MIT

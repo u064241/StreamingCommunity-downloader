@@ -49,11 +49,11 @@ const api = {
   // call in flight when the query changes under them. Without it those two
   // would have had to stay on raw fetch, which is how a second way of calling
   // the API survives a migration meant to end it.
-  async request(method, path, { body, params, signal, raw = false } = {}) {
-    const opts = { method };
+  async request(method, path, { body, params, signal, headers, raw = false } = {}) {
+    const opts = { method, headers: { ...headers } };
     if (signal) opts.signal = signal;
     if (body !== undefined) {
-      opts.headers = { 'Content-Type': 'application/json' };
+      opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
     const res = await fetch(api.url(path, params), opts);
@@ -79,6 +79,16 @@ const api = {
   put(path, body)     { return api.request('PUT', path, { body }); },
   patch(path, body)   { return api.request('PATCH', path, { body }); },
   del(path, body)     { return api.request('DELETE', path, { body }); },
+};
+
+const softetherApi = {
+  status: () => api.get('/api/softether/status'),
+  updates: () => api.get('/api/softether/updates'),
+  install: token => api.request('POST', '/api/softether/install', { headers: { 'X-SoftEther-Token': token } }),
+  downloadUpdate: token => api.request('POST', '/api/softether/download-update', { headers: { 'X-SoftEther-Token': token } }),
+  openManager: token => api.request('POST', '/api/softether/open-manager', {
+    headers: { 'X-SoftEther-Token': token },
+  }),
 };
 
 

@@ -174,7 +174,7 @@ function _setMoreVisible(on) {
 function renderResultCards(items, container, baseIndex,
                            wrapperClass = 'col-6 col-sm-4 col-md-3 col-lg-2') {
   items.forEach((item, i) => {
-    const idx = baseIndex + i;
+    const idx = Number.isInteger(item._searchIndex) ? item._searchIndex : baseIndex + i;
     const isMovie = item.type === 'movie';
     const kind = kindBadge(item);
     const year = itemYear(item);
@@ -222,9 +222,9 @@ function renderResultCards(items, container, baseIndex,
         </div>
       </div>`;
     container.appendChild(card);
-    if (wrapperClass.includes('shelf-item') && !item.backdrop && item.type !== 'anime') {
-      hydrateShelfArtwork(card.querySelector('.result-card'), item);
-    }
+    // Do not hydrate every card during render: that creates a burst of
+    // metadata requests and can trigger the source's anti-bot protection.
+    // Artwork hydration remains lazy, on the single card the user visits.
   });
 }
 

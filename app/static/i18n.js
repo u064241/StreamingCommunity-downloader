@@ -11,7 +11,8 @@
       'nav.files': 'File', 'nav.users': 'Utenti', 'nav.settings': 'Impostazioni',
       'updates.check': 'Controlla aggiornamenti', 'home.next': 'La tua prossima',
       'home.media': 'serie, film, anime.', 'home.subtitle': 'Cerca nel catalogo, scegli audio e sottotitoli, e mandalo in libreria.',
-      'search.placeholder': 'Film, serie TV...', 'search.button': 'Cerca'
+      'search.placeholder': 'Film, serie TV...', 'search.button': 'Cerca',
+      'title.related': 'Correlati', 'title.switch': 'Scegli un altro titolo', 'title.item': 'Titolo'
     },
     en: {
       'common.cancel': 'Cancel', 'common.confirm': 'Confirm', 'common.close': 'Close',
@@ -22,7 +23,8 @@
       'nav.files': 'Files', 'nav.users': 'Users', 'nav.settings': 'Settings',
       'updates.check': 'Check for updates', 'home.next': 'Your next',
       'home.media': 'series, films, anime.', 'home.subtitle': 'Search the catalog, choose audio and subtitles, and send it to your library.',
-      'search.placeholder': 'Films, TV series...', 'search.button': 'Search'
+      'search.placeholder': 'Films, TV series...', 'search.button': 'Search',
+      'title.related': 'Related', 'title.switch': 'Choose another title', 'title.item': 'Title'
     }
   };
 
@@ -1686,6 +1688,36 @@
   }
 ];
   const extraCatalog = {
+    'softether.title': ['SoftEther VPN (opzionale)', 'SoftEther VPN (optional)'],
+    'softether.manual': ['Apri il Client Manager installato su questo PC per gestire manualmente la VPN. Il pannello non avvia servizi, driver, profili o connessioni. Dopo aver gestito la connessione in SoftEther, puoi riprovare manualmente l’operazione bloccata.', 'Open the Client Manager installed on this PC to manage the VPN manually. The panel does not start services, drivers, profiles or connections. After managing the connection in SoftEther, you can manually retry the blocked operation.'],
+    'softether.open': ['Apri SoftEther', 'Open SoftEther'],
+    'softether.install': ['Installa SoftEther', 'Install SoftEther'],
+    'softether.startingInstall': ['Avvio dell’installer SoftEther… Conferma l’installazione nella finestra di Windows.', 'Starting the SoftEther installer… Confirm installation in the Windows dialog.'],
+    'softether.installStarted': ['Installer SoftEther avviato. Completa l’installazione e premi Ricontrolla.', 'SoftEther installer started. Complete the installation and select Check again.'],
+    'softether.installerMissing': ['Installer SoftEther incluso non trovato.', 'Bundled SoftEther installer not found.'],
+    'softether.installFailed': ['Impossibile avviare l’installer SoftEther.', 'Unable to start the SoftEther installer.'],
+    'softether.refresh': ['Ricontrolla', 'Check again'],
+    'softether.checkUpdates': ['Controlla aggiornamenti VPN', 'Check VPN updates'],
+    'softether.checkingUpdates': ['Controllo aggiornamenti SoftEther…', 'Checking SoftEther updates…'],
+    'softether.updateAvailable': ['È disponibile SoftEther VPN Client v{version}. Apri la pagina ufficiale per scaricarlo.', 'SoftEther VPN Client v{version} is available. Open the official page to download it.'],
+    'softether.updateUnavailable': ['Nessun aggiornamento SoftEther verificabile al momento.', 'No verifiable SoftEther update is available at the moment.'],
+    'softether.downloadUpdate': ['Scarica e installa aggiornamento', 'Download and install update'],
+    'softether.startingDownload': ['Download dell’installer SoftEther in corso…', 'Downloading the SoftEther installer…'],
+    'softether.downloadStarted': ['Installer scaricato e avviato. Completa l’installazione nella finestra di Windows.', 'Installer downloaded and started. Complete the installation in the Windows dialog.'],
+    'softether.downloadFailed': ['Download dell’installer SoftEther non riuscito.', 'SoftEther installer download failed.'],
+    'softether.invalidAsset': ['Asset SoftEther non valido.', 'Invalid SoftEther asset.'],
+    'softether.checking': ['Verifica del Client Manager…', 'Checking for Client Manager…'],
+    'softether.ready': ['Client Manager disponibile su questo PC.', 'Client Manager is available on this PC.'],
+    'softether.missing': ['Client Manager non trovato nelle cartelle Program Files. Installa il client ufficiale, poi premi Ricontrolla.', 'Client Manager was not found in Program Files. Install the official client, then select Check again.'],
+    'softether.unsupported': ['Il Client Manager è disponibile solo su Windows.', 'Client Manager is only available on Windows.'],
+    'softether.opened': ['Avvio del Client Manager richiesto. Scegli e gestisci la connessione nella sua finestra.', 'Client Manager launch requested. Choose and manage the connection in its window.'],
+    'softether.localOnly': ['Apri le Impostazioni dal pannello locale (localhost o 127.0.0.1) e premi Ricontrolla.', 'Open Settings from the local panel (localhost or 127.0.0.1) and select Check again.'],
+    'softether.detectionFailed': ['Impossibile verificare l’installazione di SoftEther.', 'Unable to check the SoftEther installation.'],
+    'softether.openFailed': ['Impossibile aprire il Client Manager. Verifica l’installazione e i permessi di Windows.', 'Unable to open Client Manager. Check the installation and Windows permissions.'],
+    'softether.noParameters': ['La richiesta non può contenere percorsi o parametri.', 'The request cannot contain paths or parameters.'],
+    'softether.denied': ['Non hai il permesso di aprire SoftEther dalle Impostazioni.', 'You do not have permission to open SoftEther from Settings.'],
+    'softether.authentication': ['Accedi al pannello per usare questa funzione.', 'Sign in to the panel to use this feature.'],
+    'softether.requestFailed': ['Impossibile contattare il pannello. Premi Ricontrolla per riprovare.', 'Unable to reach the panel. Select Check again to retry.'],
     'settings.encoder.status': ['{label} · {codec}: {status}', '{label} · {codec}: {status}'],
     'settings.notification.created': ['Nuova richiesta', 'New request'],
     'settings.notification.joined': ['Richiesta già presente', 'Request already exists'],

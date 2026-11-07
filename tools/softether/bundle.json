@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "repository": "SoftEtherVPN/SoftEtherVPN_Stable",
+  "tag": "v4.44-9807-rtm",
+  "fileName": "softether-vpnclient-v4.44-9807-rtm-2025.04.16-windows-x86_x64-intel.exe",
+  "size": 56249368,
+  "sha256": "ab006331f1f646bc319585088239d55bc54ecde5c269009268e9598307da7a44",
+  "signerThumbprint": "7CBDC3BEA44467D7692EBE729DFF2799CB5E448A",
+  "sourceUrl": "https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases/tag/v4.44-9807-rtm",
+  "silentInstallVerified": false,
+  "noticeSourceCommit": "ed17437af9719ac66acab30faa29e375d613c35f"
+}

@@ -27,4 +27,6 @@ schedule.json
 # Generated Windows packages and temporary build output.
 dist/
 .build-work/
+tools/softether/payload/
+tools/softether/.verification/
 build/

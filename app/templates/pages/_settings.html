@@ -52,6 +52,28 @@
       </ul>
 
       <div class="settings-pane" data-settings-pane="sorgente">
+      <div class="settings-section">
+        <p class="settings-section-label" data-i18n="softether.title">SoftEther VPN (opzionale)</p>
+        <p class="settings-section-hint" data-i18n="softether.manual">
+          Apri il Client Manager installato su questo PC per gestire manualmente la VPN.
+          Il pannello non avvia servizi, driver, profili o connessioni. Dopo aver gestito
+          la connessione in SoftEther, puoi riprovare manualmente l'operazione bloccata.
+        </p>
+        <div id="softether-status" class="form-text" role="status" aria-live="polite"></div>
+        <div id="softether-updates" class="form-text" role="status" aria-live="polite"></div>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="softether-open"
+                  data-action="cfg:softetherOpen" data-i18n="softether.open" disabled>Apri SoftEther</button>
+          <button type="button" class="btn btn-primary btn-sm" id="softether-install"
+                  data-action="cfg:softetherInstall" data-i18n="softether.install" hidden>Installa SoftEther</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-refresh"
+                  data-action="cfg:softetherStatus" data-i18n="softether.refresh">Ricontrolla</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-update-check"
+                  data-action="cfg:softetherUpdates" data-i18n="softether.checkUpdates">Controlla aggiornamenti VPN</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-update-install"
+                  data-action="cfg:softetherDownloadUpdate" data-i18n="softether.downloadUpdate" hidden>Scarica e installa aggiornamento</button>
+        </div>
+      </div>
       <!-- ── Sorgente ──────────────────────────────────────────────────── -->
       <div class="settings-section">
         <p class="settings-section-label" data-i18n="settings.source">Sorgente</p>

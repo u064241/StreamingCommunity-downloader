@@ -303,9 +303,24 @@ function _tpRender() {
   _tpRenderFacts();
   _tpRenderTrailer();
   _tpRenderEpisodes();
+  _tpRenderRelated();
   if (!_tp.tab || !_tpTabs().some(([k]) => k === _tp.tab)) {
     tpSetTab(_tpTabs()[0][0]);
   }
+}
+
+function _tpRenderRelated() {
+  const section = document.getElementById('th-related');
+  const rail = document.getElementById('th-related-rail');
+  if (!section || !rail || !_tp) return;
+  const related = (_searchResults || []).filter(item =>
+    String(item.id) !== String(_tp.id) && item.type === _tp.type)
+    .slice(0, 8).map(item => ({...item, _searchIndex: _searchResults.indexOf(item)}));
+  if (!related.length) { section.hidden = true; rail.replaceChildren(); return; }
+  section.hidden = false;
+  rail.replaceChildren();
+  renderResultCards(related, rail, 0, 'shelf-item');
+  _wireShelfArrows(section);
 }
 
 function _tpRenderHero() {
@@ -331,7 +346,22 @@ function _tpRenderHero() {
        <i class="ti ti-arrow-left"></i>${t('search.button')}
      </button>` +
     `<span class="sep">›</span><button class="th-crumb-link" data-action="tp:crumb-kind" data-kind="${_tp.type}" type="button">${escapeHtml(kindLabel)}</button>` +
-    `<span class="sep">›</span><span class="th-crumb-here">${escapeHtml(_tp.name || '—')}</span>`;
+    `<span class="sep">›</span><span class="th-crumb-here">${escapeHtml(_tp.name || '—')}</span>` +
+    `<select class="th-title-switcher" id="th-title-switcher" aria-label="${escapeHtml(t('title.switch'))}">
+       <option value="">${escapeHtml(t('title.switch'))}</option>
+     </select>`;
+  const switcher = document.getElementById('th-title-switcher');
+  (_searchResults || []).filter(item => String(item.id) !== String(_tp.id) && item.type === _tp.type)
+    .slice(0, 20).forEach(item => {
+      const option = document.createElement('option');
+      option.value = String(_searchResults.indexOf(item));
+      option.textContent = item.name || t('title.item');
+      switcher.appendChild(option);
+    });
+  switcher.addEventListener('change', () => {
+    const item = _searchResults[Number(switcher.value)];
+    if (item) openTitle(Number(switcher.value));
+  });
 
   document.getElementById('th-name').textContent = _tp.name || '—';
 

@@ -31,6 +31,7 @@ from app.routers import (
     domain, search, home, tv, downloads, progress, files, images, anime, notification_channels,
     metadata as metadata_router, download_hooks, library as library_router, mcp as mcp_router,
     updates as updates_router,
+    softether as softether_router,
 )
 
 logging.basicConfig(
@@ -183,6 +184,7 @@ app.include_router(download_hooks.router)
 app.include_router(library_router.router)
 app.include_router(mcp_router.router)
 app.include_router(updates_router.router)
+app.include_router(softether_router.router)
 # Raw ASGI, outside FastAPI's routing: the MCP transport speaks JSON-RPC itself.
 app.add_route(mcp_http.PATH, mcp_http.endpoint, include_in_schema=False)
 app.include_router(watches_router.router)

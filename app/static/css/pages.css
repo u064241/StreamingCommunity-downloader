@@ -357,10 +357,8 @@
       font-weight: 600;
       line-height: 1.35;
       color: var(--text);
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
+      overflow-wrap: anywhere;
+      white-space: normal;
       min-height: 2.7em;
       margin-bottom: 5px;
     }
@@ -1050,6 +1048,14 @@
       cursor: pointer; font: inherit; text-decoration: none;
     }
     .th-crumb-link:hover { color: var(--text); text-decoration: underline; }
+    .th-title-switcher {
+      max-width: 210px; margin-left: auto; padding: 4px 8px;
+      color: var(--text-sub); background: var(--bg-raised);
+      border: 1px solid var(--border-mid); border-radius: var(--radius-sm);
+      font-size: 12px;
+    }
+    .th-related { margin-top: 24px; }
+    .th-related .shelf-rail { padding-left: 0; padding-right: 0; }
     .th-crumbs .sep { color: var(--text-dim); }
 
     /* Stacked, not split. The actions used to float right into the artwork,

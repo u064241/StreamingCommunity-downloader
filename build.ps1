@@ -9,6 +9,7 @@ param(
     [switch]$Commit,
     [switch]$CommitAll,
     [switch]$SkipInnoSetup,
+    [switch]$IncludeSoftEtherInstaller,
     [switch]$Release,
     [switch]$CleanReleaseArtifacts,
     [switch]$PublishRelease
@@ -28,6 +29,8 @@ Uso:
   .\build.ps1 -Release -CleanReleaseArtifacts -PublishRelease
                                              Compila, pulisce e pubblica sul fork GitHub
   .\build.ps1 -SkipInnoSetup               Salta la compilazione dell'installer
+  .\build.ps1 -IncludeSoftEtherInstaller   Include il setup SoftEther verificato in tools/softether
+                                             Lo copia soltanto: nessuna installazione VPN automatica
   .\build.ps1 -BumpPatchVersion            Incrementa la patch e crea il modello delle note
   .\build.ps1 -BumpPatchVersion -Commit    Fa anche commit di versione e note generate
   .\build.ps1 -BumpPatchVersion -CommitAll Incrementa e committa tutte le modifiche presenti
@@ -45,7 +48,7 @@ $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
 
-if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup)) {
+if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup -or $IncludeSoftEtherInstaller)) {
     throw '-BumpPatchVersion va usato da solo.'
 }
 if ($Commit -and -not $BumpPatchVersion) {
@@ -145,6 +148,14 @@ function Assert-ReleaseReady {
 $ReleaseCommit = $null
 if ($PublishRelease) { $ReleaseCommit = Assert-ReleaseReady }
 
+# Validate before compilation or dependency installation; no downloads or setup execution.
+$SoftEtherFileEntries = ''
+if ($IncludeSoftEtherInstaller) {
+    if ($SkipInnoSetup) { throw '-IncludeSoftEtherInstaller richiede Inno Setup.' }
+    . (Join-Path $ProjectRoot 'tools\softether\Bundle-SoftEther.ps1')
+    $SoftEtherFileEntries = Get-SoftEtherFileEntries -ProjectRoot $ProjectRoot
+}
+
 function Resolve-Python {
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
@@ -210,6 +221,10 @@ function Remove-PythonCaches([string]$Directory) {
         }
         Remove-PythonCaches $child.FullName
     }
+}
+
+if ($IncludeSoftEtherInstaller -and -not (Find-InnoCompiler)) {
+    throw 'Inno Setup richiesto per includere il setup SoftEther.'
 }
 
 try {
@@ -358,6 +373,7 @@ english.RemoveData=Delete StreamingCommunity Downloader logs and temporary files
 english.RemoveDownloads=Also permanently delete downloaded files in the application and user profile videos folders? Folders outside these two locations will not be touched.
 english.CloseBeforeUninstall=StreamingCommunity Downloader is still running. Close all portal tabs and wait for downloads to finish, then run the uninstaller again.
 [Files]
+$SoftEtherFileEntries
 Source: "$exePath"; DestDir: "{app}"; Flags: ignoreversion
 Source: "$helperExePath"; DestDir: "{app}"; Flags: ignoreversion
 Source: "$portableMarker"; DestDir: "{app}"; DestName: "sc-distribution.json"; Flags: ignoreversion; Check: IsPortable

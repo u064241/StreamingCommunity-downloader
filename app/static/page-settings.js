@@ -36,11 +36,102 @@ function _feedback(id, message = '', kind = 'muted') {
   el.className = 'form-text' + (message ? ` text-${kind}` : '');
 }
 
+let _softetherBusy = false;
+
+function _softetherError(error) {
+  const key = error instanceof ApiError ? error.data?.detail : null;
+  if (typeof key === 'string' && key.startsWith('softether.')) return t(key);
+  if (error?.status === 403) return t('softether.denied');
+  if (error?.status === 401) return t('softether.authentication');
+  return t('softether.requestFailed');
+}
+
+async function loadSoftEtherStatus(openManager = false) {
+  if (_softetherBusy) return;
+  _softetherBusy = true;
+  const open = document.getElementById('softether-open');
+  const refresh = document.getElementById('softether-refresh');
+  const install = document.getElementById('softether-install');
+  open.disabled = true;
+  refresh.disabled = true;
+  _feedback('softether-status', t('softether.checking'));
+  let available = false;
+  try {
+    const status = await softetherApi.status();
+    available = status.supported && status.installed;
+    if (install) install.hidden = available || !status.bundled_installer;
+    const key = !status.supported ? 'softether.unsupported'
+      : status.installed ? 'softether.ready' : 'softether.missing';
+    _feedback('softether-status', t(key), available ? 'success' : 'warning');
+    if (openManager && available) {
+      await softetherApi.openManager(status.token);
+      _feedback('softether-status', t('softether.opened'), 'success');
+    }
+  } catch (error) {
+    _feedback('softether-status', _softetherError(error), 'danger');
+  } finally {
+    open.disabled = !available;
+    refresh.disabled = false;
+    _softetherBusy = false;
+  }
+}
+
+async function installSoftEther() {
+  const button = document.getElementById('softether-install');
+  if (button) button.disabled = true;
+  _feedback('softether-status', t('softether.startingInstall'), 'warning');
+  try {
+    const status = await softetherApi.status();
+    await softetherApi.install(status.token);
+    _feedback('softether-status', t('softether.installStarted'), 'success');
+  } catch (error) {
+    _feedback('softether-status', _softetherError(error), 'danger');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function openSoftEtherManager() {
+  await loadSoftEtherStatus(true);
+}
+
+async function checkSoftEtherUpdates() {
+  const button = document.getElementById('softether-update-check');
+  if (button) button.disabled = true;
+  _feedback('softether-updates', t('softether.checkingUpdates'));
+  try {
+    const result = await softetherApi.updates();
+    const key = result.status === 'available' ? 'softether.updateAvailable'
+      : 'softether.updateUnavailable';
+    _feedback('softether-updates', result.status === 'available'
+      ? t(key, { version: result.version }) : t(key), result.status === 'available' ? 'warning' : 'muted');
+    const updateButton = document.getElementById('softether-update-install');
+    if (updateButton) updateButton.hidden = result.status !== 'available';
+  } catch (error) {
+    _feedback('softether-updates', _softetherError(error), 'danger');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function downloadSoftEtherUpdate() {
+  const button = document.getElementById('softether-update-install');
+  if (button) button.disabled = true;
+  _feedback('softether-updates', t('softether.startingDownload'), 'warning');
+  try {
+    const status = await softetherApi.status();
+    await softetherApi.downloadUpdate(status.token);
+    _feedback('softether-updates', t('softether.downloadStarted'), 'success');
+  } catch (error) {
+    _feedback('softether-updates', _softetherError(error), 'danger');
+  } finally { if (button) button.disabled = false; }
+}
+
 // Each tab fetches its own data the first time it is opened, so opening the
 // modal no longer waits on the slowest section (disk usage stats every library
 // path, on an NFS mount that can be asleep).
 const _SETTINGS_TAB_LOADERS = {
-  sorgente: () => Promise.all([loadDomainRecoverySettings(), loadHosts()]),
+  sorgente: () => Promise.all([loadDomainRecoverySettings(), loadHosts(), loadSoftEtherStatus()]),
   // Loaded here rather than at boot. It was the one settings pane fed by a
   // prefetch the whole application waited on before it could show any page
   // at all, for data only this tab reads.
@@ -841,7 +932,6 @@ async function saveDomain() {
     const badge = document.getElementById('domain-badge');
     badge.className = 'badge bg-success';
     badge.textContent = data.domain;
-    showToast(t('settings.domain.saved'), 'success');
   } catch(e) {
     _feedback('domain-feedback', _settingsError(e, t('settings.network.error.233')), 'danger');
   } finally { btn.disabled = false; }
@@ -1029,6 +1119,11 @@ async function _copyWithToast(text, what) {
 // ── Delegated handlers ───────────────────────────────────────────────────────
 
 registerActions({
+  'cfg:softetherStatus': () => loadSoftEtherStatus(),
+  'cfg:softetherOpen': () => openSoftEtherManager(),
+  'cfg:softetherInstall': () => installSoftEther(),
+  'cfg:softetherUpdates': () => checkSoftEtherUpdates(),
+  'cfg:softetherDownloadUpdate': () => downloadSoftEtherUpdate(),
   'cfg:refreshLogs': () => loadApplicationLogs(),
   'cfg:browseDownloadDirectory': () => browseDownloadDirectory(),
   'cfg:saveDownloadDirectory': () => saveDownloadDirectory(),
