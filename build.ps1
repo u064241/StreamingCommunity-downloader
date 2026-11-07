@@ -548,6 +548,14 @@ end;
             $outputPath = Join-Path $DistDir "$AppName-Setup-v$Version.exe"
             if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Installer Inno Setup non trovato.' }
             if (-not $Release) { Remove-Item -LiteralPath $exePath -Force }
+            # The installer already contains both executables. Keep only the
+            # setup in dist after packaging; the standalone files are build
+            # intermediates and are not published separately.
+            foreach ($intermediate in @($exePath, $helperExePath)) {
+                if (Test-Path -LiteralPath $intermediate -PathType Leaf) {
+                    Remove-Item -LiteralPath $intermediate -Force
+                }
+            }
         } else {
             Write-Warning 'Inno Setup non trovato: creato solo eseguibile PyInstaller.'
         }
