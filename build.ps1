@@ -45,6 +45,39 @@ $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
 
+function Get-AutoReleaseNotes([string]$Version) {
+    $previousTag = (& git -C $ProjectRoot tag --sort=-version:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1)
+    $range = if ($previousTag) { "$previousTag..HEAD" } else { 'HEAD' }
+    $messages = @(& git -C $ProjectRoot log $range --pretty=format:'%s' --no-merges)
+    $groups = [ordered]@{
+        'Nuove funzionalità' = @()
+        'Correzioni' = @()
+        'Documentazione e build' = @()
+        'Modifiche' = @()
+    }
+    foreach ($message in $messages) {
+        if ([string]::IsNullOrWhiteSpace($message)) { continue }
+        $clean = ($message -replace '^(feat|fix|docs|build|refactor|perf|style|chore|test)(\([^)]*\))?:\s*', '').Trim()
+        if ($message -match '^(feat)(\([^)]*\))?:') { $groups['Nuove funzionalità'] += $clean }
+        elseif ($message -match '^(fix)(\([^)]*\))?:') { $groups['Correzioni'] += $clean }
+        elseif ($message -match '^(docs|build|test|chore)(\([^)]*\))?:') { $groups['Documentazione e build'] += $clean }
+        else { $groups['Modifiche'] += $clean }
+    }
+    $lines = @("# StreamingCommunity Downloader $Version", '', '## Modifiche', '')
+    $hasChanges = $false
+    foreach ($group in $groups.GetEnumerator()) {
+        if ($group.Value.Count -eq 0) { continue }
+        $hasChanges = $true
+        $lines += "### $($group.Key)"
+        $lines += ''
+        foreach ($item in $group.Value) { $lines += "- $item" }
+        $lines += ''
+    }
+    if (-not $hasChanges) { $lines += '- Aggiornamenti e miglioramenti interni.'; $lines += '' }
+    $lines += '## Note', '', '- Verificare README e artefatti prima della pubblicazione.'
+    return ($lines -join "`n") + "`n"
+}
+
 if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup -or $IncludeSoftEtherInstaller)) {
     throw '-BumpPatchVersion va usato da solo.'
 }
@@ -68,17 +101,7 @@ if ($BumpPatchVersion) {
     Set-Content -LiteralPath $versionPath -Value $updatedText -Encoding utf8NoBOM
     $notesPath = Join-Path $ProjectRoot "releases\v$nextVersion.md"
     if (-not (Test-Path -LiteralPath $notesPath)) {
-        @"
-# StreamingCommunity Downloader u064241 $nextVersion
-
-## Modifiche
-
-- Descrivere qui le modifiche principali della release.
-
-## Note
-
-- Verificare README e artefatti prima della pubblicazione.
-"@ | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+        Get-AutoReleaseNotes $nextVersion | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
     }
     if ($Commit -or $CommitAll) {
         if ($CommitAll) {
@@ -92,7 +115,7 @@ if ($BumpPatchVersion) {
         Write-Host "Commit creato per la versione $nextVersion." -ForegroundColor Green
     }
     Write-Host "Versione aggiornata a $nextVersion." -ForegroundColor Green
-    Write-Host "Completa le note in $notesPath, poi crea un commit e lancia la build release." -ForegroundColor Yellow
+    Write-Host "Note generate automaticamente in $notesPath. Puoi correggerle, poi lancia la build release." -ForegroundColor Yellow
     exit 0
 }
 
