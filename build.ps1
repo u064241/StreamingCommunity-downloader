@@ -44,6 +44,10 @@ $ProjectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
 $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
+$localSoftEtherPayload = Join-Path $ProjectRoot 'tools\softether\payload'
+if (-not $PublishPreparedRelease -and -not $SkipInnoSetup -and (Test-Path -LiteralPath $localSoftEtherPayload -PathType Container)) {
+    $IncludeSoftEtherInstaller = $true
+}
 
 function Get-AutoReleaseNotes([string]$Version) {
     $previousTag = (& git -C $ProjectRoot tag --sort=-version:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1)
