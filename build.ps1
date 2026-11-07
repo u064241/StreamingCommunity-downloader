@@ -554,10 +554,9 @@ end;
     }
 
     if ($Release) {
-        $assets = @($portablePath)
-        if ((Test-Path -LiteralPath $outputPath -PathType Leaf) -and $outputPath -ne $exePath) {
-            $assets += $outputPath
-        }
+        # The installer already contains the portable mode; do not publish a
+        # duplicate portable ZIP in the GitHub release.
+        $assets = @($outputPath)
         $assetRecords = foreach ($asset in $assets) {
             $file = Get-Item -LiteralPath $asset
             $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -606,7 +605,6 @@ end;
                 if ($LASTEXITCODE -ne 0) { throw "Push del branch release fallito: $releaseBranch" }
                 $releaseFiles = @(
                     (Join-Path $DistDir "$AppName-Setup-v$Version.exe"),
-                    (Join-Path $DistDir "$AppName-$Version-Portable.zip"),
                     (Join-Path $DistDir 'update-manifest.json'),
                     (Join-Path $DistDir 'SHA256SUMS.txt')
                 )
