@@ -63,7 +63,7 @@ function Get-AutoReleaseNotes([string]$Version) {
         elseif ($message -match '^(docs|build|test|chore)(\([^)]*\))?:') { $groups['Documentazione e build'] += $clean }
         else { $groups['Modifiche'] += $clean }
     }
-    $lines = @("# StreamingCommunity Downloader $Version", '', '## Modifiche', '')
+    $lines = @('## Modifiche', '')
     $hasChanges = $false
     foreach ($group in $groups.GetEnumerator()) {
         if ($group.Value.Count -eq 0) { continue }
