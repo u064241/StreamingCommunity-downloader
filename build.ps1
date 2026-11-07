@@ -100,8 +100,17 @@ if ($BumpPatchVersion) {
     $updatedText = $versionText -replace '(?m)^(__version__\s*=\s*")\d+\.\d+\.\d+("\s*)$', "`${1}$nextVersion`${2}"
     Set-Content -LiteralPath $versionPath -Value $updatedText -Encoding utf8NoBOM
     $notesPath = Join-Path $ProjectRoot "releases\v$nextVersion.md"
-    if (-not (Test-Path -LiteralPath $notesPath)) {
+    $regenerateNotes = -not (Test-Path -LiteralPath $notesPath -PathType Leaf)
+    if (-not $regenerateNotes) {
+        $existingNotes = Get-Content -LiteralPath $notesPath -Raw
+        $regenerateNotes = [string]::IsNullOrWhiteSpace($existingNotes) -or
+            $existingNotes -match '(?i)Descrivere qui le modifiche|Describe the main changes'
+    }
+    if ($regenerateNotes) {
         Get-AutoReleaseNotes $nextVersion | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+        Write-Host "Note placeholder rigenerate automaticamente: $notesPath" -ForegroundColor Cyan
+    } else {
+        Write-Host "Note esistenti conservate: $notesPath" -ForegroundColor Cyan
     }
     if ($Commit -or $CommitAll) {
         if ($CommitAll) {
