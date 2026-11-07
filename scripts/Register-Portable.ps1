@@ -28,7 +28,7 @@ if (-not $Uninstall) {
         $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $command = '"' + $windowsPowerShell + '" -NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '" -Uninstall'
         $values = @{
-            DisplayName = 'StreamingCommunity Downloader (Portable)'
+            DisplayName = 'StreamingCommunity Downloader'
             DisplayVersion = $(if ($Version) { $Version } else { [string]$marker.version })
             Publisher = 'u064241'
             InstallLocation = $portableRoot

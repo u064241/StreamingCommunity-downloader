@@ -32,7 +32,7 @@ def _register_direct(root: Path, version: str, script: Path) -> None:
     powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     command = f'"{powershell}" -NoProfile -ExecutionPolicy Bypass -File "{script}" -Uninstall'
     values = {
-        "DisplayName": "StreamingCommunity Downloader (Portable)",
+        "DisplayName": "StreamingCommunity Downloader",
         "DisplayVersion": version,
         "Publisher": "u064241",
         "InstallLocation": str(root),

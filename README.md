@@ -164,7 +164,7 @@ Download the latest release from the
 - `StreamingCommunityDownloader-Setup-v<version>.exe` opens a wizard where you can choose **Install** or
   **Portable only**.
 - `StreamingCommunityDownloader-<version>-Portable.zip` is the ready-to-extract portable package.
-- Portable mode selected in Setup registers a separate **StreamingCommunity Downloader (Portable)**
+- Portable mode selected in Setup registers **StreamingCommunity Downloader**
   entry in Windows Installed apps. It does not replace the installed edition's uninstall entry.
 - An extracted portable ZIP registers itself on first launch for the current user, without admin
   rights. Its uninstaller preserves settings, databases and downloads. If the folder is moved,

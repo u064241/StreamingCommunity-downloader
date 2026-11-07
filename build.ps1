@@ -379,7 +379,7 @@ Source: "$helperExePath"; DestDir: "{app}"; Flags: ignoreversion
 Source: "$portableMarker"; DestDir: "{app}"; DestName: "sc-distribution.json"; Flags: ignoreversion; Check: IsPortable
 Source: "$installedMarker"; DestDir: "{app}"; DestName: "sc-distribution.json"; Flags: ignoreversion; Check: not IsPortable
 [Registry]
-Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "DisplayName"; ValueData: "StreamingCommunity Downloader (Portable)"; Flags: uninsdeletekey; Check: IsPortable
+Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "DisplayName"; ValueData: "StreamingCommunity Downloader"; Flags: uninsdeletekey; Check: IsPortable
 Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "{#MyAppVersion}"; Check: IsPortable
 Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "Publisher"; ValueData: "u064241"; Check: IsPortable
 Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"; Check: IsPortable
