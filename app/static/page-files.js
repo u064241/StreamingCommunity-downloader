@@ -24,6 +24,13 @@ let _allVisiblePaths = [];  // flat list of visible paths for shift-click range
 let _lastSelectedIndex = -1;
 let _fmSearchActive = false;
 let _fmSearchTimeout = null;
+let _fmLastSearch = null;
+
+window.addEventListener('sc:language-changed', () => {
+  if (_fmSearchActive && _fmLastSearch) renderSearchResults(_fmLastSearch.results, _fmLastSearch.query);
+  else if (_cachedTree) renderFileTree(_cachedTree);
+  syncSelectionUI();
+});
 
 function setupFileManager() {
   // ── Drag & Drop (supports multi-drag) ──
@@ -133,14 +140,14 @@ function setupFileManager() {
   const batchMoveBtn = document.getElementById('fm-batch-move-btn');
   if (batchMoveBtn) batchMoveBtn.addEventListener('click', async () => {
     if (!_selectedPaths.size) return;
-    const dest = await scPrompt('Percorso cartella di destinazione (vuoto = radice):','');
+    const dest = await scPrompt(window.t("dynamic.ui66"),'');
     if (dest === null) return;
     batchMoveToPath([..._selectedPaths], dest);
   });
   const batchDeleteBtn = document.getElementById('fm-batch-delete-btn');
   if (batchDeleteBtn) batchDeleteBtn.addEventListener('click', async () => {
     if (!_selectedPaths.size) return;
-    if (!await scConfirm(`Eliminare ${_selectedPaths.size} elementi selezionati?`)) return;
+    if (!await scConfirm(window.t('dynamic.deleteSelected', {count: _selectedPaths.size}))) return;
     batchDeletePaths([..._selectedPaths]);
   });
   const deselectBtn = document.getElementById('fm-deselect-btn');
@@ -163,7 +170,7 @@ function syncSelectionUI() {
   const bar = document.getElementById('fm-selection-bar');
   const count = document.getElementById('fm-selection-count');
   if (bar) bar.style.visibility = _selectedPaths.size ? '' : 'hidden';
-  if (count) count.textContent = `${_selectedPaths.size} selezionat${_selectedPaths.size===1?'o':'i'}`;
+  if (count) count.textContent = window.t('dynamic.selected', {count: _selectedPaths.size});
 }
 
 function onFmSearchInput(value) {
@@ -197,15 +204,16 @@ async function searchFiles(query) {
   const pane = document.getElementById('files-left-pane');
   if (!pane) return;
   _fmSearchActive = true;
-  pane.innerHTML = '<div class="text-center py-4 text-muted" style="font-size:13px"><div class="spinner-border spinner-border-sm me-2"></div>Ricerca...</div>';
+  pane.innerHTML = `<div class="text-center py-4 text-muted" style="font-size:13px"><div class="spinner-border spinner-border-sm me-2"></div>${window.t('dynamic.extra19')}</div>`;
   try {
     renderSearchResults(await api.get('/api/files/search', {q: query}), query);
   } catch(e) {
-    pane.innerHTML = `<div class="text-danger text-center py-4 px-3">${escapeHtml(errText(e, 'Errore ricerca'))}</div>`;
+    pane.innerHTML = `<div class="text-danger text-center py-4 px-3">${escapeHtml(errText(e, window.t("dynamic.ui67")))}</div>`;
   }
 }
 
 function renderSearchResults(results, query) {
+  _fmLastSearch = {results, query};
   const pane = document.getElementById('files-left-pane');
   if (!pane) return;
   _allVisiblePaths = [];
@@ -296,7 +304,7 @@ async function loadFiles() {
   try {
     const tree = await api.get('/api/files');
     _cachedTree = tree;
-    if (!tree||!tree.length) { pane.innerHTML='<div class="text-muted text-center py-4">Nessun file trovato</div>'; return; }
+    if (!tree||!tree.length) { pane.innerHTML=`<div class="text-muted text-center py-4">${window.t('dynamic.extra18')}</div>`; return; }
     renderFileTree(tree);
   } catch(e) {
     pane.innerHTML=`<div class="text-danger text-center py-4">${escapeHtml(errText(e))}</div>`;
@@ -313,7 +321,7 @@ function renderFileTree(tree) {
   rootZone.dataset.dropPath='';
   rootZone.innerHTML=`<span style="min-width:14px;flex-shrink:0"></span>
     <i class="ti ti-home text-muted" style="flex-shrink:0"></i>
-    <span class="fm-meta ms-1">radice</span>`;
+    <span class="fm-meta ms-1">${window.t('dynamic.ui68')}</span>`;
   frag.appendChild(rootZone);
   renderTreeItems(tree, frag, 0);
   pane.innerHTML='';
@@ -390,7 +398,7 @@ function renderTreeItems(items, container, depth) {
 async function moveToPath(sourcePath, name, destDirPath) {
   try {
     await api.post('/api/files/move', {path:sourcePath, dest_dir_path:destDirPath});
-    showToast(`Spostato: ${name}`,'success');
+    showToast(window.t("files.moved", {name}),'success');
     loadFiles();
   } catch(e) { showToast(errText(e, 'Errore spostamento'),'danger'); }
 }
@@ -400,11 +408,11 @@ async function batchMoveToPath(paths, destDirPath) {
     const data = await api.post('/api/files/move-batch', {paths, dest_dir_path:destDirPath});
     const ok = data.results.filter(r=>r.ok).length;
     const fail = data.results.filter(r=>!r.ok).length;
-    if (ok) showToast(`${ok} file spostati`,'success');
-    if (fail) showToast(`${fail} file non spostati`,'danger');
+    if (ok) showToast(window.t("files.movedCount", {count: ok}),'success');
+    if (fail) showToast(window.t("files.moveFailedCount", {count: fail}),'danger');
     _selectedPaths.clear();
     loadFiles();
-  } catch(e) { showToast('Errore di rete','danger'); }
+  } catch(e) { showToast(window.t("dynamic.ui61"),'danger'); }
 }
 
 async function batchDeletePaths(paths) {
@@ -412,11 +420,11 @@ async function batchDeletePaths(paths) {
     const data = await api.post('/api/files/delete-batch', {paths});
     const ok = data.results.filter(r=>r.ok).length;
     const fail = data.results.filter(r=>!r.ok).length;
-    if (ok) showToast(`${ok} file eliminati`,'success');
-    if (fail) showToast(`${fail} file non eliminati`,'danger');
+    if (ok) showToast(window.t("files.deletedCount", {count: ok}),'success');
+    if (fail) showToast(window.t("files.deleteFailedCount", {count: fail}),'danger');
     _selectedPaths.clear();
     loadFiles();
-  } catch(e) { showToast('Errore di rete','danger'); }
+  } catch(e) { showToast(window.t("dynamic.ui61"),'danger'); }
 }
 
 function playFile(path, name) {
@@ -434,17 +442,17 @@ async function renamePath(path, name) {
   if (!newName || newName === name) return;
   try {
     await api.post('/api/files/rename', { path, new_name: newName });
-    showToast(`Rinominato in: ${newName}`, 'success');
+    showToast(window.t("files.renamed", {name: newName}), 'success');
     loadFiles();
   } catch(e) { showToast(errText(e, 'Errore rinomina'), 'danger'); }
 }
 
 async function deletePath(path, name, isDir) {
-  const msg = isDir ? `Eliminare la cartella "${name}" e tutto il suo contenuto?` : `Eliminare il file "${name}"?`;
+  const msg = isDir ? window.t("files.deleteFolder", {name}) : window.t("files.deleteFile", {name});
   if (!await scConfirm(msg)) return;
   try {
     await api.del(`/api/files/delete/${encodeURI(path)}`);
-    showToast(`Eliminato: ${name}`,'success');
+    showToast(window.t("files.deleted", {name}),'success');
     loadFiles();
   } catch(e) { showToast(errText(e, 'Errore eliminazione'),'danger'); }
 }

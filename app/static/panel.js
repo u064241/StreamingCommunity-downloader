@@ -4,6 +4,20 @@ let _updateStatus = null;
 let _portableStatus = null;
 let _portableBusy = false;
 
+window.addEventListener('sc:language-changed', () => {
+  // Update feedback in place without starting another update request.
+  for (const id of ['update-version', 'portable-update-message', 'update-modal-progress']) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = scLanguage.message(node.textContent);
+  }
+  if (_updateStatus?.status === 'update_available') {
+    const node = document.getElementById('update-version');
+    if (node) node.textContent = window.t('dynamic.updateVersion', {version: _updateStatus.version, current: _updateStatus.current_version});
+  }
+  const empty = document.querySelector('#notif-list .notif-empty');
+  if (empty) empty.textContent = window.t('dynamic.extra21');
+});
+
 async function checkForkUpdate(force = false) {
   try {
     _updateStatus = await api[force ? 'post' : 'get'](
@@ -17,8 +31,8 @@ async function checkForkUpdate(force = false) {
 function showForkUpdate() {
   if (!_updateStatus || _updateStatus.status !== 'update_available') return;
   document.getElementById('update-version').textContent =
-    `Versione ${_updateStatus.version} disponibile (attuale ${_updateStatus.current_version})`;
-  document.getElementById('update-notes').textContent = _updateStatus.notes || 'Nessuna nota pubblicata.';
+    window.t('dynamic.updateVersion', {version: _updateStatus.version, current: _updateStatus.current_version});
+  document.getElementById('update-notes').textContent = _updateStatus.notes || window.t("dynamic.ui78");
   const url = _updateStatus.url || '';
   document.getElementById('update-release-link').href =
     url.startsWith('https://github.com/u064241/StreamingCommunity-downloader/releases/') ? url : '#';
@@ -44,14 +58,14 @@ async function loadPortableUpdate() {
     _portableStatus = await api.get('/api/updates/portable');
     button.hidden = !_portableStatus.available;
     message.textContent = _portableStatus.available
-      ? 'Aggiorna il programma portable conservando il vecchio EXE come backup.'
-      : 'Per questa distribuzione scarica la release ed esegui l’aggiornamento guidato.';
-  } catch (_) { message.textContent = 'Aggiornamento diretto disponibile solo dal pannello locale portable.'; }
+      ? window.t("dynamic.ui79")
+      : window.t("dynamic.ui80");
+  } catch (_) { message.textContent = window.t("dynamic.ui81"); }
 }
 
 async function installPortableUpdate() {
   if (_portableBusy || !_portableStatus?.available) return;
-  if (!await scConfirm('Scaricare e verificare la nuova versione portable?')) return;
+  if (!await scConfirm(window.t("dynamic.ui82"))) return;
   _portableBusy = true;
   const button = document.getElementById('portable-update-button');
   const message = document.getElementById('portable-update-message');
@@ -63,14 +77,14 @@ async function installPortableUpdate() {
         'X-Portable-Update-Token': _portableStatus.token }, body: JSON.stringify(body),
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Aggiornamento fallito');
+    if (!response.ok) throw new Error(data.detail || window.t("dynamic.ui83"));
     return data;
   }
   try {
-    message.textContent = 'Download e verifica in corso…';
+    message.textContent = window.t("dynamic.ui84");
     const prepared = await post('/api/updates/portable/prepare', {});
-    if (!await scConfirm(`Versione ${prepared.version} verificata. Applicarla? L'applicazione verrà riavviata automaticamente dopo la sostituzione.`)) {
-      message.textContent = 'Aggiornamento annullato. Nessun file dell’app sostituito.';
+    if (!await scConfirm(window.t('dynamic.updateConfirm', {version: prepared.version}))) {
+      message.textContent = window.t("dynamic.ui85");
       return;
     }
     const result = await post('/api/updates/portable/apply', { token: prepared.token, confirmed: true });
@@ -87,7 +101,7 @@ async function installPortableUpdate() {
         if (response.ok) { clearInterval(waitForRestart); window.location.reload(); }
       } catch (_) { /* old process is still stopping or new one is starting */ }
     }, 1000);
-  } catch (error) { message.textContent = error.message || 'Aggiornamento non riuscito'; }
+  } catch (error) { message.textContent = error.message || window.t("dynamic.ui86"); }
   finally { _portableBusy = false; button.disabled = false; }
 }
 
@@ -103,8 +117,8 @@ registerActions({
     try {
       const info = await checkForkUpdate(true);
       if (info?.status === 'update_available') showForkUpdate();
-      else if (info?.status === 'up_to_date') showToast('Nessun aggiornamento disponibile.', 'success');
-      else showToast('Controllo aggiornamenti non disponibile.', 'warning');
+      else if (info?.status === 'up_to_date') showToast(window.t("dynamic.ui87"), 'success');
+      else showToast(window.t("dynamic.ui88"), 'warning');
     } finally {
       if (button) { button.disabled = false; button.classList.remove('is-checking'); }
     }
@@ -147,7 +161,7 @@ function renderUpdateBadge(info) {
   badge.hidden = !info.update_available;
   if (!info.update_available) return;
   document.getElementById('update-badge-version').textContent = `v${info.latest}`;
-  badge.title = `Disponibile la v${info.latest}: apri le note di rilascio`;
+  badge.title = window.t("updates.badgeHint", {version: info.latest});
 }
 
 async function refreshUpdateBadge() {
@@ -162,7 +176,7 @@ function openUpdateModal() {
   // notes_html is rendered and escaped by app/updates.py; everything else on
   // the release is escaped here.
   document.getElementById('update-modal-body').innerHTML =
-    `<p class="release-current">Versione installata: v${escapeHtml(_updateInfo.current)}</p>` +
+    `<p class="release-current">${escapeHtml(window.t('dynamic.installedVersion', {version: _updateInfo.current}))}</p>` +
     _updateInfo.releases.map(r => `
       <section class="release-entry">
         <h3 class="release-title">
@@ -170,7 +184,7 @@ function openUpdateModal() {
           ${r.published_at ? `<span class="release-date">${escapeHtml(fmtDate(r.published_at))}</span>` : ''}
         </h3>
         <div class="release-notes">
-          ${r.notes_html || '<p class="release-empty">Nessuna nota di rilascio.</p>'}
+          ${r.notes_html || `<p class="release-empty">${window.t('dynamic.extra22')}</p>`}
         </div>
       </section>`).join('');
   document.getElementById('update-modal-link').href = _updateInfo.releases[0].url;
@@ -195,7 +209,7 @@ function _renderUpdateAction() {
   const problem = updater?.problem
     ? `<p class="settings-warn">L'aggiornamento dal pannello non è disponibile: ${escapeHtml(updater.problem)}</p>`
     : '';
-  hint.innerHTML = `${problem}<p>Per aggiornare:</p><pre class="settings-snippet"><code>${escapeHtml(commands)}</code></pre>`;
+  hint.innerHTML = `${problem}<p>${window.t('dynamic.hint4')}</p><pre class="settings-snippet"><code>${escapeHtml(commands)}</code></pre>`;
   hint.hidden = false;
 }
 
@@ -244,7 +258,7 @@ function _watchUpdate(from) {
 
 async function installUpdate() {
   const target = _updateInfo.latest;
-  if (!await scConfirm(`Aggiornare il pannello alla v${target}? Verrà riavviato: qualche istante senza interfaccia.`)) return;
+  if (!await scConfirm(window.t("updates.confirmRestart", {version: target}))) return;
   const btn = document.getElementById('update-install-btn');
   btn.disabled = true;
   _updateProgress('Avvio dell\'aggiornamento...');
@@ -282,11 +296,11 @@ async function refreshNotifications() {
               <div class="notif-time">${fmtDate(n.created_at)}</div>
             </div>
             <button class="notif-del" data-action="notif:delete" data-id="${n.id}"
-                    title="Elimina questa notifica" aria-label="Elimina">
+                    title="${window.t('dynamic.hint2')}" aria-label="${window.t('dynamic.hint3')}">
               <i class="ti ti-x"></i>
             </button>
           </div>`).join('')
-      : '<div class="notif-empty">Nessuna notifica.</div>';
+      : `<div class="notif-empty">${window.t('dynamic.extra21')}</div>`;
 
     // Nothing to act on means nothing to offer.
     const actions = document.getElementById('notif-actions');
@@ -317,7 +331,7 @@ async function _deleteNotifications(body) {
   try {
     result = await api.post('/api/notifications/delete', body);
   } catch (e) {
-    showToast(errText(e, 'Eliminazione fallita'), 'danger');
+    showToast(errText(e, window.t("dynamic.ui89")), 'danger');
   } finally {
     _notifDeleting = false;
     buttons.forEach(button => { button.disabled = false; });
@@ -339,7 +353,7 @@ async function clearAllNotifications() {
   panel.style.display = 'block';
   if (!confirmed) return;
   const result = await _deleteNotifications({});
-  if (result) showToast('Notifiche eliminate', 'info');
+  if (result) showToast(window.t("dynamic.ui90"), 'info');
 }
 
 document.addEventListener('click', event => {

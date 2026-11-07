@@ -7,6 +7,10 @@
 
 // ── Global SSE stream ──────────────────────────────────────────────────────────
 
+window.addEventListener('sc:language-changed', () => {
+  if (document.getElementById('page-downloads')) renderAllJobCards();
+});
+
 function connectGlobalStream() {
   const es = new EventSource('/api/progress/stream');
 
@@ -95,7 +99,7 @@ function connectGlobalStream() {
 
   es.onerror = () => {
     es.close();
-    document.getElementById('stream-label').textContent='Riconnessione...';
+    document.getElementById('stream-label').textContent=window.t("dynamic.ui0");
     document.querySelector('.stream-dot').style.background='#d63939';
     setTimeout(connectGlobalStream, 3000);
   };
@@ -108,9 +112,9 @@ function connectGlobalStream() {
 // and back - the running job fell through to the grey fallback and lost its
 // colour, its border and its label. tests/test_assets.py now checks the set.
 const PHASE_LABELS = {
-  scheduled:'Programmato', queued:'In attesa', paused:'In pausa', running:'In corso',
-  video:'Video', joining:'Finalizzazione', converting:'Conversione',
-  audio:'Audio', merging:'Unione', done:'Completato', error:'Errore', cancelled:'Annullato',
+  get scheduled() { return window.t("dynamic.ui1"); }, get queued() { return window.t("dynamic.ui2"); }, get paused() { return window.t("dynamic.ui3"); }, get running() { return window.t("dynamic.ui4"); },
+  video:'Video', get joining() { return window.t("dynamic.ui5"); }, get converting() { return window.t("dynamic.ui6"); },
+  audio:'Audio', get merging() { return window.t("dynamic.ui7"); }, get done() { return window.t("dynamic.ui8"); }, get error() { return window.t("dynamic.ui9"); }, get cancelled() { return window.t("dynamic.ui10"); },
 };
 const PHASE_BADGE = {
   scheduled:'bg-yellow-lt', queued:'bg-secondary-lt', paused:'bg-orange-lt', running:'bg-blue-lt',
@@ -134,7 +138,7 @@ const PHASE_BORDER_MAP = {
 // is named by its language alone - "ITA" reads faster than "Audio ITA" when
 // there are three of them in a row.
 function _stepLabel(phase) {
-  const map = { converting:'Conversione', video:'Video', joining:'Join', merging:'Merge', done:'Fine', audio:'Audio' };
+  const map = { get converting() { return window.t("dynamic.ui6"); }, video:'Video', joining:'Join', merging:'Merge', get done() { return window.t("dynamic.ui11"); }, audio:'Audio' };
   if (map[phase]) return map[phase];
   if (phase && phase.startsWith('audio_')) return 'Audio ' + phase.slice(6).toUpperCase();
   return phase;
@@ -238,11 +242,11 @@ function _jobInfoText(progress, status) {
 // drawn and again whenever its status changes under it.
 function _fireBtnHtml(jobId) {
   return `<button class="btn btn-sm btn-outline-success ms-1" data-action="jobs:fire"
-                  data-job="${jobId}" title="Lancia subito"><i class="ti ti-player-play"></i></button>`;
+                  data-job="${jobId}" title="${window.t('dynamic.extra50')}"><i class="ti ti-player-play"></i></button>`;
 }
 function _stopBtnHtml(jobId) {
   return `<button class="btn btn-sm btn-outline-danger ms-1" data-action="jobs:cancel"
-                  data-job="${jobId}" title="Interrompi"><i class="ti ti-player-stop"></i></button>`;
+                  data-job="${jobId}" title="${window.t('dynamic.extra51')}"><i class="ti ti-player-stop"></i></button>`;
 }
 
 // A failed job stays until someone decides about it: run it again, or let it go.
@@ -268,17 +272,17 @@ function _queuePosition(j) {
 
 function _waitingText(j) {
   const position = _queuePosition(j);
-  if (position == null) return 'In coda';
+  if (position == null) return window.t("dynamic.extra49");
   return position === 1 ? 'Il prossimo a partire' : `${position}° in coda`;
 }
 
 function _failedBtnsHtml(jobId) {
   const retry = can('DOWNLOAD')
     ? `<button class="btn btn-sm btn-outline-primary ms-1" data-action="jobs:retry"
-               data-job="${jobId}" title="Riprova"><i class="ti ti-reload"></i></button>`
+               data-job="${jobId}" title="${window.t('dynamic.ui97')}"><i class="ti ti-reload"></i></button>`
     : '';
   return retry + `<button class="btn btn-sm btn-outline-secondary ms-1" data-action="jobs:dismiss"
-                  data-job="${jobId}" title="Rimuovi dall'elenco"><i class="ti ti-x"></i></button>`;
+                  data-job="${jobId}" title="${window.t('dynamic.hint13')}"><i class="ti ti-x"></i></button>`;
 }
 
 function _buildJobCard(j) {
@@ -297,7 +301,7 @@ function _buildJobCard(j) {
 
   const infoStr = j.retry_at ? _retryText(j)
     : (j.status === 'queued' ? _waitingText(j)
-      : (j.status === 'paused' ? _PAUSED_TEXT : _jobInfoText(j.progress, j.status)));
+      : (j.status === 'paused' ? _pausedText() : _jobInfoText(j.progress, j.status)));
   const infoTitle = (j.progress?.bytes_total && j.status !== 'done')
     ? ' title="La playlist non dichiara una dimensione: il totale è stimato sui segmenti già scaricati."'
     : '';
@@ -327,7 +331,7 @@ function _buildJobCard(j) {
         <div class="progress-bar ${barClass}${animated} job-progress-bar" id="job-bar-${j.job_id}" style="width:${barWidth}%"></div>
       </div>
       <div class="d-flex justify-content-between align-items-center">
-        <small class="text-muted" id="job-info-${j.job_id}"${infoTitle}>${infoStr || (j.status==='error' ? escapeHtml(j.error||'Errore') : (j.status==='done'?'Completato':''))}</small>
+        <small class="text-muted" id="job-info-${j.job_id}"${infoTitle}>${infoStr || (j.status==='error' ? escapeHtml(j.error||window.t("dynamic.ui9")) : (j.status==='done'?window.t("dynamic.ui8"):''))}</small>
         <small class="text-muted">${dateLabel}</small>
       </div>
     </div>
@@ -404,8 +408,8 @@ function renderDlStats() {
   if (!el) return;
   const counts = _bucketCounts([..._jobs.values()]);
   const chips = [
-    ['running', 'In corso', 'pg-stat-live'],
-    ['waiting', 'In attesa', 'pg-stat-wait'],
+    ['running', window.t("dynamic.ui4"), 'pg-stat-live'],
+    ['waiting', window.t("dynamic.ui2"), 'pg-stat-wait'],
     // Only when there is one: most panels never schedule anything.
     ...(counts.scheduled ? [['scheduled', 'Programmati', 'pg-stat-sched']] : []),
     ['done', 'Completati', 'pg-stat-ok'],
@@ -459,18 +463,18 @@ function _buildJobGroup(batchId, label, jobs) {
 // because its stream token would not survive a long pause (#43). So the button
 // is there while something waits in line, and turns into "Riprendi" once
 // nothing does and something is held back.
-const _PAUSED_TEXT = 'In pausa · riparte quando riprendi il gruppo';
+const _pausedText = () => window.t("dynamic.hint1");
 
 function _groupPauseBtnHtml(batchId, all) {
   const waiting = all.some(j => j.status === 'queued');
   const paused = all.some(j => j.status === 'paused');
   const id = escapeHtml(batchId);
   if (waiting) return `<button class="btn btn-sm btn-ghost-secondary jg-action" data-action="jobs:pauseGroup"
-      data-batch="${id}" title="Metti in pausa: il download in corso finisce, gli altri aspettano">
-      <i class="ti ti-player-pause"></i><span class="d-none d-sm-inline ms-1">Pausa</span></button>`;
+      data-batch="${id}" title="${window.t('dynamic.hint14')}">
+      <i class="ti ti-player-pause"></i><span class="d-none d-sm-inline ms-1">${window.t('dynamic.hint0')}</span></button>`;
   if (paused) return `<button class="btn btn-sm btn-ghost-primary jg-action" data-action="jobs:resumeGroup"
-      data-batch="${id}" title="Rimetti in coda gli episodi in pausa">
-      <i class="ti ti-player-play"></i><span class="d-none d-sm-inline ms-1">Riprendi</span></button>`;
+      data-batch="${id}" title="${window.t('dynamic.hint15')}">
+      <i class="ti ti-player-play"></i><span class="d-none d-sm-inline ms-1">${window.t('dynamic.extra53')}</span></button>`;
   return '';
 }
 
@@ -480,21 +484,21 @@ function _groupPauseBtnHtml(batchId, all) {
 function _groupCancelBtnHtml(batchId, all) {
   if (!all.some(j => j.status === 'paused')) return '';
   return `<button class="btn btn-sm btn-ghost-danger jg-action" data-action="jobs:cancelGroup"
-      data-batch="${escapeHtml(batchId)}" title="Annulla tutti i download rimasti del gruppo">
-      <i class="ti ti-x"></i><span class="d-none d-sm-inline ms-1">Annulla</span></button>`;
+      data-batch="${escapeHtml(batchId)}" title="${window.t('dynamic.hint16')}">
+      <i class="ti ti-x"></i><span class="d-none d-sm-inline ms-1">${window.t('dynamic.ui93')}</span></button>`;
 }
 
 async function pauseJobGroup(batchId) {
   try {
     const r = await api.post(`/api/download/batch/${encodeURIComponent(batchId)}/pause`);
-    showToast(`${r.paused} download in pausa — quello in corso termina`, 'info');
+    showToast(window.t("downloads.pausedCount", {count: r.paused}), 'info');
   } catch (e) { showToast(errText(e), 'danger'); }
 }
 
 async function resumeJobGroup(batchId) {
   try {
     const r = await api.post(`/api/download/batch/${encodeURIComponent(batchId)}/resume`);
-    showToast(`${r.resumed} download rimessi in coda`, 'success');
+    showToast(window.t("downloads.resumedCount", {count: r.resumed}), 'success');
   } catch (e) { showToast(errText(e), 'danger'); }
 }
 
@@ -514,7 +518,7 @@ async function cancelJobGroup(batchId) {
   if (!await scConfirm(msg)) return;
   try {
     const r = await api.post(`/api/download/batch/${encodeURIComponent(batchId)}/cancel${purge ? '?delete_files=true' : ''}`);
-    showToast(`${r.cancelled} download annullati` + (r.removed ? `, ${r.removed} eliminati dalla libreria` : ''), 'info');
+    showToast(window.t("downloads.cancelledCount", {count: r.cancelled}) + (r.removed ? window.t("downloads.removedCount", {count: r.removed}) : ''), 'info');
   } catch (e) { showToast(errText(e), 'danger'); }
 }
 
@@ -538,8 +542,8 @@ function renderAllJobCards() {
     // between "nothing is happening" and "your filter hides everything".
     empty.style.display = '';
     empty.querySelector('span:last-child').textContent = _jobs.size
-      ? 'Nessun download in questo filtro'
-      : 'Nessun download in corso';
+      ? window.t("dynamic.extra16")
+      : window.t("dynamic.extra17");
     container.innerHTML = '';
     updateActiveSection();
     return;
@@ -621,11 +625,11 @@ function refreshCardAppearance(jobId) {
   // Update info text
   const info = document.getElementById(`job-info-${jobId}`);
   if (info) {
-    if (j.status==='error') info.textContent = j.error||'Errore';
+    if (j.status==='error') info.textContent = j.error||window.t("dynamic.ui9");
     else if (j.status==='queued' && !j.retry_at) info.textContent = _waitingText(j);
-    else if (j.status==='paused') info.textContent = _PAUSED_TEXT;
-    else if (j.status==='done') info.textContent = 'Completato';
-    else if (j.status==='cancelled') info.textContent = 'Annullato';
+    else if (j.status==='paused') info.textContent = _pausedText();
+    else if (j.status==='done') info.textContent = window.t("dynamic.ui8");
+    else if (j.status==='cancelled') info.textContent = window.t("dynamic.ui10");
   }
 
   updateActiveSection();
@@ -711,14 +715,14 @@ function handleDoneEvent(jobId, outputPath) {
   const card = document.getElementById(`job-card-${jobId}`);
   if (card) card.classList.add('is-done');
   const badge = document.getElementById(`job-badge-${jobId}`);
-  if (badge) { badge.className='badge bg-success-lt flex-shrink-0'; badge.textContent='Completato'; }
+  if (badge) { badge.className='badge bg-success-lt flex-shrink-0'; badge.textContent=window.t("dynamic.ui8"); }
   const bar = document.getElementById(`job-bar-${jobId}`);
   if (bar) {
     bar.style.width='100%';
     bar.className='progress-bar phase-bar-done bg-success job-progress-bar';
   }
   const info = document.getElementById(`job-info-${jobId}`);
-  if (info) info.textContent='Completato';
+  if (info) info.textContent=window.t("dynamic.ui8");
   const stop = document.getElementById(`job-stop-${jobId}`);
   if (stop) stop.innerHTML='';
 
@@ -740,11 +744,11 @@ function handleErrorEvent(jobId, message) {
   const card = document.getElementById(`job-card-${jobId}`);
   if (card) card.classList.add('is-error');
   const badge = document.getElementById(`job-badge-${jobId}`);
-  if (badge) { badge.className='badge bg-danger-lt flex-shrink-0'; badge.textContent='Errore'; }
+  if (badge) { badge.className='badge bg-danger-lt flex-shrink-0'; badge.textContent=window.t("dynamic.ui9"); }
   const bar = document.getElementById(`job-bar-${jobId}`);
   if (bar) { bar.className='progress-bar phase-bar-error bg-danger job-progress-bar'; bar.style.width='100%'; }
   const info = document.getElementById(`job-info-${jobId}`);
-  if (info) info.textContent = message==='Annullato' ? 'Annullato' : escapeHtml(message||'Errore');
+  if (info) info.textContent = message === 'Annullato' ? window.t("dynamic.ui10") : (message || window.t("dynamic.ui9"));
   const stop = document.getElementById(`job-stop-${jobId}`);
   if (stop) stop.innerHTML='';
 
@@ -797,7 +801,7 @@ async function retryFailed() {
   const failed = [..._jobs.values()].filter(j => j.status === 'error').map(j => j.job_id);
   const results = await Promise.allSettled(failed.map(id => api.post(`/api/download/${id}/retry`)));
   const refused = results.filter(r => r.status === 'rejected').length;
-  if (refused) showToast(`${refused} download non sono stati rimessi in coda`, 'warning');
+  if (refused) showToast(window.t("downloads.notQueued", {count: refused}), 'warning');
 }
 
 async function dismissJob(jobId) {

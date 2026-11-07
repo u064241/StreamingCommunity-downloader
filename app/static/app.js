@@ -84,7 +84,7 @@ async function loadDomainStatus() {
       badge.textContent = currentDomain;
     } else {
       badge.className = 'badge bg-danger';
-      badge.textContent = 'Domain non configurato';
+      badge.textContent = window.t("dynamic.ui91");
       // Only when the visitor did not ask for somewhere in particular. This
       // resolves after routing now, and a link to #/files must not be
       // overruled by a domain check that finished late.
@@ -100,6 +100,11 @@ async function loadDomainStatus() {
 // happens quietly.
 
 let _domainCandidate = null;
+
+window.addEventListener('sc:language-changed', () => {
+  const badge = document.getElementById('domain-badge');
+  if (badge && !currentDomain) badge.textContent = window.t('dynamic.ui91');
+});
 
 async function loadDomainCandidate() {
   try {
@@ -125,12 +130,12 @@ async function applyDomainCandidate() {
     // The host is echoed back as a confirmation token: the server compares it
     // with what it found and refuses a mismatch rather than trusting it.
     const data = await api.post('/api/domain/candidate/apply', {domain: _domainCandidate.host});
-    showToast(`Dominio aggiornato: ${data.domain}`, 'success');
+    showToast(window.t('dynamic.domainUpdated', {domain: data.domain}), 'success');
     _domainCandidate = null;
     renderDomainBanner();
     await loadDomainStatus();
   } catch (e) {
-    showToast(errText(e, 'Impossibile applicare il dominio'), 'danger');
+    showToast(errText(e, window.t("dynamic.ui92")), 'danger');
   } finally { btn.disabled = false; }
 }
 
@@ -189,7 +194,7 @@ function showPage(page, params = null) {
   document.getElementById('page-title').textContent = {
     search:'Cerca', downloads:'Download', files:'File',
     requests:'Coda richieste', 'my-requests':'Le mie richieste',
-    watches:'Serie seguite', users:'Utenti', detail:'', settings:'Impostazioni',
+    get watches() { return window.t("dynamic.extra43"); }, users:'Utenti', detail:'', settings:'Impostazioni',
   }[page] ?? 'Cerca';
   document.querySelectorAll('.nav-link[data-page]').forEach(el =>
     el.classList.toggle('active', el.dataset.page === page));
@@ -272,46 +277,46 @@ const NOTIFICATION_ICONS = {
 };
 
 const NOTIFICATION_LABELS = {
-  request_created: 'Nuova richiesta',
-  request_joined: 'Richiesta già presente',
-  request_approved: 'Richiesta approvata',
-  request_denied: 'Richiesta rifiutata',
-  request_downloading: 'Richiesta in download',
-  request_completed: 'Richiesta completata',
-  request_failed: 'Richiesta fallita',
-  request_needs_attention: 'Richiesta da verificare',
-  request_available: 'Già in libreria',
-  download_completed: 'Download completato',
-  download_failed: 'Download fallito',
-  download_batch_completed: 'Stagione o serie completata',
-  download_batch_failed: 'Stagione o serie fallita',
-  watch_needs_approval: 'Serie seguita da approvare',
-  watch_auto_approved: 'Serie approvata',
-  watch_languages_differ: 'Lingue diverse su una serie seguita',
-  source_domain_found: 'Nuovo dominio trovato',
-  source_domain_applied: 'Dominio aggiornato',
-  hook_failed: 'Hook fallito',
+  get request_created() { return window.t("dynamic.extra23"); },
+  get request_joined() { return window.t("dynamic.extra24"); },
+  get request_approved() { return window.t("dynamic.extra25"); },
+  get request_denied() { return window.t("dynamic.extra26"); },
+  get request_downloading() { return window.t("dynamic.extra27"); },
+  get request_completed() { return window.t("dynamic.extra28"); },
+  get request_failed() { return window.t("dynamic.extra29"); },
+  get request_needs_attention() { return window.t("dynamic.extra30"); },
+  get request_available() { return window.t("dynamic.ui15"); },
+  get download_completed() { return window.t("dynamic.extra31"); },
+  get download_failed() { return window.t("dynamic.extra32"); },
+  get download_batch_completed() { return window.t("dynamic.extra33"); },
+  get download_batch_failed() { return window.t("dynamic.extra34"); },
+  get watch_needs_approval() { return window.t("dynamic.extra35"); },
+  get watch_auto_approved() { return window.t("dynamic.extra36"); },
+  get watch_languages_differ() { return window.t("dynamic.extra37"); },
+  get source_domain_found() { return window.t("dynamic.extra38"); },
+  get source_domain_applied() { return window.t("dynamic.extra39"); },
+  get hook_failed() { return window.t("dynamic.extra40"); },
 };
 
 // Explicit order, so the picker does not depend on object key order.
 const NOTIFICATION_EVENT_GROUPS = [
   {
-    label: 'Richieste',
+    get label() { return window.t("dynamic.extra41"); },
     events: ['request_created', 'request_joined', 'request_approved', 'request_denied',
              'request_downloading', 'request_completed', 'request_failed',
              'request_needs_attention', 'request_available'],
   },
   {
-    label: 'Download diretti',
+    get label() { return window.t("dynamic.extra42"); },
     events: ['download_completed', 'download_failed',
              'download_batch_completed', 'download_batch_failed'],
   },
   {
-    label: 'Serie seguite',
+    get label() { return window.t("dynamic.extra43"); },
     events: ['watch_needs_approval', 'watch_auto_approved', 'watch_languages_differ'],
   },
   {
-    label: 'Sorgente',
+    get label() { return window.t("dynamic.extra44"); },
     events: ['source_domain_found', 'source_domain_applied'],
   },
   {

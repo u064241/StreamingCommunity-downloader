@@ -179,8 +179,13 @@ function renderResultCards(items, container, baseIndex,
     const kind = kindBadge(item);
     const year = itemYear(item);
     const score = item.score ? parseFloat(item.score).toFixed(1) : null;
-    const posterUrl = item.poster
-      ? (item.poster.startsWith('http') ? item.poster : `/api/image/${item.poster}`)
+    // Wide dashboard cards should prefer the source backdrop. A vertical
+    // poster inside a 16:9 frame is forced through object-fit:cover and loses
+    // too much artwork; the poster remains the fallback for sources without a
+    // backdrop (and for the compact result views).
+    const artwork = item.backdrop || item.poster;
+    const posterUrl = artwork
+      ? (artwork.startsWith('http') ? artwork : `/api/image/${artwork}`)
       : '';
     const card = document.createElement('div');
     card.className = wrapperClass;
@@ -197,7 +202,7 @@ function renderResultCards(items, container, baseIndex,
       : `<div class="status-ribbon" data-ribbon-for="${escapeHtml(String(item.id))}"></div>`;
     card.innerHTML = `
       <div class="result-card" data-action="search:open" data-idx="${idx}">
-        <div class="poster-wrap">
+        <div class="poster-wrap ${item.backdrop ? 'has-backdrop' : 'poster-fallback'}">
           ${posterHtml}
           <div class="poster-noimg" style="${posterUrl?'display:none':''}">&#127916;</div>
           <div class="poster-overlay"></div>
@@ -217,12 +222,44 @@ function renderResultCards(items, container, baseIndex,
         </div>
       </div>`;
     container.appendChild(card);
+    if (wrapperClass.includes('shelf-item') && !item.backdrop && item.type !== 'anime') {
+      hydrateShelfArtwork(card.querySelector('.result-card'), item);
+    }
   });
+}
+
+async function hydrateShelfArtwork(card, item) {
+  const key = `${item.type}:${item.id}`;
+  const cached = _cardArtworkCache.get(key);
+  if (cached) {
+    const image = card?.querySelector('.poster-wrap img');
+    if (image) {
+      image.src = cached;
+      image.closest('.poster-wrap')?.classList.remove('poster-fallback');
+    }
+    return;
+  }
+  _cardArtworkCache.set(key, null);
+  try {
+    const meta = await api.get(`/api/metadata/${item.type}/${item.id}`,
+      {slug: item.slug || '', version: currentVersion || ''});
+    const backdrop = meta?.backdrop;
+    if (!backdrop || !card?.isConnected) return;
+    const src = (backdrop.startsWith('http') || backdrop.startsWith('/'))
+      ? backdrop : `/api/image/${backdrop}`;
+    _cardArtworkCache.set(key, src);
+    const image = card.querySelector('.poster-wrap img');
+    if (image) {
+      image.src = src;
+      image.closest('.poster-wrap')?.classList.remove('poster-fallback');
+    }
+  } catch (_) { /* the poster remains a valid fallback */ }
 }
 
 // Card previews are deliberately lazy: the catalogue can contain hundreds of
 // titles and only the card under the pointer is allowed to request metadata.
 const _cardPreviewCache = new Map();
+const _cardArtworkCache = new Map();
 const _cardPreviewTimers = new WeakMap();
 
 function youtubeId(url) {
@@ -257,6 +294,17 @@ async function startCardPreview(card) {
     try {
       const meta = await api.get(`/api/metadata/${item.type}/${item.id}`,
         {slug: item.slug || '', version: currentVersion || ''});
+      const backdrop = meta?.backdrop || null;
+      if (backdrop && !_cardArtworkCache.has(key)) {
+        const src = (backdrop.startsWith('http') || backdrop.startsWith('/'))
+          ? backdrop : `/api/image/${backdrop}`;
+        _cardArtworkCache.set(key, src);
+        const image = card.querySelector('.poster-wrap img');
+        if (image) {
+          image.src = src;
+          image.closest('.poster-wrap')?.classList.remove('poster-fallback');
+        }
+      }
       url = meta?.trailer_url || null;
       _cardPreviewCache.set(key, url);
     } catch (_) { url = null; }

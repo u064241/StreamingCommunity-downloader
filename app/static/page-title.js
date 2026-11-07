@@ -327,10 +327,10 @@ function _tpRenderHero() {
   // A back control, not just a trail. The trail alone was a row of grey text
   // against artwork and read as a caption rather than as the way out.
   document.getElementById('th-crumbs').innerHTML =
-    `<button class="th-back" data-action="tp:back" title="${escapeHtml(t('title.back'))}">
+    `<button class="th-back" data-action="tp:crumb-search" title="${escapeHtml(t('title.back'))}">
        <i class="ti ti-arrow-left"></i>${t('search.button')}
      </button>` +
-    `<span class="sep">›</span><span>${escapeHtml(kindLabel)}</span>` +
+    `<span class="sep">›</span><button class="th-crumb-link" data-action="tp:crumb-kind" data-kind="${_tp.type}" type="button">${escapeHtml(kindLabel)}</button>` +
     `<span class="sep">›</span><span class="th-crumb-here">${escapeHtml(_tp.name || '—')}</span>`;
 
   document.getElementById('th-name').textContent = _tp.name || '—';
@@ -918,6 +918,13 @@ async function downloadAllAnime() {
 
 registerActions({
   'tp:back':          () => tpBack(),
+  'tp:crumb-search':  () => navigate('search'),
+  'tp:crumb-kind':    d => {
+    navigate('search');
+    window.setTimeout(() => {
+      if (d.kind === 'tv' || d.kind === 'movie') setKindFilter(d.kind);
+    }, 0);
+  },
   'tp:primary':       () => tpPrimary(),
   'tp:follow':        () => tpToggleFollow(),
   'tp:tab':           d => tpSetTab(d.tab),

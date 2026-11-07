@@ -7,15 +7,15 @@
 // row, and the bulk-selection machinery, so they stay in one file.
 
 const REQUEST_STATUS_LABELS = {
-  pending:         { label: 'In attesa',   cls: 'bg-yellow-lt' },
-  approved:        { label: 'Approvata',   cls: 'bg-blue-lt' },
-  downloading:     { label: 'In download', cls: 'bg-azure-lt' },
-  completed:       { label: 'Completata',  cls: 'bg-green-lt' },
-  available:       { label: 'Già in libreria', cls: 'bg-green-lt' },
-  denied:          { label: 'Rifiutata',   cls: 'bg-red-lt' },
-  failed:          { label: 'Fallita',     cls: 'bg-red-lt' },
-  cancelled:       { label: 'Annullata',   cls: 'bg-secondary' },
-  needs_attention: { label: 'Da verificare', cls: 'bg-orange-lt' },
+  pending:         { get label() { return window.t("dynamic.ui2"); },   cls: 'bg-yellow-lt' },
+  approved:        { get label() { return window.t("dynamic.ui12"); },   cls: 'bg-blue-lt' },
+  downloading:     { get label() { return window.t("dynamic.ui13"); }, cls: 'bg-azure-lt' },
+  completed:       { get label() { return window.t("dynamic.ui14"); },  cls: 'bg-green-lt' },
+  available:       { get label() { return window.t("dynamic.ui15"); }, cls: 'bg-green-lt' },
+  denied:          { get label() { return window.t("dynamic.ui16"); },   cls: 'bg-red-lt' },
+  failed:          { get label() { return window.t("dynamic.ui17"); },     cls: 'bg-red-lt' },
+  cancelled:       { get label() { return window.t("dynamic.ui18"); },   cls: 'bg-secondary' },
+  needs_attention: { get label() { return window.t("dynamic.ui19"); }, cls: 'bg-orange-lt' },
 };
 
 // Same set as the server's OPEN_STATUSES: unresolved, and — not coincidentally
@@ -26,6 +26,11 @@ const MINE_ACTIVE_STATUSES = ['pending', 'approved', 'downloading', 'needs_atten
 
 let _queue = [];
 let _myRequests = [];
+
+window.addEventListener('sc:language-changed', () => {
+  if (document.getElementById('page-requests') && document.getElementById('page-requests').style.display !== 'none') renderRequestQueue();
+  if (document.getElementById('page-my-requests') && document.getElementById('page-my-requests').style.display !== 'none') renderMyRequests();
+});
 
 // Selection state, kept separate per page so switching pages doesn't leak one
 // selection into the other.
@@ -129,7 +134,7 @@ function trackBadges(request) {
   const subs = (request.subtitle_languages || [])
     .map(c => `<span class="badge bg-teal-lt">${escapeHtml(langName(c))}</span>`).join(' ');
   return `<div class="track-badges">
-    <span class="track-label"><i class="ti ti-volume"></i></span>${audio || '<span class="text-muted">—</span>'}
+    <span class="track-label"><i class="ti ti-volume"></i></span>${audio || `<span class="text-muted">—</span>`}
     ${subs ? `<span class="track-label ms-2"><i class="ti ti-subtitles"></i></span>${subs}` : ''}
   </div>`;
 }
@@ -145,7 +150,7 @@ function reqPosterError(img) {
 }
 
 function requestPoster(request) {
-  if (!request.poster) return '<div class="req-poster req-poster-empty">🎬</div>';
+  if (!request.poster) return `<div class="req-poster req-poster-empty">🎬</div>`;
   const url = request.poster.startsWith('http')
     ? request.poster
     : `/api/image/${request.poster}`;
@@ -163,7 +168,7 @@ function fmtDate(iso) {
 
 async function loadRequestQueue() {
   const container = document.getElementById('requests-list');
-  container.innerHTML = '<div class="text-center py-4"><span class="spinner-border"></span></div>';
+  container.innerHTML = `<div class="text-center py-4"><span class="spinner-border"></span></div>`;
   try {
     _queue = await api.get('/api/requests');
     renderRequestQueue();
@@ -208,7 +213,7 @@ function renderQueueStats() {
   const n = status => _queue.filter(r => _matchesQueueFilter(r.status, status)).length;
   _renderStats('queue-stats', [
     [n('action'), 'Da gestire', 'pg-stat-warn'],
-    [n('in_progress'), 'In corso', 'pg-stat-live'],
+    [n('in_progress'), window.t("dynamic.ui4"), 'pg-stat-live'],
     [_queue.length, 'Totali', 'pg-stat-zero'],
   ]);
 }
@@ -223,7 +228,7 @@ function renderRequestQueue() {
 
   if (!groups.length) {
     container.innerHTML = `<div class="empty-panel">
-      <i class="ti ti-inbox"></i><p>Nessuna richiesta da mostrare.</p></div>`;
+      <i class="ti ti-inbox"></i><p>${window.t('dynamic.ui75')}</p></div>`;
   } else {
     container.innerHTML = groups.map(g => renderQueueGroup(g)).join('');
   }
@@ -257,18 +262,18 @@ function renderQueueRow(r, compact = false) {
         <div class="req-actions">
           ${r.watch_id && r.status === 'pending' ? `
             <label class="form-check form-check-inline mb-0" style="font-size:11px"
-                   title="Approva anche i prossimi episodi di questa serie, senza ripassare dalla coda">
+                   title="${window.t('dynamic.hint11')}">
               <input type="checkbox" class="form-check-input" id="watch-auto-${r.id}">
-              <span class="form-check-label">Auto i prossimi</span>
+              <span class="form-check-label">${window.t('dynamic.extra48')}</span>
             </label>` : ''}
           ${['pending', 'needs_attention'].includes(r.status) ? `
             <button class="btn btn-sm btn-success" data-action="queue:approveOne" data-id="${r.id}">
-              <i class="ti ti-check me-1"></i>${r.status === 'needs_attention' ? 'Riprova' : 'Approva'}</button>
+              <i class="ti ti-check me-1"></i>${r.status === 'needs_attention' ? window.t("dynamic.ui97") : window.t("dynamic.extra45")}</button>
             <button class="btn btn-sm btn-outline-danger" data-action="queue:denyOne" data-id="${r.id}">
               <i class="ti ti-x"></i></button>` : ''}
           ${r.status === 'needs_attention' ? `
             <button class="btn btn-sm btn-outline-warning" data-action="queue:fix" data-id="${r.id}">
-              <i class="ti ti-tool me-1"></i>Correggi</button>` : ''}
+              <i class="ti ti-tool me-1"></i>${window.t('dynamic.extra47')}</button>` : ''}
         </div>
       </div>
     </div>`;
@@ -327,7 +332,7 @@ function syncSelectionBar(page) {
   const bar = document.getElementById(page === 'queue' ? 'queue-selection-bar' : 'mine-selection-bar');
   const count = document.getElementById(page === 'queue' ? 'queue-selection-count' : 'mine-selection-count');
   bar.style.visibility = set.size ? 'visible' : 'hidden';
-  count.textContent = `${set.size} selezionat${set.size === 1 ? 'a' : 'e'}`;
+  count.textContent = window.t('dynamic.selected', {count: set.size});
   // Reflect selection on checkboxes already in the DOM without a full re-render
   // (checkboxes are re-synced on every render anyway, this just keeps clicks snappy).
   document.querySelectorAll('.req-check[data-indeterminate]').forEach(cb => {
@@ -349,7 +354,7 @@ async function approveRequests(ids) {
   showToast(
     failed.length
       ? `${ids.length - failed.length}/${ids.length} approvate, ${failed.length} fallite`
-      : ids.length > 1 ? `${ids.length} richieste approvate` : 'Richiesta approvata',
+      : ids.length > 1 ? `${ids.length} richieste approvate` : window.t("dynamic.extra25"),
     failed.length ? 'warning' : 'success',
   );
   ids.forEach(id => _selected.queue.delete(id));
@@ -398,7 +403,7 @@ async function confirmDeny() {
 
 async function _cancelIds(ids, page) {
   if (!ids.length) return;
-  if (!await scConfirm(`Annullare ${ids.length} richiest${ids.length === 1 ? 'a' : 'e'}?`)) return;
+  if (!await scConfirm(window.t("requests.confirmCancel", {count: ids.length}))) return;
   let data;
   try {
     data = await api.post('/api/requests/cancel-batch', { ids });
@@ -464,7 +469,7 @@ async function confirmFix() {
     await api.patch(`/api/requests/${_fixId}`, payload);
   } catch (e) { showToast(errText(e), 'danger'); return; }
   hideModal('fix-modal');
-  showToast('Richiesta corretta — approvala per riprovare', 'success');
+  showToast(window.t("dynamic.ui73"), 'success');
   loadRequestQueue();
 }
 
@@ -472,7 +477,7 @@ async function confirmFix() {
 
 async function loadMyRequests() {
   const container = document.getElementById('my-requests-list');
-  container.innerHTML = '<div class="text-center py-4"><span class="spinner-border"></span></div>';
+  container.innerHTML = `<div class="text-center py-4"><span class="spinner-border"></span></div>`;
   try {
     _myRequests = await api.get('/api/requests/mine');
     renderMyRequests();
@@ -503,7 +508,7 @@ function renderMineRow(r, compact = false) {
   const checkboxHtml = cancellable
     ? `<input type="checkbox" class="req-check" ${_selected.mine.has(r.id) ? 'checked' : ''}
              data-action="req:toggle" data-page="mine" data-id="${r.id}">`
-    : '<span class="req-check-spacer"></span>';
+    : `<span class="req-check-spacer"></span>`;
   const title = compact ? episodeLabel(r) : requestTitle(r);
   return `
     <div class="req-row">
@@ -514,13 +519,13 @@ function renderMineRow(r, compact = false) {
         <div class="req-meta"><i class="ti ti-calendar"></i> ${fmtDate(r.created_at)}</div>
         ${trackBadges(r)}
         ${r.denial_reason ? `<div class="req-denied"><i class="ti ti-x me-1"></i>Motivo: ${escapeHtml(r.denial_reason)}</div>` : ''}
-        ${r.status === 'needs_attention' ? '<div class="req-problem"><i class="ti ti-clock-pause me-1"></i>In attesa di una verifica da parte di un amministratore.</div>' : ''}
+        ${r.status === 'needs_attention' ? `<div class="req-problem"><i class="ti ti-clock-pause me-1"></i>${window.t('dynamic.hint12')}</div>` : ''}
       </div>
       <div class="req-side">
         ${statusBadge(r.status)}
         <div class="req-actions">
           ${cancellable ? `<button class="btn btn-sm btn-outline-secondary" data-action="mine:withdraw" data-id="${r.id}">
-            <i class="ti ti-trash me-1"></i>Annulla</button>` : ''}
+            <i class="ti ti-trash me-1"></i>${window.t('dynamic.ui93')}</button>` : ''}
         </div>
       </div>
     </div>`;
@@ -537,7 +542,7 @@ function renderMineGroup(g) {
     ? `<input type="checkbox" class="req-check" ${allSelected ? 'checked' : ''}
              ${someSelected ? 'data-indeterminate="1"' : ''}
              data-action="req:toggleGroupSel" data-page="mine" data-ids="${cancellableIds.join(',')}">`
-    : '<span class="req-check-spacer"></span>';
+    : `<span class="req-check-spacer"></span>`;
 
   return `
     <div class="req-group ${expanded ? 'expanded' : ''}" data-group-key="${escapeHtml(g.key)}">
@@ -560,7 +565,7 @@ function renderMineGroup(g) {
 function renderMineStats() {
   const active = _myRequests.filter(r => MINE_ACTIVE_STATUSES.includes(r.status)).length;
   _renderStats('mine-stats', [
-    [active, 'In corso', 'pg-stat-live'],
+    [active, window.t("dynamic.ui4"), 'pg-stat-live'],
     [_myRequests.length - active, 'Concluse', 'pg-stat-ok'],
   ]);
 }
@@ -570,7 +575,7 @@ function renderMyRequests() {
   const container = document.getElementById('my-requests-list');
   if (!_myRequests.length) {
     container.innerHTML = `<div class="empty-panel">
-      <i class="ti ti-send"></i><p>Non hai ancora richiesto niente.</p></div>`;
+      <i class="ti ti-send"></i><p>${window.t('dynamic.ui76')}</p></div>`;
     syncSelectionBar('mine');
     return;
   }
@@ -582,7 +587,7 @@ function renderMyRequests() {
 
   if (!groups.length) {
     container.innerHTML = `<div class="empty-panel">
-      <i class="ti ti-filter-off"></i><p>Nessuna richiesta in questa categoria.</p></div>`;
+      <i class="ti ti-filter-off"></i><p>${window.t('dynamic.ui77')}</p></div>`;
     syncSelectionBar('mine');
     return;
   }

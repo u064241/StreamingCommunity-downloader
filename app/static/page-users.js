@@ -11,19 +11,31 @@
 let _permissionCatalogue = [];
 let _jellyfinUsers = [];
 
+window.addEventListener('sc:language-changed', () => {
+  if (!document.getElementById('users-list')) return;
+  const pending = [...document.querySelectorAll('input[data-user-row]')].map(input => ({
+    row: input.dataset.userRow, value: input.value, checked: input.checked,
+  }));
+  renderUsers();
+  for (const item of pending) {
+    const input = document.querySelector(`input[data-user-row="${CSS.escape(item.row)}"][value="${CSS.escape(item.value)}"]`);
+    if (input) input.checked = item.checked;
+  }
+});
+
 const PERMISSION_LABELS = {
-  DOWNLOAD: 'Scarica direttamente',
-  REQUEST: 'Può richiedere',
-  MANAGE_REQUESTS: 'Approva richieste',
-  MANAGE_USERS: 'Gestisce utenti',
-  MANAGE_SETTINGS: 'Gestisce impostazioni',
-  MANAGE_FILES: 'Gestisce file',
-  VIEW_LIBRARY: 'Sfoglia libreria',
+  get DOWNLOAD() { return window.t("dynamic.ui20"); },
+  get REQUEST() { return window.t("dynamic.ui21"); },
+  get MANAGE_REQUESTS() { return window.t("dynamic.ui22"); },
+  get MANAGE_USERS() { return window.t("dynamic.ui23"); },
+  get MANAGE_SETTINGS() { return window.t("dynamic.ui24"); },
+  get MANAGE_FILES() { return window.t("dynamic.ui25"); },
+  get VIEW_LIBRARY() { return window.t("dynamic.ui26"); },
 };
 
 async function loadUsersPage() {
   const container = document.getElementById('users-list');
-  container.innerHTML = '<div class="text-center py-4"><span class="spinner-border"></span></div>';
+  container.innerHTML = `<div class="text-center py-4"><span class="spinner-border"></span></div>`;
   try {
     // The Jellyfin call is the one that can fail for a reason worth reading -
     // the server unreachable, credentials rejected - and api.get puts that
@@ -86,9 +98,9 @@ function renderUsersStats() {
   const imported = _jellyfinUsers.filter(u => u.panel_user).length;
   const disabled = _jellyfinUsers.filter(u => u.panel_user && !u.panel_user.enabled).length;
   const chips = [
-    [imported, 'Importati', 'pg-stat-ok'],
-    [_jellyfinUsers.length - imported, 'Da importare', 'pg-stat-warn'],
-    [disabled, 'Disabilitati', 'pg-stat-error'],
+    [imported, window.t("dynamic.ui27"), 'pg-stat-ok'],
+    [_jellyfinUsers.length - imported, window.t("dynamic.ui28"), 'pg-stat-warn'],
+    [disabled, window.t("dynamic.ui29"), 'pg-stat-error'],
   ];
   el.innerHTML = chips.map(([value, label, cls]) =>
     `<span class="pg-stat ${value ? cls : 'pg-stat-zero'}"><b>${value}</b><span>${label}</span></span>`
@@ -102,8 +114,8 @@ function renderUsers() {
   if (!shown.length) {
     container.innerHTML = `<div class="empty-panel">
       <i class="ti ti-users"></i><p>${_jellyfinUsers.length
-        ? 'Nessun utente corrisponde al filtro.'
-        : 'Nessun account trovato su Jellyfin.'}</p></div>`;
+        ? window.t("dynamic.ui30")
+        : window.t("dynamic.ui31")}</p></div>`;
     return;
   }
   container.innerHTML = shown.map(u => {
@@ -115,11 +127,11 @@ function renderUsers() {
       <div class="user-main">
         <div class="user-name">
           ${escapeHtml(u.username)}
-          ${u.is_jellyfin_admin ? '<span class="badge bg-purple-lt ms-1">Admin Jellyfin</span>' : ''}
+          ${u.is_jellyfin_admin ? `<span class="badge bg-purple-lt ms-1">Admin Jellyfin</span>` : ''}
           ${panel ? (panel.enabled
-              ? '<span class="badge bg-green-lt ms-1">Attivo</span>'
-              : '<span class="badge bg-red-lt ms-1">Disabilitato</span>')
-            : '<span class="badge bg-secondary ms-1">Non importato</span>'}
+              ? `<span class="badge bg-green-lt ms-1">${window.t('dynamic.extra0')}</span>`
+              : `<span class="badge bg-red-lt ms-1">${window.t('dynamic.extra1')}</span>`)
+            : `<span class="badge bg-secondary ms-1">${window.t('dynamic.extra2')}</span>`}
         </div>
         <div class="perm-chips">${_permissionCheckboxes(rowId, panel ? panel.permissions : 0)}</div>
       </div>
@@ -127,14 +139,14 @@ function renderUsers() {
         ${panel ? `
           <button class="btn btn-sm btn-primary" data-action="users:save"
                   data-id="${panel.id}" data-row="${rowId}">
-            <i class="ti ti-device-floppy me-1"></i>Salva</button>
+            <i class="ti ti-device-floppy me-1"></i>${window.t('dynamic.ui96')}</button>
           <button class="btn btn-sm ${panel.enabled ? 'btn-outline-danger' : 'btn-outline-success'}"
                   data-action="users:toggle" data-id="${panel.id}" data-enable="${panel.enabled ? '0' : '1'}"
-                  title="${panel.enabled ? 'Disabilita' : 'Abilita'}">
-            ${panel.enabled ? '<i class="ti ti-user-off"></i>' : '<i class="ti ti-user-check"></i>'}</button>`
+                  title="${panel.enabled ? window.t("dynamic.ui32") : window.t("dynamic.ui33")}">
+            ${panel.enabled ? `<i class="ti ti-user-off"></i>` : `<i class="ti ti-user-check"></i>`}</button>`
         : `<button class="btn btn-sm btn-success" data-action="users:import"
                    data-jf="${escapeHtml(u.jellyfin_user_id)}" data-row="${rowId}">
-             <i class="ti ti-download me-1"></i>Importa</button>`}
+             <i class="ti ti-download me-1"></i>${window.t('dynamic.extra3')}</button>`}
       </div>
     </div>`;
   }).join('');
@@ -152,7 +164,7 @@ async function importUser(jellyfinUserId, rowId) {
       permissions: _selectedPermissions(rowId),
     });
   } catch (e) { showToast(errText(e), 'danger'); return; }
-  showToast('Utente importato', 'success');
+  showToast(window.t("dynamic.ui34"), 'success');
   loadUsersPage();
 }
 
@@ -160,16 +172,16 @@ async function saveUserPermissions(userId, rowId) {
   try {
     await api.patch(`/api/users/${userId}`, { permissions: _selectedPermissions(rowId) });
   } catch (e) { showToast(errText(e), 'danger'); return; }
-  showToast('Permessi aggiornati', 'success');
+  showToast(window.t("dynamic.ui35"), 'success');
   loadUsersPage();
 }
 
 async function toggleUserEnabled(userId, enabled) {
-  if (!enabled && !await scConfirm('Disabilitare questo utente? Le sue sessioni verranno chiuse subito.')) return;
+  if (!enabled && !await scConfirm(window.t("dynamic.ui36"))) return;
   try {
     await api.patch(`/api/users/${userId}`, { enabled });
   } catch (e) { showToast(errText(e), 'danger'); return; }
-  showToast(enabled ? 'Utente abilitato' : 'Utente disabilitato', 'info');
+  showToast(enabled ? window.t("dynamic.ui37") : window.t("dynamic.ui38"), 'info');
   loadUsersPage();
 }
 
@@ -184,8 +196,8 @@ async function saveOpenSignin(allow) {
     });
   } catch (e) { showToast(errText(e), 'danger'); return; }
   showToast(allow
-    ? 'Chiunque abbia un account Jellyfin può ora accedere'
-    : 'Accesso limitato agli utenti importati', 'info');
+    ? window.t("dynamic.ui39")
+    : window.t("dynamic.ui40"), 'info');
 }
 
 

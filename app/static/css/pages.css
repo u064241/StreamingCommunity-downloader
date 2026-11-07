@@ -222,12 +222,12 @@
     /* Grid cards are sized by their Bootstrap column; a rail item has to bring
        its own width. Everything inside the card reuses unchanged. */
     .shelf-item {
-      flex: 0 0 132px;
-      width: 132px;
+      flex: 0 0 166px;
+      width: 166px;
       scroll-snap-align: start;
     }
     @media (min-width: 992px) {
-      .shelf-item { flex-basis: 158px; width: 158px; }
+      .shelf-item { flex-basis: 190px; width: 190px; }
     }
 
     /* ═══════════════════════════════════════════════════════
@@ -245,20 +245,28 @@
     }
 
     .result-card:hover {
-      transform: translateY(-14px) scale(1.16) !important;
-      box-shadow: 0 26px 64px rgba(0,0,0,.62), 0 0 0 1px rgba(93,145,255,.18) !important;
+      transform: translateY(-12px) scale(1.24) !important;
+      box-shadow: 0 28px 68px rgba(0,0,0,.68), 0 0 0 1px rgba(93,145,255,.24) !important;
       border-color: var(--border-strong) !important;
       position: relative;
       z-index: 5;
       transform-origin: center 18%;
     }
 
+    /* A hovered shelf card becomes the same visual focus as the original
+       catalogue: wider artwork with a connected dark caption panel. */
+    .result-card:hover .card-meta {
+      background: linear-gradient(180deg, var(--bg-surface) 0%, #0b0e16 100%);
+      padding-top: 11px;
+    }
+
     .poster-wrap {
       position: relative;
-      aspect-ratio: 2/3;
+      aspect-ratio: 16/9;
       overflow: hidden;
       background: var(--bg-raised);
       flex-shrink: 0;
+      border-radius: var(--radius) var(--radius) 0 0;
     }
 
     .poster-wrap img {
@@ -267,8 +275,15 @@
       display: block;
       transition: transform .32s ease;
     }
+    /* A fallback poster still fills the same visual frame as a backdrop. The
+       source card is deliberately not letterboxed: empty side bands made the
+       artwork look smaller than the original catalogue. */
+    .poster-wrap.poster-fallback { aspect-ratio: 16/9; }
+    .poster-wrap.poster-fallback img { object-fit: cover; object-position: center center; }
 
-    .result-card:hover .poster-wrap img { transform: scale(1.05); }
+    /* The card itself provides the hover zoom. Keeping the artwork at its
+       natural scale avoids the double crop visible on poster-sized sources. */
+    .result-card:hover .poster-wrap img { transform: none; }
 
     .poster-overlay {
       position: absolute;
@@ -343,8 +358,10 @@
       line-height: 1.35;
       color: var(--text);
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      min-height: 2.7em;
       margin-bottom: 5px;
     }
 
@@ -989,13 +1006,13 @@
       background: var(--bg-surface);
       border: 1px solid var(--border);
       margin-bottom: 18px;
-      min-height: 300px;
+      min-height: 410px;
       display: flex;
       isolation: isolate;
     }
     .th-art {
-      position: absolute; inset: 0 0 0 30%;
-      background-size: cover; background-position: center 22%;
+      position: absolute; inset: 0;
+      background-size: cover; background-position: center 25%;
       z-index: -1;
       opacity: 0;
       transition: opacity .35s ease;
@@ -1005,8 +1022,8 @@
       content: '';
       position: absolute; inset: 0;
       background:
-        linear-gradient(90deg, var(--bg-surface) 4%, var(--scrim-strong) 42%, var(--scrim-soft) 100%),
-        linear-gradient(0deg,  var(--bg-surface) 2%, transparent 55%);
+        linear-gradient(90deg, var(--bg-surface) 0%, color-mix(in srgb, var(--bg-surface) 92%, transparent) 28%, rgba(7,10,18,.42) 64%, rgba(7,10,18,.12) 100%),
+        linear-gradient(0deg, var(--bg-surface) 0%, rgba(7,10,18,.25) 45%, transparent 100%);
     }
 
     .th-hero-inner { padding: 22px 26px 24px; width: 100%; }
@@ -1028,6 +1045,11 @@
     .th-back:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-strong); }
     .th-back i { font-size: 14px; }
     .th-crumb-here { color: var(--text-sub); }
+    .th-crumb-link {
+      border: 0; padding: 0; background: transparent; color: var(--text-sub);
+      cursor: pointer; font: inherit; text-decoration: none;
+    }
+    .th-crumb-link:hover { color: var(--text); text-decoration: underline; }
     .th-crumbs .sep { color: var(--text-dim); }
 
     /* Stacked, not split. The actions used to float right into the artwork,
@@ -1038,8 +1060,10 @@
 
     .th-name {
       font-family: var(--font-brand);
-      font-size: 40px; font-weight: 700; line-height: 1.08;
+      font-size: clamp(40px, 5vw, 68px); font-weight: 800; line-height: .98;
       letter-spacing: -.02em;
+      text-transform: uppercase;
+      text-shadow: 0 3px 18px rgba(0,0,0,.45);
       color: var(--text);
       margin: 0 0 12px;
     }
@@ -1058,7 +1082,8 @@
     .th-chip i { font-size: 13px; color: var(--text-muted); }
 
     .th-plot {
-      color: var(--text-sub); font-size: 13.5px; line-height: 1.65;
+      color: var(--text); font-size: 14px; line-height: 1.65;
+      text-shadow: 0 1px 10px rgba(0,0,0,.8);
       margin: 0 0 14px;
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
       overflow: hidden;
@@ -1150,10 +1175,16 @@
        duration sits on the right where it can be compared down
        the column, and the action stays in the same place on
        every row. */
-    .th-eps { display: flex; flex-direction: column; gap: 4px; }
+    .th-eps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+      gap: 14px;
+    }
     .th-ep {
-      display: flex; align-items: center; gap: 12px;
-      padding: 7px 12px;
+      position: relative;
+      display: flex; flex-direction: column; align-items: stretch; gap: 0;
+      min-width: 0; overflow: hidden;
+      padding: 0;
       background: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -1161,19 +1192,21 @@
     }
     .th-ep:hover { background: var(--bg-raised); border-color: var(--border-mid); }
     .th-ep-n {
-      flex: 0 0 30px; text-align: center;
+      position: absolute; top: 8px; left: 9px; z-index: 2;
+      min-width: 28px; padding: 3px 7px; border-radius: var(--radius-pill);
+      text-align: center; background: rgba(0,0,0,.72); color: #fff;
       font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-      font-size: 13px; color: var(--text-muted);
+      font-size: 13px;
     }
     .th-ep-still {
       flex: 0 0 auto;
-      width: 56px; min-width: 56px; max-width: 56px;
+      width: 100%; min-width: 0; max-width: none;
       aspect-ratio: 16/9;
-      border-radius: var(--radius-xs); object-fit: cover;
+      border-radius: 0; object-fit: cover;
       background: var(--bg-raised);
       display: block;
     }
-    .th-ep-body { flex: 1 1 auto; min-width: 0; }
+    .th-ep-body { flex: 1 1 auto; min-width: 0; padding: 11px 12px 4px; }
     .th-ep-name {
       color: var(--text); font-size: 13.5px; font-weight: 500;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1184,11 +1217,12 @@
       overflow: hidden;
     }
     .th-ep-dur {
-      flex: 0 0 auto;
+      flex: 0 0 auto; padding: 0 12px 8px;
       font-family: var(--font-mono); font-variant-numeric: tabular-nums;
       font-size: 12px; color: var(--text-muted);
     }
-    .th-ep-owned { color: var(--green); font-size: 16px; flex: 0 0 auto; }
+    .th-ep-owned { position: absolute; top: 9px; right: 9px; color: var(--green); font-size: 18px; }
+    .th-ep > .btn { align-self: stretch; margin: 0 10px 10px; }
 
     /* ── Track picker ───────────────────────────────────────
        Was a wall of checkboxes. Toggling a chip is the same

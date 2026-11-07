@@ -7,14 +7,27 @@
 
 let _watches = [];
 
+window.addEventListener('sc:language-changed', () => {
+  renderWatchesList();
+  for (const kind of ['page', 'anime', 'tv']) {
+    const id = kind === 'page' ? 'th-follow-btn' : kind === 'anime' ? 'follow-anime-btn' : 'follow-tv-btn';
+    const button = document.getElementById(id);
+    if (button) {
+      const following = !!button.dataset.following;
+      button.innerHTML = `<i class="ti ${following ? 'ti-bell-check' : 'ti-bell-plus'} me-1"></i>${window.t(following ? 'title.following' : 'title.follow')}`;
+      button.title = window.t(following ? 'title.followingHint' : 'title.followHint');
+    }
+  }
+});
+
 function fmtLastChecked(iso) {
-  if (!iso) return 'mai controllata';
+  if (!iso) return window.t("dynamic.ui41");
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (minutes < 1) return 'controllata ora';
-  if (minutes < 60) return `controllata ${minutes} min fa`;
+  if (minutes < 1) return window.t("dynamic.ui42");
+  if (minutes < 60) return window.t('dynamic.checkedMinutes', {count: minutes});
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `controllata ${hours} h fa`;
-  return `controllata ${Math.round(hours / 24)} g fa`;
+  if (hours < 24) return window.t('dynamic.checkedHours', {count: hours});
+  return window.t('dynamic.checkedDays', {count: Math.round(hours / 24)});
 }
 
 async function loadWatches() {
@@ -28,7 +41,7 @@ async function loadWatches() {
     _watches = data.watches || [];
     renderWatchesList();
   } catch (e) {
-    c.innerHTML = `<p class="text-muted">${escapeHtml(errText(e, 'Impossibile caricare le serie seguite.'))}</p>`;
+    c.innerHTML = `<p class="text-muted">${escapeHtml(errText(e, window.t("dynamic.ui43")))}</p>`;
   }
 }
 
@@ -39,9 +52,9 @@ function renderWatchesStats() {
   if (!el) return;
   const auto = _watches.filter(w => _watchIsAutomatic(w)).length;
   const chips = [
-    [_watches.length, 'Seguite', 'pg-stat-live'],
-    [auto, 'Automatiche', 'pg-stat-ok'],
-    [_watches.length - auto, 'Dalla coda', 'pg-stat-warn'],
+    [_watches.length, window.t("dynamic.ui44"), 'pg-stat-live'],
+    [auto, window.t("dynamic.ui45"), 'pg-stat-ok'],
+    [_watches.length - auto, window.t("dynamic.ui46"), 'pg-stat-warn'],
   ];
   el.innerHTML = chips.map(([value, label, cls]) =>
     `<span class="pg-stat ${value ? cls : 'pg-stat-zero'}"><b>${value}</b><span>${label}</span></span>`
@@ -61,7 +74,7 @@ function renderWatchesList() {
   if (!_watches.length) {
     c.innerHTML = `<div class="empty-panel">
       <i class="ti ti-bell-off"></i>
-      <p>Nessuna serie seguita.</p>
+      <p>${window.t('dynamic.extra14')}</p>
       <p class="text-muted" style="font-size:12px;margin-top:6px">
         Apri una serie o un anime dalla ricerca e premi «Segui» per scaricare
         i nuovi episodi appena escono.
@@ -72,14 +85,14 @@ function renderWatchesList() {
   c.innerHTML = _watches.map(w => {
     const auto = _watchIsAutomatic(w);
     const badge = auto
-      ? '<span class="badge bg-green-lt">download automatico</span>'
-      : '<span class="badge bg-yellow-lt">passa dalla coda</span>';
-    const kind = w.media_type === 'anime' ? 'Anime' : 'Serie TV';
-    const audio = w.audio_languages.length ? w.audio_languages.map(langName).join(', ') : 'originale';
-    const subs = w.subtitle_languages.length ? w.subtitle_languages.map(langName).join(', ') : 'nessuno';
+      ? `<span class="badge bg-green-lt">${window.t('dynamic.extra12')}</span>`
+      : `<span class="badge bg-yellow-lt">${window.t('dynamic.extra13')}</span>`;
+    const kind = w.media_type === 'anime' ? 'Anime' : window.t("dynamic.ui47");
+    const audio = w.audio_languages.length ? w.audio_languages.map(langName).join(', ') : window.t("dynamic.ui48");
+    const subs = w.subtitle_languages.length ? w.subtitle_languages.map(langName).join(', ') : window.t("dynamic.ui49");
     const langButton = _canEditWatchLanguages(w)
       ? `<button class="btn btn-sm btn-outline-secondary" data-action="watch:languages" data-id="${w.id}"
-                 title="Tracce audio e sottotitoli dei prossimi episodi">
+                 title="${window.t('dynamic.hint5')}">
            <i class="ti ti-language me-1"></i>Lingue
          </button>`
       : '';
@@ -90,11 +103,11 @@ function renderWatchesList() {
     const canArm = can('MANAGE_REQUESTS') && w.created_by !== null && (w.auto_approve || !auto);
     const armButton = !canArm ? '' : w.auto_approve
       ? `<button class="btn btn-sm btn-outline-secondary" data-action="watch:arm" data-id="${w.id}" data-on="0"
-                 title="I nuovi episodi torneranno a passare dalla coda di approvazione">
+                 title="${window.t('dynamic.hint6')}">
            <i class="ti ti-bell-x me-1"></i>Togli automatico
          </button>`
       : `<button class="btn btn-sm btn-outline-success" data-action="watch:arm" data-id="${w.id}" data-on="1"
-                 title="Approva la serie una volta: i nuovi episodi verranno scaricati senza passare dalla coda">
+                 title="${window.t('dynamic.hint7')}">
            <i class="ti ti-bell-check me-1"></i>Approva automatico
          </button>`;
     // Followers who asked for tracks the series does not download. Shown to
@@ -103,17 +116,17 @@ function renderWatchesList() {
     const gapParts = [
       gap.audio.length ? `audio ${gap.audio.map(langName).join(', ')}` : '',
       gap.subtitles.length ? `sottotitoli ${gap.subtitles.map(langName).join(', ')}` : '',
-    ].filter(Boolean).join(' e ');
+    ].filter(Boolean).join(window.t("dynamic.ui53"));
     const gapHtml = gapParts && _canEditWatchLanguages(w)
       ? `<div class="req-problem mt-1">
-           <i class="ti ti-language"></i> ${gap.by.length ? escapeHtml(gap.by.join(', ')) : 'Altri follower'}
-           ${gap.by.length === 1 ? 'chiede' : 'chiedono'}
+           <i class="ti ti-language"></i> ${gap.by.length ? escapeHtml(gap.by.join(', ')) : window.t("dynamic.ui50")}
+           ${gap.by.length === 1 ? window.t("dynamic.ui51") : window.t("dynamic.ui52")}
            anche ${escapeHtml(gapParts)}
          </div>`
       : '';
     const mergeButton = gapHtml
       ? `<button class="btn btn-sm btn-outline-warning" data-action="watch:merge" data-id="${w.id}"
-                 title="Scarica tutte le lingue richieste dai follower, dai prossimi episodi">
+                 title="${window.t('dynamic.hint8')}">
            <i class="ti ti-arrows-join me-1"></i>Unisci lingue
          </button>`
       : '';
@@ -144,7 +157,7 @@ function renderWatchesList() {
             ${langButton}
             <button class="btn btn-sm btn-outline-secondary" id="watch-check-${w.id}"
                     data-action="watch:check" data-id="${w.id}"
-                    title="Cerca subito nuovi episodi, senza aspettare il controllo automatico">
+                    title="${window.t('dynamic.hint9')}">
               <i class="ti ti-refresh me-1"></i>Controlla ora
             </button>
             <button class="btn btn-sm btn-outline-secondary" data-action="watch:unfollow" data-id="${w.id}">
@@ -176,7 +189,7 @@ async function openWatchLanguages(watchId) {
   const audioBox = document.getElementById('watch-lang-audio');
   const subsBox = document.getElementById('watch-lang-subs');
   const saveBtn = document.getElementById('watch-lang-save');
-  const loading = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Lettura delle tracce dalla fonte...</span>';
+  const loading = `<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>${window.t('dynamic.hint10')}</span>`;
   audioBox.innerHTML = loading;
   subsBox.innerHTML = '';
   saveBtn.disabled = true;
@@ -194,7 +207,7 @@ async function openWatchLanguages(watchId) {
 
   const boxes = (available, current, cls) => {
     const codes = [...new Set([...available, ...current])];
-    if (!codes.length) return '<span class="text-muted">Nessuna traccia disponibile.</span>';
+    if (!codes.length) return `<span class="text-muted">${window.t('dynamic.extra15')}</span>`;
     return codes.map(c => {
       const gone = !available.includes(c);
       return `<label class="me-2 mb-1" style="cursor:pointer"
@@ -211,14 +224,14 @@ async function openWatchLanguages(watchId) {
 async function saveWatchLanguages() {
   const picked = cls => [...document.querySelectorAll(`.${cls}:checked`)].map(c => c.value);
   const audio = picked('watch-lang-audio-check');
-  if (!audio.length) { showToast('Scegli almeno una traccia audio', 'warning'); return; }
+  if (!audio.length) { showToast(window.t("dynamic.ui54"), 'warning'); return; }
   try {
     await api.put(`/api/watches/${_langWatchId}/languages`, {
       audio_languages: audio, subtitle_languages: picked('watch-lang-subs-check'),
     });
   } catch (e) { showToast(errText(e), 'danger'); return; }
   hideModal('watch-lang-modal');
-  showToast('Lingue aggiornate: varranno dai prossimi episodi', 'success');
+  showToast(window.t("dynamic.ui55"), 'success');
   loadWatches();
 }
 
@@ -226,7 +239,7 @@ async function mergeWatchLanguages(watchId) {
   try {
     await api.post(`/api/watches/${watchId}/merge-languages`);
   } catch (e) { showToast(errText(e), 'danger'); return; }
-  showToast('Lingue unite: varranno dai prossimi episodi', 'success');
+  showToast(window.t("dynamic.ui56"), 'success');
   loadWatches();
 }
 
@@ -330,14 +343,14 @@ async function toggleFollowSeries(kind) {
       });
       await api.del(`/api/watches/${status.watch_id}`);
       _renderFollowButton(kind, false);
-      showToast('Serie non più seguita', 'success');
+      showToast(window.t("dynamic.ui57"), 'success');
     } else {
       let data;
       try {
         data = await api.post('/api/watches', target);
       } catch (e) {
         _renderFollowButton(kind, false);
-        showToast(errText(e, 'Impossibile seguire la serie'), 'danger');
+        showToast(errText(e, window.t("dynamic.ui58")), 'danger');
         return;
       }
       _renderFollowButton(kind, true);
@@ -347,11 +360,11 @@ async function toggleFollowSeries(kind) {
       // The languages are named because they are the ones the watch keeps —
       // taken from the pickers as they stood, or, when the series was already
       // followed, the ones it had.
-      const langs = (data.audio_languages || []).map(langName).join(', ') || 'originale';
+      const langs = (data.audio_languages || []).map(langName).join(', ') || window.t("dynamic.ui48");
       const differs = !!data.languages_differ;
       showToast((can('DOWNLOAD')
-        ? 'Serie seguita: i nuovi episodi arriveranno da soli'
-        : 'Serie seguita: i nuovi episodi verranno richiesti a un amministratore')
+        ? window.t("dynamic.ui59")
+        : window.t("dynamic.ui60"))
         + (differs
           ? ` — la serie era già seguita con audio ${langs}: le lingue in più che hai scelto sono state segnalate a un amministratore`
           : ` (audio: ${langs}; modificabile da «Serie seguite»)`),
@@ -360,7 +373,7 @@ async function toggleFollowSeries(kind) {
     if (document.getElementById('page-watches').style.display !== 'none') loadWatches();
   } catch (e) {
     _renderFollowButton(kind, following);
-    showToast('Errore di rete', 'danger');
+    showToast(window.t("dynamic.ui61"), 'danger');
   }
 }
 
@@ -374,19 +387,19 @@ async function checkWatchNow(watchId) {
     try {
       data = await api.post(`/api/watches/${watchId}/check`);
     } catch (e) {
-      showToast(errText(e, 'Controllo fallito'), 'danger');
+      showToast(errText(e, window.t("dynamic.ui62")), 'danger');
       return;
     }
     if (data.new) {
       showToast(
-        data.new === 1 ? '1 nuovo episodio trovato' : `${data.new} nuovi episodi trovati`,
+        data.new === 1 ? window.t("dynamic.ui63") : window.t('dynamic.newEpisodes', {count: data.new}),
         'success',
       );
     } else {
-      showToast('Nessun nuovo episodio', 'info');
+      showToast(window.t("dynamic.ui64"), 'info');
     }
   } catch (e) {
-    showToast('Errore di rete', 'danger');
+    showToast(window.t("dynamic.ui61"), 'danger');
   } finally {
     // Redraws the row, which also refreshes "controllata ora".
     await loadWatches();
@@ -398,26 +411,26 @@ async function checkWatchNow(watchId) {
 async function setWatchAutoApprove(watchId, enabled) {
   const watch = _watches.find(w => w.id === watchId);
   const name = watch ? watch.title : watchId;
-  if (!enabled && !await scConfirm(`I nuovi episodi di «${name}» torneranno in coda. Procedere?`)) return;
+  if (!enabled && !await scConfirm(window.t("watches.confirmQueue", {name}))) return;
   try {
     try {
       await api.post(`/api/watches/${watchId}/auto-approve`, {enabled});
-    } catch (e) { showToast(errText(e, 'Operazione fallita'), 'danger'); return; }
+    } catch (e) { showToast(errText(e, window.t("dynamic.ui65")), 'danger'); return; }
     showToast(enabled
-      ? `«${name}»: i nuovi episodi verranno scaricati automaticamente`
-      : `«${name}»: i nuovi episodi torneranno in coda`, 'success');
+      ? window.t("watches.autoEnabled", {name})
+      : window.t("watches.autoDisabled", {name}), 'success');
     await loadWatches();
   } catch (e) {
-    showToast('Errore di rete', 'danger');
+    showToast(window.t("dynamic.ui61"), 'danger');
   }
 }
 
 async function unfollowWatch(watchId) {
   const watch = _watches.find(w => w.id === watchId);
-  if (!await scConfirm(`Smettere di seguire «${watch ? watch.title : watchId}»?`)) return;
+  if (!await scConfirm(window.t("watches.confirmUnfollow", {name: watch ? watch.title : watchId}))) return;
   try {
     await api.del(`/api/watches/${watchId}`);
-    showToast('Serie non più seguita', 'success');
+    showToast(window.t("dynamic.ui57"), 'success');
     await loadWatches();
   } catch (e) { showToast(errText(e), 'danger'); }
 }
