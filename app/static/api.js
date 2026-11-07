@@ -73,7 +73,7 @@ const api = {
     if (!res.ok) {
       const detail = _detailText(data) || text;
       if (!path.startsWith('/api/softether/') &&
-          (res.status === 403 || /(?:1006|1007|1106)/.test(detail))) {
+          (res.status === 403 || /(?:403|1006|1007|1106)/.test(detail))) {
         window.dispatchEvent(new CustomEvent('softether:block-detected', {
           detail: { status: res.status, message: detail },
         }));
