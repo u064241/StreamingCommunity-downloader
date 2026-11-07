@@ -247,6 +247,16 @@ function showToast(message, type = 'info', link = null) {
   setTimeout(() => toast.remove(), link ? 7000 : 4000);
 }
 
+let _softEtherOfferAt = 0;
+window.addEventListener('softether:block-detected', () => {
+  const now = Date.now();
+  if (now - _softEtherOfferAt < 10 * 60 * 1000) return;
+  _softEtherOfferAt = now;
+  showToast(window.t('softether.blockDetected'), 'warning', {
+    label: window.t('softether.openSettings'), page: 'settings',
+  });
+});
+
 // ── Artwork ───────────────────────────────────────────────────────────────────
 //
 // Stills and posters travel through /api/image/, which reaches the source's

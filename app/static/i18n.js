@@ -1706,6 +1706,8 @@
     'softether.downloadStarted': ['Installer scaricato e avviato. Completa l’installazione nella finestra di Windows.', 'Installer downloaded and started. Complete the installation in the Windows dialog.'],
     'softether.downloadFailed': ['Download dell’installer SoftEther non riuscito.', 'SoftEther installer download failed.'],
     'softether.invalidAsset': ['Asset SoftEther non valido.', 'Invalid SoftEther asset.'],
+    'softether.blockDetected': ['La sorgente sembra bloccata. Puoi verificare e installare SoftEther dalle Impostazioni.', 'The source appears to be blocked. You can check and install SoftEther from Settings.'],
+    'softether.openSettings': ['Apri Impostazioni', 'Open Settings'],
     'softether.checking': ['Verifica del Client Manager…', 'Checking for Client Manager…'],
     'softether.ready': ['Client Manager disponibile su questo PC.', 'Client Manager is available on this PC.'],
     'softether.missing': ['Client Manager non trovato nelle cartelle Program Files. Installa il client ufficiale, poi premi Ricontrolla.', 'Client Manager was not found in Program Files. Install the official client, then select Check again.'],

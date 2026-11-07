@@ -70,7 +70,16 @@ const api = {
         throw new ApiError(res.status, text.slice(0, 120), null);
       }
     }
-    if (!res.ok) throw new ApiError(res.status, _detailText(data), data);
+    if (!res.ok) {
+      const detail = _detailText(data) || text;
+      if (!path.startsWith('/api/softether/') &&
+          (res.status === 403 || /(?:1006|1007|1106)/.test(detail))) {
+        window.dispatchEvent(new CustomEvent('softether:block-detected', {
+          detail: { status: res.status, message: detail },
+        }));
+      }
+      throw new ApiError(res.status, detail, data);
+    }
     return data;
   },
 
