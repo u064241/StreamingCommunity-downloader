@@ -107,7 +107,10 @@ def _softether_roots():
     """Return possible bundled-tool roots for source and PyInstaller builds."""
     candidates = [Path(__file__).resolve().parents[2]]
     if getattr(sys, "frozen", False):
-        candidates.insert(0, Path(sys.executable).resolve().parent)
+        executable_dir = Path(sys.executable).resolve().parent
+        # Inno may place the executable in an app/bin subdirectory while
+        # keeping the external bundled tools at the installation root.
+        candidates = [executable_dir, *executable_dir.parents, *candidates]
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             candidates.append(Path(meipass))
