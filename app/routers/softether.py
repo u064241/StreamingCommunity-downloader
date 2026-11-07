@@ -12,6 +12,7 @@ from pathlib import Path
 import secrets
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -102,20 +103,39 @@ def _find_manager():
     return None
 
 
+def _softether_roots():
+    """Return possible bundled-tool roots for source and PyInstaller builds."""
+    candidates = [Path(__file__).resolve().parents[2]]
+    if getattr(sys, "frozen", False):
+        candidates.insert(0, Path(sys.executable).resolve().parent)
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass))
+    seen = set()
+    for base in candidates:
+        root = (base / "tools" / "softether").resolve()
+        if root not in seen:
+            seen.add(root)
+            yield root
+
+
 def _bundled_installer():
-    root = Path(__file__).resolve().parents[2] / "tools" / "softether"
-    try:
-        metadata = json.loads((root / "bundle.json").read_text(encoding="utf-8"))
-        name = metadata["fileName"]
-        candidate = (root / "payload" / name).resolve(strict=True)
-        if candidate.parent != (root / "payload").resolve() or not candidate.is_file():
-            return None
-        if candidate.stat().st_size != metadata["size"]:
-            return None
-        digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
-        return candidate if secrets.compare_digest(digest, metadata["sha256"]) else None
-    except (OSError, KeyError, TypeError, ValueError):
-        return None
+    for root in _softether_roots():
+        try:
+            metadata = json.loads((root / "bundle.json").read_text(encoding="utf-8"))
+            name = metadata["fileName"]
+            payload = (root / "payload").resolve()
+            candidate = (payload / name).resolve(strict=True)
+            if candidate.parent != payload or not candidate.is_file():
+                continue
+            if candidate.stat().st_size != metadata["size"]:
+                continue
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            if secrets.compare_digest(digest, metadata["sha256"]):
+                return candidate
+        except (OSError, KeyError, TypeError, ValueError):
+            continue
+    return None
 
 
 def _detect():
@@ -212,7 +232,8 @@ async def download_update(request: Request):
     filename = Path(release["asset_name"]).name
     if filename != release["asset_name"] or not filename.lower().endswith(".exe"):
         raise HTTPException(502, "softether.invalidAsset")
-    payload = Path(__file__).resolve().parents[2] / "tools" / "softether" / "payload"
+    softether_root = next(_softether_roots())
+    payload = softether_root / "payload"
     target = payload / filename
     manifest_path = payload.parent / "bundle.json"
     try:
