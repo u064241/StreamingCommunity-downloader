@@ -1,21 +1,13 @@
 # Compila l'app Windows, il helper updater, il portable ZIP e l'installer Inno Setup.
-# Per una release completa: .\build.ps1 -Release -CleanReleaseArtifacts
-# Per pubblicare sul fork GitHub: aggiungere -PublishRelease (richiede gh auth login).
+# Per preparare una release: .\build.ps1 -PrepareRelease
+# Per pubblicarla: .\build.ps1 -PublishPreparedRelease
 # L'installer viene ricreato e sovrascritto a ogni compilazione quando Inno Setup è disponibile.
 [CmdletBinding()]
 param(
     [switch]$Help,
-    [switch]$BumpPatchVersion,
-    [switch]$Commit,
-    [switch]$CommitAll,
     [switch]$SkipInnoSetup,
-    [switch]$IncludeSoftEtherInstaller,
-    [switch]$UpdateSoftEther,
     [switch]$PrepareRelease,
-    [switch]$PublishPreparedRelease,
-    [switch]$Release,
-    [switch]$CleanReleaseArtifacts,
-    [switch]$PublishRelease
+    [switch]$PublishPreparedRelease
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,19 +18,9 @@ StreamingCommunity Downloader - build.ps1
 
 Uso:
   .\build.ps1                              Build locale, con installer se disponibile
-  .\build.ps1 -Release                     Crea gli artefatti release
-  .\build.ps1 -Release -CleanReleaseArtifacts
-                                             Rimuove gli eseguibili intermedi e i vecchi ZIP
-  .\build.ps1 -Release -CleanReleaseArtifacts -PublishRelease
-                                             Compila, pulisce e pubblica sul fork GitHub
   .\build.ps1 -SkipInnoSetup               Salta la compilazione dell'installer
-  .\build.ps1 -IncludeSoftEtherInstaller   Include il setup SoftEther verificato in tools/softether
-                                             Lo copia soltanto: nessuna installazione VPN automatica
   .\build.ps1 -PrepareRelease              Incrementa la patch e prepara note/commit
-  .\build.ps1 -PublishPreparedRelease     Compila, pulisce, aggiorna SoftEther e pubblica la release preparata
-  .\build.ps1 -BumpPatchVersion            Incrementa la patch e crea il modello delle note
-  .\build.ps1 -BumpPatchVersion -Commit    Fa anche commit di versione e note generate
-  .\build.ps1 -BumpPatchVersion -CommitAll Incrementa e committa tutte le modifiche presenti
+  .\build.ps1 -PublishPreparedRelease      Compila, pulisce, aggiorna SoftEther e pubblica la release preparata
   .\build.ps1 -Help                        Mostra questo aiuto
 
 Prerequisiti:
@@ -51,26 +33,19 @@ Prerequisiti:
 if ($PrepareRelease -and $PublishPreparedRelease) {
     throw '-PrepareRelease e -PublishPreparedRelease sono alternativi.'
 }
-if ($PrepareRelease) {
-    $BumpPatchVersion = $true
-    $CommitAll = $true
-}
-if ($PublishPreparedRelease) {
-    $Release = $true
-    $CleanReleaseArtifacts = $true
-    $PublishRelease = $true
-    $IncludeSoftEtherInstaller = $true
-}
-if ($UpdateSoftEther) {
-    $IncludeSoftEtherInstaller = $true
-}
+$BumpPatchVersion = $PrepareRelease
+$CommitAll = $PrepareRelease
+$Release = $PublishPreparedRelease
+$CleanReleaseArtifacts = $PublishPreparedRelease
+$PublishRelease = $PublishPreparedRelease
+$IncludeSoftEtherInstaller = $PublishPreparedRelease
 
 $ProjectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
 $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
 
-if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup -or $IncludeSoftEtherInstaller -or $UpdateSoftEther)) {
+if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup -or $IncludeSoftEtherInstaller)) {
     throw '-BumpPatchVersion va usato da solo.'
 }
 if ($Commit -and -not $BumpPatchVersion) {
@@ -78,9 +53,6 @@ if ($Commit -and -not $BumpPatchVersion) {
 }
 if ($CommitAll -and -not $BumpPatchVersion) {
     throw '-CommitAll richiede anche -BumpPatchVersion.'
-}
-if ($UpdateSoftEther -and -not ($Release -or $PrepareRelease -or $PublishPreparedRelease)) {
-    throw '-UpdateSoftEther richiede una preparazione o una build release.'
 }
 if ($Commit -and $CommitAll) {
     throw '-Commit e -CommitAll sono alternativi.'
