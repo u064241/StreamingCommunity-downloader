@@ -52,6 +52,7 @@ async function loadSoftEtherStatus(openManager = false) {
   const open = document.getElementById('softether-open');
   const refresh = document.getElementById('softether-refresh');
   const install = document.getElementById('softether-install');
+  const updateCheck = document.getElementById('softether-update-check');
   open.disabled = true;
   refresh.disabled = true;
   _feedback('softether-status', t('softether.checking'));
@@ -60,6 +61,7 @@ async function loadSoftEtherStatus(openManager = false) {
     const status = await softetherApi.status();
     available = status.supported && status.installed;
     if (install) install.hidden = available || !status.bundled_installer;
+    if (updateCheck) updateCheck.disabled = !available;
     const bundledHint = document.getElementById('softether-bundled-hint');
     if (bundledHint) bundledHint.hidden = available || !status.bundled_installer;
     const key = !status.supported ? 'softether.unsupported'
@@ -93,11 +95,11 @@ async function installSoftEther() {
   }
 }
 
-window.addEventListener('softether:block-detected', () => {
+window.addEventListener('softether:block-detected', async () => {
   const page = document.getElementById('page-settings');
   if (!page || page.style.display === 'none') return;
+  await loadSoftEtherStatus();
   _feedback('softether-status', t('softether.blockDetectedSettings'), 'warning');
-  loadSoftEtherStatus();
 });
 
 async function openSoftEtherManager() {
@@ -131,8 +133,9 @@ async function downloadSoftEtherUpdate() {
   _feedback('softether-updates', t('softether.startingDownload'), 'warning');
   try {
     const status = await softetherApi.status();
-    await softetherApi.downloadUpdate(status.token);
-    _feedback('softether-updates', t('softether.downloadStarted'), 'success');
+    const result = await softetherApi.downloadUpdate(status.token);
+    _feedback('softether-updates', result.source === 'bundled'
+      ? t('softether.installStarted') : t('softether.downloadStarted'), 'success');
   } catch (error) {
     _feedback('softether-updates', _softetherError(error), 'danger');
   } finally { if (button) button.disabled = false; }

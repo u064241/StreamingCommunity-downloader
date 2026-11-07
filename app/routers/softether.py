@@ -199,7 +199,16 @@ async def download_update(request: Request):
         raise HTTPException(409, "softether.unsupported")
     release = _release_status()
     if release.get("status") != "available":
-        raise HTTPException(404, "softether.updateUnavailable")
+        # A local payload is the offline fallback when GitHub is unavailable
+        # or does not expose a compatible stable asset.
+        installer = _bundled_installer()
+        if installer is None:
+            raise HTTPException(404, "softether.updateUnavailable")
+        try:
+            subprocess.Popen([str(installer)], executable=str(installer), cwd=str(installer.parent), shell=False, close_fds=True)
+        except OSError as exc:
+            raise HTTPException(503, "softether.installFailed") from exc
+        return {"started": True, "source": "bundled"}
     filename = Path(release["asset_name"]).name
     if filename != release["asset_name"] or not filename.lower().endswith(".exe"):
         raise HTTPException(502, "softether.invalidAsset")

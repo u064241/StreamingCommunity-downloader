@@ -252,6 +252,7 @@ window.addEventListener('softether:block-detected', () => {
   const now = Date.now();
   if (now - _softEtherOfferAt < 10 * 60 * 1000) return;
   _softEtherOfferAt = now;
+  if (document.getElementById('page-settings')?.style.display !== 'none') return;
   showToast(window.t('softether.blockDetected'), 'warning', {
     label: window.t('softether.openSettings'), page: 'settings',
   });
