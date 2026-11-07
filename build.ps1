@@ -556,6 +556,9 @@ end;
                     Remove-Item -LiteralPath $intermediate -Force
                 }
             }
+            if (Test-Path -LiteralPath $portablePath -PathType Leaf) {
+                Remove-Item -LiteralPath $portablePath -Force
+            }
         } else {
             Write-Warning 'Inno Setup non trovato: creato solo eseguibile PyInstaller.'
         }
