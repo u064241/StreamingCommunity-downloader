@@ -60,6 +60,8 @@ async function loadSoftEtherStatus(openManager = false) {
     const status = await softetherApi.status();
     available = status.supported && status.installed;
     if (install) install.hidden = available || !status.bundled_installer;
+    const bundledHint = document.getElementById('softether-bundled-hint');
+    if (bundledHint) bundledHint.hidden = available || !status.bundled_installer;
     const key = !status.supported ? 'softether.unsupported'
       : status.installed ? 'softether.ready' : 'softether.missing';
     _feedback('softether-status', t(key), available ? 'success' : 'warning');
@@ -91,6 +93,13 @@ async function installSoftEther() {
   }
 }
 
+window.addEventListener('softether:block-detected', () => {
+  const page = document.getElementById('page-settings');
+  if (!page || page.style.display === 'none') return;
+  _feedback('softether-status', t('softether.blockDetectedSettings'), 'warning');
+  loadSoftEtherStatus();
+});
+
 async function openSoftEtherManager() {
   await loadSoftEtherStatus(true);
 }
@@ -107,6 +116,8 @@ async function checkSoftEtherUpdates() {
       ? t(key, { version: result.version }) : t(key), result.status === 'available' ? 'warning' : 'muted');
     const updateButton = document.getElementById('softether-update-install');
     if (updateButton) updateButton.hidden = result.status !== 'available';
+    const remoteHint = document.getElementById('softether-remote-hint');
+    if (remoteHint) remoteHint.hidden = result.status !== 'available';
   } catch (error) {
     _feedback('softether-updates', _softetherError(error), 'danger');
   } finally {

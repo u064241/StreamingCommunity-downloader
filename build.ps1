@@ -389,7 +389,7 @@ Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: string; ValueNam
 Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: dword; ValueName: "NoModify"; ValueData: "1"; Check: IsPortable
 Root: HKCU64; Subkey: "{code:PortableUninstallKey}"; ValueType: dword; ValueName: "NoRepair"; ValueData: "1"; Check: IsPortable
 [Tasks]
-Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:DesktopIcon}"
 [Icons]
 Name: "{group}\StreamingCommunity Downloader"; Filename: "{app}\$AppName.exe"; WorkingDir: "{app}"; Check: not IsPortable
 Name: "{group}\{cm:UninstallName}"; Filename: "{uninstallexe}"; Check: not IsPortable

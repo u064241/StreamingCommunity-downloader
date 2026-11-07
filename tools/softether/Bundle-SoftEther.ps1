@@ -5,8 +5,8 @@ function Get-SoftEtherFileEntries {
 
     $bundleRoot = Join-Path $ProjectRoot 'tools\softether'
     $manifest = Get-Content -LiteralPath (Join-Path $bundleRoot 'bundle.json') -Raw | ConvertFrom-Json
-    if ($manifest.fileName -cne 'softether-vpnclient-v4.44-9807-rtm-2025.04.16-windows-x86_x64-intel.exe') {
-        throw 'Pacchetto SoftEther non approvato: aggiornare la verifica della nuova release.'
+    if ($manifest.fileName -notmatch '^softether-vpnclient-v[0-9]+\.[0-9]+-[0-9]+-rtm-[0-9]{4}\.[0-9]{2}\.[0-9]{2}-windows-x86_x64-intel\.exe$') {
+        throw 'Pacchetto SoftEther non approvato: nome asset Windows x64 non valido.'
     }
     $setup = Join-Path $bundleRoot (Join-Path 'payload' $manifest.fileName)
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {

@@ -203,8 +203,11 @@ async def download_update(request: Request):
     filename = Path(release["asset_name"]).name
     if filename != release["asset_name"] or not filename.lower().endswith(".exe"):
         raise HTTPException(502, "softether.invalidAsset")
-    target = Path(tempfile.gettempdir()) / f"sc-softether-{filename}"
+    payload = Path(__file__).resolve().parents[2] / "tools" / "softether" / "payload"
+    target = payload / filename
+    manifest_path = payload.parent / "bundle.json"
     try:
+        payload.mkdir(parents=True, exist_ok=True)
         completed = subprocess.run(
             ["curl.exe", "--fail", "--location", "--silent", "--show-error",
              "--max-time", "120", "--output", str(target), release["asset_url"]],
@@ -214,6 +217,15 @@ async def download_update(request: Request):
             raise RuntimeError("curl failed")
         if target.stat().st_size > release["size_limit"]:
             raise RuntimeError("asset too large")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.update({
+            "tag": release["tag"], "fileName": filename,
+            "size": target.stat().st_size,
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "sourceUrl": release["release_url"],
+            "silentInstallVerified": False,
+        })
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         subprocess.Popen([str(target)], executable=str(target), cwd=str(target.parent), shell=False, close_fds=True)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         try:
