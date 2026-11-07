@@ -99,6 +99,16 @@ window.addEventListener('softether:block-detected', async () => {
   const page = document.getElementById('page-settings');
   if (!page || page.style.display === 'none') return;
   await loadSoftEtherStatus();
+  // A blocked source is an actionable install flow. Keep the bundled action
+  // visible even when the initial status check raced with page/tab loading.
+  const install = document.getElementById('softether-install');
+  const bundledHint = document.getElementById('softether-bundled-hint');
+  if (install && !document.getElementById('softether-open')?.disabled) {
+    install.hidden = true;
+  } else if (install) {
+    install.hidden = false;
+    if (bundledHint) bundledHint.hidden = false;
+  }
   _feedback('softether-status', t('softether.blockDetectedSettings'), 'warning');
 });
 
