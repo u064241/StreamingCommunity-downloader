@@ -518,7 +518,7 @@ begin
 
   LinkPage := CreateInputOptionPage(wpSelectDir, CustomMessage('LinkTitle'), CustomMessage('LinkSubtitle'), '', False, False);
   LinkPage.Add(CustomMessage('DesktopIcon'));
-  LinkPage.Values[0] := Pos('desktopicon', ExpandConstant('{param:TASKS|}')) > 0;
+  LinkPage.Values[0] := True;
   InstallDir := WizardForm.DirEdit.Text;
   LastPortable := False;
   ApplyModeDir;
