@@ -127,15 +127,18 @@ def _bundled_installer():
         try:
             metadata = json.loads((root / "bundle.json").read_text(encoding="utf-8"))
             name = metadata["fileName"]
-            payload = (root / "payload").resolve()
-            candidate = (payload / name).resolve(strict=True)
-            if candidate.parent != payload or not candidate.is_file():
-                continue
-            if candidate.stat().st_size != metadata["size"]:
-                continue
-            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
-            if secrets.compare_digest(digest, metadata["sha256"]):
-                return candidate
+            # Current Inno packages place the installer directly under
+            # tools/softether; accept the former payload/ layout as well.
+            for folder in (root, root / "payload"):
+                payload = folder.resolve()
+                candidate = (payload / name).resolve(strict=True)
+                if candidate.parent != payload or not candidate.is_file():
+                    continue
+                if candidate.stat().st_size != metadata["size"]:
+                    continue
+                digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                if secrets.compare_digest(digest, metadata["sha256"]):
+                    return candidate
         except (OSError, KeyError, TypeError, ValueError):
             continue
     return None
