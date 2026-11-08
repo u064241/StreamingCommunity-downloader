@@ -101,7 +101,7 @@ def get_domain_candidate():
     a requester staring at a broken search benefits from being told the source
     has moved even though they cannot be the one to apply it.
     """
-    return {"candidate": domain_recovery.pending()}
+    return domain_recovery.recovery_state()
 
 
 @router.post("/check", dependencies=CAN_MANAGE)

@@ -74,6 +74,13 @@ _MIN_CHECK_INTERVAL = 60
 _lock = threading.Lock()
 _pending: dict | None = None
 _last_check_at: float | None = None
+_running = False
+_status = "idle"
+
+def recovery_state() -> dict:
+    with _lock:
+        return {"status": "checking" if _running else ("found" if _pending else _status),
+                "candidate": dict(_pending) if _pending else None}
 
 
 def _now() -> float:
@@ -240,9 +247,10 @@ def pending() -> dict | None:
 
 
 def clear_pending() -> None:
-    global _pending
+    global _pending, _status
     with _lock:
         _pending = None
+        _status = "idle"
 
 
 def _set_pending(candidate: dict | None) -> None:
@@ -280,6 +288,24 @@ def _settings() -> dict:
 
 
 def run_check(force: bool = False) -> dict:
+    global _running, _status
+    with _lock:
+        if _running:
+            return {"checked": False, "candidate": None, "current_ok": False, "applied": False, "rejected": []}
+        _running = True
+    try:
+        result = _run_check(force)
+        if result["checked"]:
+            with _lock:
+                _status = "applied" if result["applied"] else "found" if result["candidate"] else "healthy" if result["current_ok"] else "not_found"
+        return result
+    except Exception:
+        with _lock: _status = "error"
+        raise
+    finally:
+        with _lock: _running = False
+
+def _run_check(force: bool = False) -> dict:
     """One pass: is the configured domain alive, and if not, what could replace it.
 
     ``force`` is the "Controlla ora" button: it bypasses the throttle and looks
@@ -318,6 +344,7 @@ def run_check(force: bool = False) -> dict:
         _set_pending(None)
         return result
 
+    _set_pending(None)
     candidates = fetch_telegram_candidates()
     try:
         candidates = list(dict.fromkeys(candidates + fetch_candidates()))
@@ -433,7 +460,7 @@ async def domain_watch_loop():
         if not _settings().get("domain_auto_check_enabled", True):
             continue
         try:
-            await asyncio.to_thread(run_check, True)
+            await asyncio.to_thread(run_check)
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // domain badge and the candidate banner around it.
   if (can('REQUEST') || can('DOWNLOAD') || can('MANAGE_SETTINGS')) {
     ensureDomain();
-    loadDomainCandidate();
+    startDomainRecoveryPolling();
   }
   if (can('DOWNLOAD') || can('MANAGE_REQUESTS')) {
     connectGlobalStream();
@@ -91,6 +91,7 @@ async function loadDomainStatus() {
       if (!parseHash()) openSettings();
     }
   } catch(e) { console.error('loadDomainStatus:', e); }
+  finally { await loadDomainCandidate(); }
 }
 
 // ── Source domain moved ────────────────────────────────────────────────────────
@@ -100,25 +101,46 @@ async function loadDomainStatus() {
 // happens quietly.
 
 let _domainCandidate = null;
+let _domainRecoveryStatus = 'idle';
+let _domainRecoveryTimer = null;
+let _domainRecoveryLoading = false;
+
+function startDomainRecoveryPolling() {
+  if (_domainRecoveryTimer !== null) return;
+  const poll = async () => {
+    if (!document.hidden) await loadDomainCandidate();
+    _domainRecoveryTimer = setTimeout(poll, _domainRecoveryStatus === 'checking' ? 2000 : 15000);
+  };
+  _domainRecoveryTimer = setTimeout(poll, 0);
+}
 
 window.addEventListener('sc:language-changed', () => {
   const badge = document.getElementById('domain-badge');
   if (badge && !currentDomain) badge.textContent = window.t('dynamic.ui91');
+  renderDomainBanner();
 });
 
 async function loadDomainCandidate() {
+  if (_domainRecoveryLoading) return;
+  _domainRecoveryLoading = true;
   try {
     const data = await api.get('/api/domain/candidate');
     _domainCandidate = data.candidate || null;
+    _domainRecoveryStatus = data.status || (_domainCandidate ? 'found' : 'idle');
     renderDomainBanner();
   } catch (e) { /* a missing banner is not worth a console error */ }
+  finally { _domainRecoveryLoading = false; }
 }
 
 function renderDomainBanner() {
   const banner = document.getElementById('domain-banner');
   if (!banner) return;
-  if (!_domainCandidate) { banner.style.display = 'none'; return; }
-  document.getElementById('domain-banner-host').textContent = _domainCandidate.host;
+  const found = _domainRecoveryStatus === 'found' && !!_domainCandidate;
+  if (!found && !['checking', 'not_found', 'error'].includes(_domainRecoveryStatus)) { banner.style.display = 'none'; return; }
+  document.getElementById('domain-banner-message').textContent = window.t('domain.recovery.' + (found ? 'found' : _domainRecoveryStatus));
+  document.getElementById('domain-banner-host').textContent = found ? _domainCandidate.host : '';
+  document.getElementById('domain-banner-apply').hidden = !found;
+  document.getElementById('domain-banner-dismiss').hidden = !found;
   banner.style.display = '';
 }
 

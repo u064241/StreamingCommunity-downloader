@@ -3,6 +3,10 @@
 (function () {
   const translations = {
     it: {
+      'domain.recovery.checking': 'Ricerca del dominio in corso…',
+      'domain.recovery.found': 'Dominio trovato e verificato. Conferma per applicarlo:',
+      'domain.recovery.not_found': 'Nessun dominio verificato trovato. Puoi riprovare dalle impostazioni.',
+      'domain.recovery.error': 'Ricerca del dominio non riuscita. Puoi riprovare dalle impostazioni.',
       'common.cancel': 'Annulla', 'common.confirm': 'Conferma', 'common.close': 'Chiudi',
       'common.save': 'Salva', 'common.loading': 'Caricamento...', 'common.error': 'Errore',
       'common.retry': 'Riprova', 'common.refresh': 'Aggiorna',
@@ -15,6 +19,10 @@
       'title.related': 'Correlati', 'title.switch': 'Scegli un altro titolo', 'title.item': 'Titolo'
     },
     en: {
+      'domain.recovery.checking': 'Searching for the source domain…',
+      'domain.recovery.found': 'Domain found and verified. Confirm to apply it:',
+      'domain.recovery.not_found': 'No verified domain found. You can retry from settings.',
+      'domain.recovery.error': 'Domain discovery failed. You can retry from settings.',
       'common.cancel': 'Cancel', 'common.confirm': 'Confirm', 'common.close': 'Close',
       'common.save': 'Save', 'common.loading': 'Loading...', 'common.error': 'Error',
       'common.retry': 'Retry', 'common.refresh': 'Refresh',

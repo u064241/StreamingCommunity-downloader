@@ -15,15 +15,15 @@
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <i class="ti ti-world-search"></i>
             <div class="flex-fill">
-              <strong>La sorgente ha cambiato dominio.</strong>
-              Trovato <code id="domain-banner-host"></code>, verificato dal pannello.
+              <span id="domain-banner-message"></span>
+              <code id="domain-banner-host"></code>
             </div>
             <button class="btn btn-sm btn-primary" data-perm="MANAGE_SETTINGS"
                     data-action="domain:apply" id="domain-banner-apply">
               Applica
             </button>
             <button class="btn btn-sm btn-ghost-secondary" data-perm="MANAGE_SETTINGS"
-                    data-action="domain:dismiss">
+                    data-action="domain:dismiss" id="domain-banner-dismiss">
               Ignora
             </button>
           </div>
