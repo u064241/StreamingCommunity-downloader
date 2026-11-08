@@ -38,6 +38,11 @@ function _feedback(id, message = '', kind = 'muted') {
 
 let _softetherBusy = false;
 let _softetherBlockDetected = false;
+// Local-only test path: localhost can exercise the installer without first
+// provoking a real source block. Remote panels remain block-gated unless the
+// explicit ?sc-vpn-test=1 query flag is used.
+const _softetherTestMode = ['localhost', '127.0.0.1', '::1'].includes(location.hostname)
+  || new URLSearchParams(location.search).get('sc-vpn-test') === '1';
 
 function _softetherError(error) {
   const key = error instanceof ApiError ? error.data?.detail : null;
@@ -61,10 +66,10 @@ async function loadSoftEtherStatus(openManager = false) {
   try {
     const status = await softetherApi.status();
     available = status.supported && status.installed;
-    if (install) install.hidden = available || !status.vpngate_available || !_softetherBlockDetected;
+    if (install) install.hidden = available || !status.vpngate_available || (!_softetherBlockDetected && !_softetherTestMode);
     if (updateCheck) updateCheck.disabled = !available;
     const bundledHint = document.getElementById('softether-bundled-hint');
-    if (bundledHint) bundledHint.hidden = available || !status.vpngate_available || !_softetherBlockDetected;
+    if (bundledHint) bundledHint.hidden = available || !status.vpngate_available || (!_softetherBlockDetected && !_softetherTestMode);
     const key = !status.supported ? 'softether.unsupported'
       : status.installed ? 'softether.ready' : 'softether.missing';
     _feedback('softether-status', t(key), available ? 'success' : 'warning');
@@ -189,7 +194,7 @@ async function loadVpnGateServers() {
     const servers = result.servers || [];
     if (!servers.length) { _settingsText(target, t('softether.vpngateEmpty')); return; }
     target.innerHTML = `<div class="softether-vpngate-list">${servers.slice(0, 15).map((s, i) =>
-      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}:${s.port || 443}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps${_softetherBlockDetected ? ` <button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button>` : ''}</span></div>`
+      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}:${s.port || 443}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps${(_softetherBlockDetected || _softetherTestMode) ? ` <button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button>` : ''}</span></div>`
     ).join('')}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
     target.querySelectorAll('[data-vpngate-index]').forEach(button => button.addEventListener('click', async () => {
       const server = servers[Number(button.dataset.vpngateIndex)];
