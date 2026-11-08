@@ -138,6 +138,15 @@ def _poster(images) -> str | None:
     return None
 
 
+def _backdrop(images) -> str | None:
+    """Return the source's wide artwork without an extra metadata request."""
+    for kind in ("background", "cover"):
+        for img in (images or []):
+            if img.get("type") == kind and img.get("filename"):
+                return img.get("filename")
+    return None
+
+
 def normalize_title(t: dict) -> dict | None:
     """One raw title into the shape the panel renders, or None if unusable.
 
@@ -165,6 +174,7 @@ def normalize_title(t: dict) -> dict | None:
         "age": t.get("age"),
         "seasons_count": t.get("seasons_count", 0),
         "poster": _poster(t.get("images", [])),
+        "backdrop": _backdrop(t.get("images", [])),
         "coming_soon": bool(t.get("coming_soon")),
         "upcoming_seasons": t.get("upcoming_seasons") or [],
     }

@@ -191,7 +191,7 @@ function renderResultCards(items, container, baseIndex,
     card.className = wrapperClass;
     card.dataset.idx = String(idx);
     const posterHtml = posterUrl
-      ? `<img src="${escapeHtml(posterUrl)}" alt="" loading="lazy" onerror="posterError(this)">`
+      ? `${!item.backdrop ? `<img class="poster-backdrop" src="${escapeHtml(posterUrl)}" alt="" aria-hidden="true" loading="lazy" onerror="this.remove()">` : ''}<img class="poster-main" src="${escapeHtml(posterUrl)}" alt="" loading="lazy" onerror="posterError(this)">`
       : '';
     // Movie cards carry no status ribbon: a movie can be requested again
     // freely (denied/failed/cancelled never block it), so a "richiesto" chip
@@ -232,10 +232,12 @@ async function hydrateShelfArtwork(card, item) {
   const key = `${item.type}:${item.id}`;
   const cached = _cardArtworkCache.get(key);
   if (cached) {
-    const image = card?.querySelector('.poster-wrap img');
+    const image = card?.querySelector('.poster-main');
     if (image) {
       image.src = cached;
-      image.closest('.poster-wrap')?.classList.remove('poster-fallback');
+      const wrap = image.closest('.poster-wrap');
+      wrap?.querySelector('.poster-backdrop')?.remove();
+      wrap?.classList.remove('poster-fallback');
     }
     return;
   }
@@ -248,10 +250,12 @@ async function hydrateShelfArtwork(card, item) {
     const src = (backdrop.startsWith('http') || backdrop.startsWith('/'))
       ? backdrop : `/api/image/${backdrop}`;
     _cardArtworkCache.set(key, src);
-    const image = card.querySelector('.poster-wrap img');
+    const image = card.querySelector('.poster-main');
     if (image) {
       image.src = src;
-      image.closest('.poster-wrap')?.classList.remove('poster-fallback');
+      const wrap = image.closest('.poster-wrap');
+      wrap.querySelector('.poster-backdrop')?.remove();
+      wrap.classList.remove('poster-fallback');
     }
   } catch (_) { /* the poster remains a valid fallback */ }
 }
@@ -299,10 +303,12 @@ async function startCardPreview(card) {
         const src = (backdrop.startsWith('http') || backdrop.startsWith('/'))
           ? backdrop : `/api/image/${backdrop}`;
         _cardArtworkCache.set(key, src);
-        const image = card.querySelector('.poster-wrap img');
+        const image = card.querySelector('.poster-main');
         if (image) {
           image.src = src;
-          image.closest('.poster-wrap')?.classList.remove('poster-fallback');
+          const wrap = image.closest('.poster-wrap');
+          wrap.querySelector('.poster-backdrop')?.remove();
+          wrap.classList.remove('poster-fallback');
         }
       }
       url = meta?.trailer_url || null;

@@ -283,6 +283,22 @@
       object-fit: contain;
       object-position: center center;
       background: #080b12;
+      position: relative;
+      z-index: 1;
+    }
+    .poster-wrap.poster-fallback .poster-backdrop {
+      position: absolute;
+      inset: -12px;
+      width: calc(100% + 24px);
+      height: calc(100% + 24px);
+      object-fit: cover;
+      filter: blur(14px) brightness(.48);
+      opacity: .9;
+      z-index: 0;
+      background: var(--bg-raised);
+    }
+    .poster-wrap.poster-fallback .poster-backdrop + img {
+      background: transparent;
     }
 
     /* The card itself provides the hover zoom. Keeping the artwork at its
