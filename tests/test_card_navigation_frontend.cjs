@@ -95,6 +95,12 @@ test('hover enlarges edge cards inward, including after horizontal scrolling', (
   }
 });
 
+test('wide AnimeUnity backdrops fill the 16:9 artwork frame', () => {
+  const css = fs.readFileSync('app/static/css/pages.css', 'utf8');
+  assert.match(css, /\.poster-wrap\.has-backdrop \.poster-main\s*\{[\s\S]*?object-fit:\s*cover/);
+  assert.match(css, /\.poster-wrap\.poster-fallback img\s*\{[\s\S]*?object-fit:\s*contain/);
+});
+
 test('layout keeps artwork contained and reserves rail snap/hover space', () => {
   const css = fs.readFileSync('app/static/css/pages.css', 'utf8');
   const rule = selector => css.slice(css.indexOf(selector)).split('}')[0];

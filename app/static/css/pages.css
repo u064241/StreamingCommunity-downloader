@@ -275,6 +275,13 @@
       display: block;
       transition: transform .32s ease;
     }
+    /* A real backdrop is already landscape artwork. It must fill the 16:9
+       frame; contain leaves very wide AnimeUnity banners as a thin strip.
+       Poster fallbacks remain contained below so their artwork is not cropped. */
+    .poster-wrap.has-backdrop .poster-main {
+      object-fit: cover;
+      object-position: center center;
+    }
     /* Both posters and wide banners remain fully visible. The blurred layer
        fills unused space without changing the main artwork's proportions. */
     .poster-wrap.poster-fallback { aspect-ratio: 16/9; }
