@@ -42,6 +42,7 @@
 "settings.hardware.encoders": {it:"Encoder verificati: {encoders}",en:"Verified encoders: {encoders}"},
 "settings.hardware.conversion": {it:"Conversione suggerita: {encoder}, {codec}, qualità bilanciata. Conversioni simultanee supportate: {count}.",en:"Suggested conversion: {encoder}, {codec}, balanced quality. Supported concurrent conversions: {count}."},
 "settings.hardware.downloads": {it:"Punto di partenza: {count} download simultanei e {workers} segmenti complessivi.",en:"Starting point: {count} concurrent downloads and {workers} segments overall."},
+"settings.hardware.applied": {it:"Impostazioni consigliate applicate: {count} download simultanei e {workers} segmenti in parallelo.",en:"Recommended settings applied: {count} concurrent downloads and {workers} parallel segments."},
 "settings.hardware.advice": {it:"Mantieni Originale per evitare la ricodifica. Per convertire, scegli manualmente l'encoder suggerito e usa il fallback CPU solo se risulta disponibile. Rete, sorgente e disco possono richiedere limiti inferiori; non sono stati misurati.",en:"Keep Original to avoid re-encoding. To convert, manually select the suggested encoder and enable CPU fallback only if available. Network, source and disk may require lower limits; they have not been measured."},
 "settings.hardware.partial": {it:"Analisi parziale: alcuni dati non sono disponibili.",en:"Partial analysis: some information is unavailable."},
 "settings.hardware.failed": {it:"Analisi hardware non riuscita. Riprova.",en:"Hardware analysis failed. Try again."},
@@ -574,8 +575,8 @@
   },
   {
     "key": "settings.animeunity.and.the.video.server.also.change.domains",
-    "it": "Anche AnimeUnity e il server video cambiano dominio. Il server video viene letto dalla sorgente a ogni download; impostalo qui solo se la sorgente continua a indicarne uno che non risponde. Un campo vuoto torna al comportamento automatico. Salvando ogni host viene verificato.",
-    "en": "AnimeUnity and the video server also change domains. The video server is read from the source for each download; set it here only if the source keeps returning an unresponsive server. Leave a field empty to restore automatic behavior. Each host is verified when saved."
+    "it": "Anche AnimeUnity e il server video possono cambiare dominio. Il server video viene letto automaticamente dalla sorgente a ogni download: lascialo vuoto nella configurazione normale. Compilalo solo come override avanzato quando la sorgente indica un host video non raggiungibile; non usare il dominio del portale. Un campo vuoto ripristina il comportamento automatico.",
+    "en": "AnimeUnity and the video server can also change domains. The video server is read automatically from the source for each download: leave it empty for normal use. Set it only as an advanced override when the source returns an unreachable video host; do not use the portal domain. Leave it empty to restore automatic behavior."
   },
   {
     "key": "settings.video.server",

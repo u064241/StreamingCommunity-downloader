@@ -189,7 +189,7 @@ async function loadVpnGateServers() {
     const servers = result.servers || [];
     if (!servers.length) { _settingsText(target, t('softether.vpngateEmpty')); return; }
     target.innerHTML = `<div class="softether-vpngate-list">${servers.slice(0, 15).map((s, i) =>
-      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}:${s.port || 443}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps <button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button></span></div>`
+      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}:${s.port || 443}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps${_softetherBlockDetected ? ` <button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button>` : ''}</span></div>`
     ).join('')}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
     target.querySelectorAll('[data-vpngate-index]').forEach(button => button.addEventListener('click', async () => {
       const server = servers[Number(button.dataset.vpngateIndex)];
@@ -1355,6 +1355,19 @@ async function probeHardware() {
   _settingsText(target, t('settings.hardware.scanning'));
   try {
     _hardwareData = await api.get('/api/domain/hardware');
+    const recommendations = _hardwareData.recommendations || {};
+    if (recommendations.max_concurrent_downloads && recommendations.max_segment_workers) {
+      await api.put('/api/domain/settings', {
+        max_concurrent_downloads: recommendations.max_concurrent_downloads,
+        max_segment_workers: recommendations.max_segment_workers,
+      });
+      document.getElementById('setting-max-concurrent').value = recommendations.max_concurrent_downloads;
+      document.getElementById('setting-max-workers').value = recommendations.max_segment_workers;
+      _feedback('perf-settings-feedback', t('settings.hardware.applied', {
+        count: recommendations.max_concurrent_downloads,
+        workers: recommendations.max_segment_workers,
+      }), 'success');
+    }
     renderHardwareResults(_hardwareData);
   } catch (e) { _settingsText(target, t('settings.hardware.failed')); }
   finally { button.disabled = false; }
