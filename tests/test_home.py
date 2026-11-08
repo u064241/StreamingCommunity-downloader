@@ -252,9 +252,9 @@ def signed_in(client, admin_credentials):
 
 
 def test_the_endpoint_answers_shelves(client, signed_in, monkeypatch):
-    from app.routers import home as router
-    monkeypatch.setattr(router, "configured_domain", lambda: "source.test")
-    monkeypatch.setattr(router.core_home, "shelves",
+    from app import config
+    monkeypatch.setattr(config, "configured_domain", lambda: "source.test")
+    monkeypatch.setattr(home, "shelves",
                         lambda source, host: [{"key": "trending", "title": "Di tendenza",
                                                "items": []}])
 
@@ -265,17 +265,17 @@ def test_the_endpoint_answers_shelves(client, signed_in, monkeypatch):
 
 
 def test_streamingcommunity_needs_a_configured_domain(client, signed_in, monkeypatch):
-    from app.routers import home as router
-    monkeypatch.setattr(router, "configured_domain", lambda: "")
+    from app import config
+    monkeypatch.setattr(config, "configured_domain", lambda: "")
 
     assert client.get("/api/home").status_code == 409
 
 
 def test_the_anime_front_page_needs_no_domain(client, signed_in, monkeypatch):
     """AnimeUnity lives at a fixed host: refusing there would be a lie."""
-    from app.routers import home as router
-    monkeypatch.setattr(router, "configured_domain", lambda: "")
-    monkeypatch.setattr(router.core_home, "shelves", lambda source, host: [])
+    from app import config
+    monkeypatch.setattr(config, "configured_domain", lambda: "")
+    monkeypatch.setattr(home, "shelves", lambda source, host: [])
 
     assert client.get("/api/home?source=animeunity").status_code == 200
 
@@ -285,11 +285,11 @@ def test_an_unknown_source_is_refused(client, signed_in):
 
 
 def test_the_domain_reaching_the_source_is_never_the_callers(client, signed_in, monkeypatch):
-    from app.routers import home as router
+    from app import config
     seen = {}
-    monkeypatch.setattr(router, "configured_domain", lambda: "trusted.example")
-    monkeypatch.setattr(router.core_home, "shelves",
-                        lambda source, host: seen.setdefault("host", host) or [])
+    monkeypatch.setattr(config, "configured_domain", lambda: "trusted.example")
+    monkeypatch.setattr(home, "shelves",
+                        lambda source, host: seen.update(host=host) or [])
 
     client.get("/api/home?domain=attacker.example&host=attacker.example")
 

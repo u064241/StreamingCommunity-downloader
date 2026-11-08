@@ -39,12 +39,13 @@ def test_download_endpoints_no_longer_accept_a_domain(client, signed_in, stub_jo
 
 
 def test_search_ignores_a_domain_from_the_query_string(client, signed_in, monkeypatch):
-    from app.routers import search
+    from app import config
+    from app.core import page
 
     seen = {}
-    monkeypatch.setattr(search, "configured_domain", lambda: "trusted.example")
+    monkeypatch.setattr(config, "configured_domain", lambda: "trusted.example")
     monkeypatch.setattr(
-        search, "core_search",
+        page, "search",
         lambda query, domain, **kwargs: seen.update(domain=domain, extra=kwargs) or [],
     )
 
@@ -56,9 +57,10 @@ def test_search_ignores_a_domain_from_the_query_string(client, signed_in, monkey
 
 
 def test_endpoints_refuse_to_run_without_a_configured_domain(client, signed_in, monkeypatch):
-    from app.routers import downloads, search
+    from app import config
+    from app.routers import downloads
     monkeypatch.setattr(downloads, "configured_domain", lambda: "")
-    monkeypatch.setattr(search, "configured_domain", lambda: "")
+    monkeypatch.setattr(config, "configured_domain", lambda: "")
 
     assert client.get("/api/search?q=abc").status_code == 409
     assert client.post(

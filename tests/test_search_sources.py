@@ -476,11 +476,11 @@ def signed_in(client, admin_credentials):
 def asked(monkeypatch):
     """Record what each source was asked for, without reaching either."""
     seen = {}
+    from app import config
     from app.core import animeunity as au
-    from app.routers import search as router
 
-    monkeypatch.setattr(router, "configured_domain", lambda: "source.test")
-    monkeypatch.setattr(router, "core_search",
+    monkeypatch.setattr(config, "configured_domain", lambda: "source.test")
+    monkeypatch.setattr(page, "search",
                         lambda q, domain, **kw: seen.update(sc=(q, domain, kw)) or [])
     monkeypatch.setattr(au, "search", lambda q, **kw: seen.update(au=(q, kw)) or [])
     return seen
@@ -531,8 +531,9 @@ def test_an_unasked_dub_filter_is_not_a_refusal(client, signed_in, asked):
 
 def test_no_configured_domain_is_still_a_409(client, signed_in, monkeypatch):
     """The 409 has to survive the generic 502 wrapper below it."""
-    from app.routers import search as router
-    monkeypatch.setattr(router, "configured_domain", lambda: "")
+    from app import config
+    monkeypatch.setattr(config, "configured_domain", lambda: "")
+    monkeypatch.setattr(animeunity, "search", lambda *a, **kw: [])
 
     assert client.get("/api/search?q=abc").status_code == 409
     assert client.get("/api/search?q=abc&source=animeunity").status_code != 409

@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.auth.deps import require
 from app.auth.permissions import Permission
 from app.config import configured_domain
-from app.core.page import search as core_search
 from app.core.film import get_film_languages
 from app.core.tv import get_tv_languages
-from app.core import animeunity
+from app.providers import ProviderRegistry, get_registry
+from app.routers._providers import call_provider
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,8 @@ def _domain() -> str:
 @router.get("")
 async def search(
     q: str = Query(..., min_length=1, max_length=200),
-    # Constrained rather than free text: an unrecognised value used to fall
-    # through to StreamingCommunity in silence, and a typo answering with films
-    # is worse than a refusal.
-    source: str = Query(default="streamingcommunity",
-                        pattern="^(streamingcommunity|animeunity)$"),
+    # Only explicitly registered sources are dispatched, with no fallback.
+    source: str = Query(default="streamingcommunity", min_length=1, max_length=64),
     # 1-based, and the same number for both sources even though their pages are
     # different sizes (60 and 30): the caller asks for "the next lot" and each
     # source works out what that means. Bounded so nobody asks the source for a
@@ -47,33 +44,11 @@ async def search(
     # AnimeUnity's own capitalisation lives in animeunity.TYPES.
     media_type: str | None = Query(default=None, pattern="^(movie|tv|ova|ona|special)$"),
     dubbed: bool = Query(default=False),
+    registry: ProviderRegistry = Depends(get_registry),
 ):
-    # One pattern cannot express two vocabularies, so the rest is checked here.
-    # A false `dubbed` is the default and must not be refused — only a caller
-    # actually asking StreamingCommunity for a filter it does not have.
-    if source == "streamingcommunity":
-        if media_type and media_type not in ("movie", "tv"):
-            raise HTTPException(
-                status_code=422,
-                detail=f"Tipo '{media_type}' non valido per StreamingCommunity")
-        if dubbed:
-            raise HTTPException(
-                status_code=422,
-                detail="Il filtro doppiaggio vale solo per AnimeUnity")
-
-    try:
-        if source == "animeunity":
-            results = await asyncio.to_thread(
-                animeunity.search, q, page=page, media_type=media_type, dubbed=dubbed)
-        else:
-            results = await asyncio.to_thread(
-                core_search, q, _domain(), page=page, media_type=media_type)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Search error")
-        raise HTTPException(status_code=502, detail=str(e))
-    return results
+    results = await call_provider(
+        registry.search, source, q, page=page, media_type=media_type, dubbed=dubbed)
+    return [result.to_legacy() for result in results]
 
 
 @router.get("/languages/{title_id}")

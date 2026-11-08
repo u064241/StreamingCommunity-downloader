@@ -28,10 +28,9 @@ def _no_outbound_source(monkeypatch):
     the source changes nothing they measure. Unmocked, the search case resolves
     a hostname for real on every parametrised run.
     """
-    from app.core import animeunity, home
-    from app.routers import search as search_router
+    from app.core import animeunity, home, page
 
-    monkeypatch.setattr(search_router, "core_search", lambda *a, **kw: [])
+    monkeypatch.setattr(page, "search", lambda *a, **kw: [])
     monkeypatch.setattr(animeunity, "search", lambda *a, **kw: [])
     monkeypatch.setattr(home, "shelves", lambda *a, **kw: [])
 
