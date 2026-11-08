@@ -12,8 +12,6 @@
   <b>u064241 fork</b> — Windows installer, portable mode, verified releases and in-panel update checks.
 </p>
 
-> This repository is a customized fork of
-> [EdoardoFiore/StreamingCommunity-downloader](https://github.com/EdoardoFiore/StreamingCommunity-downloader).
 > Releases for this variant are published from
 > [u064241/StreamingCommunity-downloader](https://github.com/u064241/StreamingCommunity-downloader).
 
