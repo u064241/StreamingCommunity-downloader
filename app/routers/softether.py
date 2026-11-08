@@ -16,6 +16,8 @@ import sys
 import tempfile
 import threading
 import time
+import csv
+import io
 from urllib.parse import urlsplit
 
 import requests
@@ -30,8 +32,11 @@ from app.core.softether_releases import REPOSITORY, select_windows_client
 _TOKEN = secrets.token_urlsafe(32)
 _MANAGERS = ("vpncmgr_x64.exe", "vpncmgr.exe")
 _RELEASES_URL = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"
+_VPNGATE_URL = "https://www.vpngate.net/api/iphone/"
 _release_cache = None
 _release_lock = threading.Lock()
+_vpngate_cache = None
+_vpngate_lock = threading.Lock()
 
 
 def _loopback(host):
@@ -185,6 +190,42 @@ def _release_status():
         return dict(result)
 
 
+def _vpngate_servers():
+    global _vpngate_cache
+    now = time.monotonic()
+    with _vpngate_lock:
+        if _vpngate_cache and now - _vpngate_cache[0] < 10 * 60:
+            return list(_vpngate_cache[1])
+        try:
+            response = requests.get(_VPNGATE_URL, timeout=(4, 12))
+            response.raise_for_status()
+            text = response.content.decode("utf-8", errors="replace")
+            lines = [line for line in text.splitlines() if line and not line.startswith("*")]
+            header_index = next(i for i, line in enumerate(lines) if line.startswith("#HostName,"))
+            reader = csv.DictReader([lines[header_index][1:], *lines[header_index + 1:]])
+            servers = []
+            for row in reader:
+                try:
+                    ipaddress.ip_address(row.get("IP", ""))
+                    ping = int(row.get("Ping", "-1"))
+                    speed = int(row.get("Speed", "0"))
+                except (ValueError, TypeError):
+                    continue
+                if ping < 0 or speed <= 0:
+                    continue
+                servers.append({
+                    "host": row["IP"], "name": row.get("HostName", ""),
+                    "country": row.get("CountryLong", ""), "countryCode": row.get("CountryShort", ""),
+                    "ping": ping, "speed": speed, "sessions": int(row.get("NumVpnSessions", "0") or 0),
+                })
+            servers.sort(key=lambda item: (item["ping"], -item["speed"]))
+            servers = servers[:50]
+        except (requests.RequestException, ValueError, StopIteration, KeyError):
+            servers = []
+        _vpngate_cache = (now, servers)
+        return list(servers)
+
+
 @router.get("/status")
 def status():
     manager = _detect()
@@ -198,6 +239,12 @@ def status():
 @router.get("/updates")
 def updates():
     return JSONResponse(_release_status(), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/vpngate")
+def vpngate():
+    return JSONResponse({"servers": _vpngate_servers(), "source": _VPNGATE_URL},
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.post("/install")

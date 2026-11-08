@@ -275,11 +275,15 @@
       display: block;
       transition: transform .32s ease;
     }
-    /* A fallback poster still fills the same visual frame as a backdrop. The
-       source card is deliberately not letterboxed: empty side bands made the
-       artwork look smaller than the original catalogue. */
+    /* A poster fallback must remain fully visible inside the rectangular card.
+       Backdrops still use cover; only poster-only cards get side bands instead
+       of cropping the artwork. */
     .poster-wrap.poster-fallback { aspect-ratio: 16/9; }
-    .poster-wrap.poster-fallback img { object-fit: cover; object-position: center center; }
+    .poster-wrap.poster-fallback img {
+      object-fit: contain;
+      object-position: center center;
+      background: #080b12;
+    }
 
     /* The card itself provides the hover zoom. Keeping the artwork at its
        natural scale avoids the double crop visible on poster-sized sources. */
@@ -636,6 +640,9 @@
       padding-top: 20px;
       margin-top: 24px;
     }
+
+    .softether-vpngate-list { display: grid; gap: .35rem; max-width: 46rem; }
+    .softether-vpngate-row { display: flex; justify-content: space-between; gap: 1rem; padding: .4rem .6rem; border: 1px solid var(--border-color, #273044); border-radius: .4rem; }
     .settings-pane { padding-top: 4px; }
     .settings-section-hint {
       font-size: 12px;

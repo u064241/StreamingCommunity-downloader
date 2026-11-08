@@ -92,6 +92,7 @@ const api = {
 
 const softetherApi = {
   status: () => api.get('/api/softether/status'),
+  vpngate: () => api.get('/api/softether/vpngate'),
   updates: () => api.get('/api/softether/updates'),
   install: token => api.request('POST', '/api/softether/install', { headers: { 'X-SoftEther-Token': token } }),
   downloadUpdate: token => api.request('POST', '/api/softether/download-update', { headers: { 'X-SoftEther-Token': token } }),

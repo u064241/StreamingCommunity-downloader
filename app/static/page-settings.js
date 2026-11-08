@@ -151,6 +151,20 @@ async function downloadSoftEtherUpdate() {
   } finally { if (button) button.disabled = false; }
 }
 
+async function loadVpnGateServers() {
+  const target = document.getElementById('softether-vpngate');
+  if (!target) return;
+  _settingsText(target, t('softether.vpngateChecking'));
+  try {
+    const result = await softetherApi.vpngate();
+    const servers = result.servers || [];
+    if (!servers.length) { _settingsText(target, t('softether.vpngateEmpty')); return; }
+    target.innerHTML = `<div class="softether-vpngate-list">${servers.slice(0, 15).map(s =>
+      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps</span></div>`
+    ).join('')}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
+  } catch (error) { _feedback('softether-vpngate', _softetherError(error), 'danger'); }
+}
+
 // Each tab fetches its own data the first time it is opened, so opening the
 // modal no longer waits on the slowest section (disk usage stats every library
 // path, on an NFS mount that can be asleep).
@@ -1148,6 +1162,7 @@ registerActions({
   'cfg:softetherInstall': () => installSoftEther(),
   'cfg:softetherUpdates': () => checkSoftEtherUpdates(),
   'cfg:softetherDownloadUpdate': () => downloadSoftEtherUpdate(),
+  'cfg:softetherVpnGate': () => loadVpnGateServers(),
   'cfg:refreshLogs': () => loadApplicationLogs(),
   'cfg:browseDownloadDirectory': () => browseDownloadDirectory(),
   'cfg:saveDownloadDirectory': () => saveDownloadDirectory(),
