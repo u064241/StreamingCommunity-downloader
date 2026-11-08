@@ -626,7 +626,9 @@ function _tpRenderEpisodes() {
     // no image field at all - there, reserving the slot just draws the same
     // empty box down the whole list.
     const episodeImage = ep.still || ep.image || ep.imageurl || ep.thumbnail || ep.image_url || null;
-    const still = episodeImage ? thumbHtml(episodeImage, 'th-ep-still') : '';
+    const still = episodeImage
+      ? thumbHtml(episodeImage, 'th-ep-still')
+      : `<div class="th-ep-still th-ep-placeholder" aria-hidden="true"><i class="ti ti-player-play-filled"></i></div>`;
     const plot = ep.plot ? `<div class="th-ep-plot">${escapeHtml(ep.plot)}</div>` : '';
     const dur = ep.duration ? `<span class="th-ep-dur">${escapeHtml(String(ep.duration))}m</span>` : '';
     const owned = ep.in_library
@@ -635,7 +637,7 @@ function _tpRenderEpisodes() {
         <span class="th-ep-n">${escapeHtml(String(ep.n))}</span>
         ${still}
         <div class="th-ep-body">
-          <div class="th-ep-name">${escapeHtml(ep.name || t('title.episode', {number: ep.n}))}</div>
+          <div class="th-ep-name">${escapeHtml(ep.name || ep.title || ep.episode_name || t('title.episode', {number: ep.n}))}</div>
           ${plot}
         </div>
         ${dur}${owned}

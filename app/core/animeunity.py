@@ -270,7 +270,7 @@ def get_episodes(anime_id: str) -> list[dict]:
         return []
 
     episodes = []
-    for start in range(0, episodes_count + 1, BATCH_SIZE):
+    for start in range(1, episodes_count + 1, BATCH_SIZE):
         end = min(start + BATCH_SIZE - 1, episodes_count)
         batch_r = scraper.get(
             f"https://{au_host}/info_api/{anime_id}/0",
@@ -278,7 +278,24 @@ def get_episodes(anime_id: str) -> list[dict]:
             timeout=15,
         )
         if batch_r.ok:
-            episodes.extend(batch_r.json().get("episodes", []))
+            payload = batch_r.json()
+            rows = payload.get("episodes", []) if isinstance(payload, dict) else []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                number = row.get("number") or row.get("episode") or row.get("n")
+                if number is None:
+                    continue
+                item = dict(row)
+                item["number"] = number
+                item["name"] = (row.get("name") or row.get("title") or
+                                 row.get("episode_name") or f"Episodio {number}")
+                images = row.get("images") if isinstance(row.get("images"), dict) else {}
+                item["image"] = (row.get("image") or row.get("imageurl") or
+                                  row.get("thumbnail") or row.get("still") or
+                                  row.get("image_url") or images.get("cover") or
+                                  images.get("still") or images.get("thumbnail"))
+                episodes.append(item)
 
     return episodes
 

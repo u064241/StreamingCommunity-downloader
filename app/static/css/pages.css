@@ -1242,6 +1242,13 @@
       background: var(--bg-raised);
       display: block;
     }
+    .th-ep-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 28px;
+    }
     .th-ep-body { flex: 1 1 auto; min-width: 0; padding: 11px 12px 4px; }
     .th-ep-name {
       color: var(--text); font-size: 13.5px; font-weight: 500;
