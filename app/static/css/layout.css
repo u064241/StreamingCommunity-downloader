@@ -105,7 +105,7 @@
       flex-shrink: 0;
     }
 
-    .nav-link-title { flex: 1; }
+    .nav-link-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
     /* Sidebar bottom */
     .sidebar-footer {

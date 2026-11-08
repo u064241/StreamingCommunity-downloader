@@ -38,6 +38,7 @@ async function loadTitlePage(route) {
 
   _tp = {
     ...route,
+    source: seed?.source || currentSource,
     name: seed?.name || '',
     // Not for a series: its search record has no release_date, and the
     // last_air_date itemYear() falls back to is the latest season's - the
@@ -616,7 +617,8 @@ function _tpRenderEpisodes() {
     // still that failed and false of AnimeUnity, whose episode records carry
     // no image field at all - there, reserving the slot just draws the same
     // empty box down the whole list.
-    const still = ep.still ? thumbHtml(ep.still, 'th-ep-still') : '';
+    const episodeImage = ep.still || ep.image || ep.imageurl || ep.thumbnail || ep.image_url || null;
+    const still = episodeImage ? thumbHtml(episodeImage, 'th-ep-still') : '';
     const plot = ep.plot ? `<div class="th-ep-plot">${escapeHtml(ep.plot)}</div>` : '';
     const dur = ep.duration ? `<span class="th-ep-dur">${escapeHtml(String(ep.duration))}m</span>` : '';
     const owned = ep.in_library
@@ -948,7 +950,7 @@ async function downloadAllAnime() {
 
 registerActions({
   'tp:back':          () => tpBack(),
-  'tp:crumb-search':  () => navigate('search'),
+  'tp:crumb-search':  () => { setSource(_tp?.source || currentSource); navigate('search'); },
   'tp:crumb-kind':    d => {
     navigate('search');
     window.setTimeout(() => {

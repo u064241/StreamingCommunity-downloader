@@ -202,7 +202,7 @@ function renderResultCards(items, container, baseIndex,
       : `<div class="status-ribbon" data-ribbon-for="${escapeHtml(String(item.id))}"></div>`;
     card.innerHTML = `
       <div class="result-card" data-action="search:open" data-idx="${idx}">
-        <div class="poster-wrap ${item.backdrop ? 'has-backdrop' : 'poster-fallback'}">
+        <div class="poster-wrap ${item.backdrop && item.type !== 'anime' ? 'has-backdrop' : 'poster-fallback'}">
           ${posterHtml}
           <div class="poster-noimg" style="${posterUrl?'display:none':''}">&#127916;</div>
           <div class="poster-overlay"></div>
