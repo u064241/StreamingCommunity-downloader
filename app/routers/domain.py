@@ -428,6 +428,12 @@ async def browse_download_directory(body: DownloadDirectoryUpdate):
     return {"path": selected, "cancelled": selected is None}
 
 
+@router.get("/hardware", dependencies=CAN_MANAGE)
+async def hardware():
+    from app.core.hardware_probe import probe
+    return await asyncio.to_thread(probe)
+
+
 @router.get("/video-encoders", dependencies=CAN_MANAGE)
 async def video_encoders():
     from app.core.transcode import capabilities

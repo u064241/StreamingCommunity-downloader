@@ -16,6 +16,9 @@ import sys
 import tempfile
 import threading
 import time
+import re
+import zipfile
+import shutil
 import csv
 import io
 from urllib.parse import urlsplit
@@ -24,6 +27,7 @@ import requests
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from app.auth.deps import require
 from app.auth.permissions import Permission
@@ -31,12 +35,16 @@ from app.core.softether_releases import REPOSITORY, select_windows_client
 
 _TOKEN = secrets.token_urlsafe(32)
 _MANAGERS = ("vpncmgr_x64.exe", "vpncmgr.exe")
+_VPNCMDS = ("vpncmd_x64.exe", "vpncmd.exe")
 _RELEASES_URL = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"
 _VPNGATE_URL = "https://www.vpngate.net/api/iphone/"
+_VPNGATE_DOWNLOAD_PAGE = "https://www.vpngate.net/en/download.aspx"
 _release_cache = None
 _release_lock = threading.Lock()
 _vpngate_cache = None
 _vpngate_lock = threading.Lock()
+_vpngate_jobs = {}
+_vpngate_jobs_lock = threading.Lock()
 
 
 def _loopback(host):
@@ -127,6 +135,22 @@ def _softether_roots():
             yield root
 
 
+def _find_vpncmd():
+    if os.name != "nt":
+        return None
+    for root in _softether_roots():
+        for name in _VPNCMDS:
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
+    for root in _program_files():
+        for name in _VPNCMDS:
+            candidate = root / "SoftEther VPN Client" / name
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 def _bundled_installer():
     for root in _softether_roots():
         try:
@@ -147,6 +171,101 @@ def _bundled_installer():
         except (OSError, KeyError, TypeError, ValueError):
             continue
     return None
+
+
+def _vpngate_download_url():
+    response = requests.get(_VPNGATE_DOWNLOAD_PAGE, timeout=(4, 12))
+    response.raise_for_status()
+    matches = re.findall(r'https?://[^"\'\s>]+vpngate-client-[^"\'\s>]+\.zip', response.text, re.I)
+    if not matches:
+        raise RuntimeError('VPN Gate download URL not found')
+    return matches[0]
+
+
+def _set_vpngate_job(job_id, **updates):
+    with _vpngate_jobs_lock:
+        job = _vpngate_jobs.get(job_id)
+        if job is not None:
+            job.update(updates)
+
+
+def _download_vpngate_installer(job_id):
+    url = _vpngate_download_url()
+    temp_root = Path(tempfile.mkdtemp(prefix='sc-vpngate-'))
+    archive = temp_root / 'vpngate-client.zip'
+    extracted = temp_root / 'extracted'
+    try:
+        _set_vpngate_job(job_id, state='downloading', url=url, archive=str(archive))
+        curl = shutil.which('curl.exe') or shutil.which('curl')
+        if curl:
+            completed = subprocess.Popen(
+                [curl, '--fail', '--location', '--silent', '--show-error',
+                 '--max-time', '120', '--output', str(archive), url],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+            )
+            while completed.poll() is None:
+                size = archive.stat().st_size if archive.exists() else 0
+                _set_vpngate_job(job_id, downloaded=size,
+                                 total=0, percent=None)
+                time.sleep(.25)
+            if completed.returncode:
+                raise RuntimeError('curl failed')
+        else:
+            response = requests.get(url, timeout=(5, 120), stream=True)
+            response.raise_for_status()
+            total = int(response.headers.get('content-length', '0') or 0)
+            downloaded = 0
+            with archive.open('wb') as handle:
+                for chunk in response.iter_content(1024 * 1024):
+                    if chunk:
+                        handle.write(chunk)
+                        downloaded += len(chunk)
+                        _set_vpngate_job(
+                            job_id, downloaded=downloaded, total=total,
+                            percent=round(downloaded * 100 / total, 1) if total else None,
+                        )
+        size = archive.stat().st_size if archive.exists() else 0
+        _set_vpngate_job(job_id, downloaded=size, total=size, percent=100)
+        if not archive.is_file() or archive.stat().st_size > 256 * 1024 * 1024:
+            raise RuntimeError('invalid VPN Gate archive')
+        _set_vpngate_job(job_id, state='extracting', percent=100)
+        extracted.mkdir()
+        with zipfile.ZipFile(archive) as zf:
+            if any(Path(item.filename).is_absolute() or '..' in Path(item.filename).parts for item in zf.infolist()):
+                raise RuntimeError('unsafe VPN Gate archive')
+            zf.extractall(extracted)
+        installers = sorted(extracted.rglob('vpngate-client-*.exe'))
+        if not installers:
+            raise RuntimeError('VPN Gate installer not found')
+        return temp_root, installers[0]
+    except Exception:
+        shutil.rmtree(temp_root, ignore_errors=True)
+        raise
+
+
+def _watch_vpngate_installer(job_id, process, temp_root):
+    try:
+        process.wait(timeout=30 * 60)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def _run_vpngate_install(job_id):
+    temp_root = None
+    try:
+        temp_root, installer = _download_vpngate_installer(job_id)
+        _set_vpngate_job(job_id, state='starting', installer=installer.name)
+        process = subprocess.Popen([str(installer)], executable=str(installer),
+                                   cwd=str(installer.parent), shell=False, close_fds=True)
+        _set_vpngate_job(job_id, state='started', percent=100)
+        threading.Thread(target=_watch_vpngate_installer,
+                         args=(job_id, process, temp_root), daemon=True).start()
+    except (OSError, requests.RequestException, RuntimeError, zipfile.BadZipFile) as exc:
+        if temp_root:
+            shutil.rmtree(temp_root, ignore_errors=True)
+        _set_vpngate_job(job_id, state='error', error='softether.installFailed')
 
 
 def _detect():
@@ -216,6 +335,7 @@ def _vpngate_servers():
                 servers.append({
                     "host": row["IP"], "name": row.get("HostName", ""),
                     "country": row.get("CountryLong", ""), "countryCode": row.get("CountryShort", ""),
+                    "port": int(row.get("Port", "443") or 443),
                     "ping": ping, "speed": speed, "sessions": int(row.get("NumVpnSessions", "0") or 0),
                 })
             servers.sort(key=lambda item: (item["ping"], -item["speed"]))
@@ -232,6 +352,7 @@ def status():
     return JSONResponse({
         "supported": os.name == "nt", "installed": manager is not None,
         "bundled_installer": _bundled_installer() is not None,
+        "vpngate_available": os.name == "nt",
         "token": _TOKEN,
     }, headers={"Cache-Control": "no-store"})
 
@@ -253,14 +374,28 @@ async def install(request: Request):
         raise HTTPException(400, "softether.noParameters")
     if os.name != "nt":
         raise HTTPException(409, "softether.unsupported")
-    installer = _bundled_installer()
-    if installer is None:
-        raise HTTPException(404, "softether.installerMissing")
-    try:
-        subprocess.Popen([str(installer)], executable=str(installer), cwd=str(installer.parent), shell=False, close_fds=True)
-    except OSError as exc:
-        raise HTTPException(503, "softether.installFailed") from exc
-    return {"started": True}
+    job_id = secrets.token_urlsafe(18)
+    with _vpngate_jobs_lock:
+        _vpngate_jobs[job_id] = {
+            "state": "queued", "percent": 0, "downloaded": 0,
+            "total": 0, "created": time.monotonic(),
+        }
+    threading.Thread(target=_run_vpngate_install, args=(job_id,), daemon=True).start()
+    return {"started": True, "source": "vpngate", "job_id": job_id}
+
+
+@router.get("/install-status")
+def install_status(job: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{12,64}", job or ""):
+        raise HTTPException(400, "softether.invalidJob")
+    with _vpngate_jobs_lock:
+        result = _vpngate_jobs.get(job)
+        if result is None:
+            raise HTTPException(404, "softether.jobNotFound")
+        result = dict(result)
+    result.pop("archive", None)
+    result.pop("created", None)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/download-update")
@@ -317,6 +452,42 @@ async def download_update(request: Request):
             pass
         raise HTTPException(502, "softether.downloadFailed") from exc
     return {"started": True, "version": release["version"]}
+
+
+class VpnGateProfile(BaseModel):
+    host: str = Field(min_length=1, max_length=64)
+    port: int = Field(ge=1, le=65535)
+    name: str = Field(default="VPN Gate", min_length=1, max_length=64)
+
+
+@router.post("/vpngate/profile")
+async def create_vpngate_profile(body: VpnGateProfile, request: Request):
+    """Create a VPN Gate account profile, but never connect it automatically."""
+    if request.query_params:
+        raise HTTPException(400, "softether.noParameters")
+    try:
+        ipaddress.ip_address(body.host)
+    except ValueError as exc:
+        raise HTTPException(422, "softether.invalidServer") from exc
+    cmd = _find_vpncmd()
+    if cmd is None:
+        raise HTTPException(404, "softether.missing")
+    if not re.fullmatch(r"[A-Za-z0-9 ._-]+", body.name):
+        raise HTTPException(422, "softether.invalidProfileName")
+    result = subprocess.run([
+        str(cmd), "/client", "localhost", "/cmd", "AccountCreate",
+        body.name, f"/SERVER:{body.host}:{body.port}", "/HUB:VPNGATE",
+        "/USERNAME:vpn",
+    ], capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode != 0:
+        raise HTTPException(502, "softether.profileFailed")
+    password = subprocess.run([
+        str(cmd), "/client", "localhost", "/cmd", "AccountPasswordSet",
+        body.name, "/PASSWORD:vpn", "/TYPE:standard",
+    ], capture_output=True, text=True, timeout=20, check=False)
+    if password.returncode != 0:
+        raise HTTPException(502, "softether.profileFailed")
+    return {"created": True, "name": body.name, "host": body.host, "port": body.port}
 
 
 @router.post("/open-manager")

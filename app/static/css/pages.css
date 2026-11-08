@@ -643,6 +643,8 @@
 
     .softether-vpngate-list { display: grid; gap: .35rem; max-width: 46rem; }
     .softether-vpngate-row { display: flex; justify-content: space-between; gap: 1rem; padding: .4rem .6rem; border: 1px solid var(--border-color, #273044); border-radius: .4rem; }
+    .softether-install-progress { display: flex; flex-direction: column; gap: .25rem; max-width: 36rem; }
+    .softether-install-progress progress { width: 100%; height: .65rem; accent-color: var(--primary, #3d6df2); }
     .settings-pane { padding-top: 4px; }
     .settings-section-hint {
       font-size: 12px;

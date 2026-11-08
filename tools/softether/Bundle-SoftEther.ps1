@@ -1,8 +1,10 @@
-# Dot-source from build.ps1. This script never executes or downloads SoftEther.
+# Legacy compatibility shim. VPN Gate is downloaded from the official source at runtime.
 function Get-SoftEtherFileEntries {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$ProjectRoot)
 
+    return ''
+    <#
     $bundleRoot = Join-Path $ProjectRoot 'tools\softether'
     $manifest = Get-Content -LiteralPath (Join-Path $bundleRoot 'bundle.json') -Raw | ConvertFrom-Json
     if ($manifest.fileName -notmatch '^softether-vpnclient-v[0-9]+\.[0-9]+-[0-9]+-rtm-[0-9]{4}\.[0-9]{2}\.[0-9]{2}-windows-x86_x64-intel\.exe$') {
@@ -35,5 +37,5 @@ function Get-SoftEtherFileEntries {
         $destination = if ($source -like '*\notices\*') { '{app}\tools\softether\notices' } else { '{app}\tools\softether' }
         'Source: "{0}"; DestDir: "{1}"; Flags: ignoreversion' -f $source, $destination
     }
-    return $entries -join "`r`n"
+    return $entries -join "`r`n" #>
 }

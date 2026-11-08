@@ -37,6 +37,7 @@ function _feedback(id, message = '', kind = 'muted') {
 }
 
 let _softetherBusy = false;
+let _softetherBlockDetected = false;
 
 function _softetherError(error) {
   const key = error instanceof ApiError ? error.data?.detail : null;
@@ -60,10 +61,10 @@ async function loadSoftEtherStatus(openManager = false) {
   try {
     const status = await softetherApi.status();
     available = status.supported && status.installed;
-    if (install) install.hidden = available || !status.bundled_installer;
+    if (install) install.hidden = available || !status.vpngate_available || !_softetherBlockDetected;
     if (updateCheck) updateCheck.disabled = !available;
     const bundledHint = document.getElementById('softether-bundled-hint');
-    if (bundledHint) bundledHint.hidden = available || !status.bundled_installer;
+    if (bundledHint) bundledHint.hidden = available || !status.vpngate_available || !_softetherBlockDetected;
     const key = !status.supported ? 'softether.unsupported'
       : status.installed ? 'softether.ready' : 'softether.missing';
     _feedback('softether-status', t(key), available ? 'success' : 'warning');
@@ -82,20 +83,48 @@ async function loadSoftEtherStatus(openManager = false) {
 
 async function installSoftEther() {
   const button = document.getElementById('softether-install');
+  const progress = document.getElementById('softether-install-progress');
+  const bar = document.getElementById('softether-install-progress-bar');
+  const label = document.getElementById('softether-install-progress-label');
   if (button) button.disabled = true;
+  if (progress) progress.hidden = false;
+  if (bar) { bar.value = 0; bar.removeAttribute('aria-valuenow'); }
+  if (label) _settingsText(label, t('softether.installQueued'));
   _feedback('softether-status', t('softether.startingInstall'), 'warning');
   try {
     const status = await softetherApi.status();
-    await softetherApi.install(status.token);
+    const started = await softetherApi.install(status.token);
+    let current;
+    do {
+      current = await softetherApi.installStatus(started.job_id);
+      const percent = Number.isFinite(current.percent) ? current.percent : null;
+      if (bar && percent !== null) { bar.value = percent; bar.setAttribute('aria-valuenow', String(percent)); }
+      if (label) {
+        const key = current.state === 'downloading' ? 'softether.installProgress'
+          : current.state === 'extracting' ? 'softether.extracting'
+          : current.state === 'starting' ? 'softether.startingInstaller'
+          : current.state === 'started' ? 'softether.installComplete' : 'softether.installQueued';
+        _settingsText(label, key === 'softether.installProgress'
+          ? t(key, { percent: percent === null ? '…' : Math.round(percent) }) : t(key));
+      }
+      if (current.state === 'error') throw new Error(current.error || 'softether.installFailed');
+      if (!['started', 'error'].includes(current.state)) await new Promise(resolve => setTimeout(resolve, 700));
+    } while (current.state !== 'started');
     _feedback('softether-status', t('softether.installStarted'), 'success');
+    // The external installer needs user interaction. Once it exits, refresh
+    // the local detection so the UI reflects the newly installed Client Manager.
+    await new Promise(resolve => setTimeout(resolve, 1200));
   } catch (error) {
     _feedback('softether-status', _softetherError(error), 'danger');
   } finally {
     if (button) button.disabled = false;
+    if (progress) progress.hidden = true;
+    await loadSoftEtherStatus();
   }
 }
 
 window.addEventListener('softether:block-detected', async () => {
+  _softetherBlockDetected = true;
   const page = document.getElementById('page-settings');
   if (!page || page.style.display === 'none') return;
   await loadSoftEtherStatus();
@@ -159,9 +188,20 @@ async function loadVpnGateServers() {
     const result = await softetherApi.vpngate();
     const servers = result.servers || [];
     if (!servers.length) { _settingsText(target, t('softether.vpngateEmpty')); return; }
-    target.innerHTML = `<div class="softether-vpngate-list">${servers.slice(0, 15).map(s =>
-      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps</span></div>`
+    target.innerHTML = `<div class="softether-vpngate-list">${servers.slice(0, 15).map((s, i) =>
+      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}:${s.port || 443}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps <button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button></span></div>`
     ).join('')}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
+    target.querySelectorAll('[data-vpngate-index]').forEach(button => button.addEventListener('click', async () => {
+      const server = servers[Number(button.dataset.vpngateIndex)];
+      button.disabled = true;
+      try {
+        const status = await softetherApi.status();
+        await softetherApi.createVpnGateProfile({host: server.host, port: server.port || 443,
+          name: `VPN Gate ${server.countryCode || server.host}`}, status.token);
+        _settingsText(target, t('softether.vpngateCreated'));
+      } catch (error) { _feedback('softether-vpngate', _softetherError(error), 'danger'); }
+      finally { button.disabled = false; }
+    }));
   } catch (error) { _feedback('softether-vpngate', _softetherError(error), 'danger'); }
 }
 
@@ -1157,6 +1197,7 @@ async function _copyWithToast(text, what) {
 // ── Delegated handlers ───────────────────────────────────────────────────────
 
 registerActions({
+  'cfg:probeHardware': () => probeHardware(),
   'cfg:softetherStatus': () => loadSoftEtherStatus(),
   'cfg:softetherOpen': () => openSoftEtherManager(),
   'cfg:softetherInstall': () => installSoftEther(),
@@ -1276,6 +1317,49 @@ async function browseDownloadDirectory() {
 }
 
 
+let _hardwareData = null;
+
+function renderHardwareResults(data) {
+    const target = document.getElementById('hardware-results');
+    if (!target) return;
+    target.replaceChildren();
+    _settingsTextBindings.delete(target);
+    const unknown = t('settings.hardware.unknown');
+    const gib = value => value == null ? unknown : (value / 1024 ** 3).toFixed(1) + ' GiB';
+    const line = (key, values) => {
+      const node = document.createElement('div');
+      _settingsText(node, t(key, values));
+      target.appendChild(node);
+    };
+    line('settings.hardware.cpu', {name: data.cpu.name || unknown,
+      cores: data.cpu.physical_cores ?? unknown, threads: data.cpu.logical_threads ?? unknown});
+    line('settings.hardware.ram', {total: gib(data.memory.total_bytes), available: gib(data.memory.available_bytes)});
+    if (!data.gpus.length) line('settings.hardware.noGpu');
+    for (const gpu of data.gpus) line('settings.hardware.gpu', {name: gpu.name, vram: gib(gpu.vram_bytes)});
+    line('settings.hardware.encoders', {encoders: data.encoders.filter(row => row.available).map(row => row.encoder).join(', ') || unknown});
+    const r = data.recommendations;
+    if (r.video_encoder) {
+      line('settings.hardware.conversion', {encoder: r.video_encoder,
+        codec: r.video_codec, count: r.max_parallel_conversions});
+    } else line('settings.hardware.noEncoder');
+    line('settings.hardware.downloads', {count: r.max_concurrent_downloads, workers: r.max_segment_workers});
+    line('settings.hardware.advice');
+    if (data.warnings.length) line('settings.hardware.partial');
+}
+
+async function probeHardware() {
+  const button = document.getElementById('probe-hardware');
+  const target = document.getElementById('hardware-results');
+  button.disabled = true;
+  _hardwareData = null;
+  _settingsText(target, t('settings.hardware.scanning'));
+  try {
+    _hardwareData = await api.get('/api/domain/hardware');
+    renderHardwareResults(_hardwareData);
+  } catch (e) { _settingsText(target, t('settings.hardware.failed')); }
+  finally { button.disabled = false; }
+}
+
 async function loadVideoSettings() {
   const data = await _loadAppSettings();
   if (data) {
@@ -1335,6 +1419,7 @@ window.addEventListener('sc:language-changed', () => {
   const focusId = focused?.id;
   const selection = typeof focused?.selectionStart === 'number'
     ? [focused.selectionStart, focused.selectionEnd] : null;
+  if (_hardwareData && !document.getElementById('probe-hardware')?.disabled) renderHardwareResults(_hardwareData);
   if (document.querySelector('#libraries-list [id^="lib-path-"]')) _syncLibs();
   renderLibrariesList();
   renderNotificationChannelsList();

@@ -20,7 +20,7 @@ Uso:
   .\build.ps1                              Build locale, con installer se disponibile
   .\build.ps1 -SkipInnoSetup               Salta la compilazione dell'installer
   .\build.ps1 -PrepareRelease              Incrementa la patch e prepara note/commit
-  .\build.ps1 -PublishPreparedRelease      Compila, pulisce, aggiorna SoftEther e pubblica la release preparata
+  .\build.ps1 -PublishPreparedRelease      Compila, pulisce e pubblica la release preparata
   .\build.ps1 -Help                        Mostra questo aiuto
 
 Prerequisiti:
@@ -38,16 +38,11 @@ $CommitAll = $PrepareRelease
 $Release = $PublishPreparedRelease
 $CleanReleaseArtifacts = $PublishPreparedRelease
 $PublishRelease = $PublishPreparedRelease
-$IncludeSoftEtherInstaller = $PublishPreparedRelease
 
 $ProjectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
 $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
-$localSoftEtherPayload = Join-Path $ProjectRoot 'tools\softether\payload'
-if (-not $PublishPreparedRelease -and -not $SkipInnoSetup -and (Test-Path -LiteralPath $localSoftEtherPayload -PathType Container)) {
-    $IncludeSoftEtherInstaller = $true
-}
 
 function Get-AutoReleaseNotes([string]$Version) {
     $previousTag = (& git -C $ProjectRoot tag --sort=-version:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1)
@@ -82,7 +77,7 @@ function Get-AutoReleaseNotes([string]$Version) {
     return ($lines -join "`n") + "`n"
 }
 
-if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup -or $IncludeSoftEtherInstaller)) {
+if ($BumpPatchVersion -and ($Release -or $PublishRelease -or $CleanReleaseArtifacts -or $SkipInnoSetup)) {
     throw '-BumpPatchVersion va usato da solo.'
 }
 if ($Commit -and -not $BumpPatchVersion) {
@@ -183,11 +178,6 @@ if ($PublishRelease) { $ReleaseCommit = Assert-ReleaseReady }
 
 # Validate before compilation or dependency installation; no downloads or setup execution.
 $SoftEtherFileEntries = ''
-if ($IncludeSoftEtherInstaller) {
-    if ($SkipInnoSetup) { throw '-IncludeSoftEtherInstaller richiede Inno Setup.' }
-    . (Join-Path $ProjectRoot 'tools\softether\Bundle-SoftEther.ps1')
-    $SoftEtherFileEntries = Get-SoftEtherFileEntries -ProjectRoot $ProjectRoot
-}
 
 function Resolve-Python {
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
@@ -256,9 +246,6 @@ function Remove-PythonCaches([string]$Directory) {
     }
 }
 
-if ($IncludeSoftEtherInstaller -and -not (Find-InnoCompiler)) {
-    throw 'Inno Setup richiesto per includere il setup SoftEther.'
-}
 
 try {
     $env:PYTHONDONTWRITEBYTECODE = '1'

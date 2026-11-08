@@ -1,4 +1,4 @@
-# Verification only: never execute the VPN setup or generated Inno installer.
+# Verification only: VPN Gate is downloaded at runtime; no local payload is expected.
 [CmdletBinding()]
 param([switch]$CompileRecipe)
 $ErrorActionPreference = 'Stop'
@@ -11,31 +11,9 @@ foreach ($file in @('build.ps1', 'tools\softether\Bundle-SoftEther.ps1')) {
     if ($file -eq 'build.ps1') { $buildAst = $ast }
 }
 . (Join-Path $ProjectRoot 'tools\softether\Bundle-SoftEther.ps1')
-$SoftEtherFileEntries = Get-SoftEtherFileEntries -ProjectRoot $ProjectRoot
-if (@($SoftEtherFileEntries -split "`r`n").Count -ne 6 -or
-    $SoftEtherFileEntries -match '(?im)^\s*(Filename:|\[Run\])') {
-    throw 'Expected six copy-only file entries'
-}
-Write-Output 'PASS: original binary hash, size, signature and bundled notices'
-
-& {
-    function Get-FileHash { param($LiteralPath, $Algorithm) [pscustomobject]@{ Hash = '0' * 64 } }
-    $rejected = $false
-    try { Get-SoftEtherFileEntries -ProjectRoot $ProjectRoot | Out-Null }
-    catch { if ($_.Exception.Message -notlike '*SHA256*') { throw }; $rejected = $true }
-    if (-not $rejected) { throw 'Tampered hash was accepted' }
-}
-& {
-    function Get-AuthenticodeSignature {
-        param($LiteralPath)
-        [pscustomobject]@{ Status = 'NotSigned'; SignerCertificate = $null }
-    }
-    $rejected = $false
-    try { Get-SoftEtherFileEntries -ProjectRoot $ProjectRoot | Out-Null }
-    catch { if ($_.Exception.Message -notlike '*Authenticode*') { throw }; $rejected = $true }
-    if (-not $rejected) { throw 'Invalid signature was accepted' }
-}
-Write-Output 'PASS: tampered hash and invalid signature rejected'
+if ((Get-SoftEtherFileEntries -ProjectRoot $ProjectRoot) -ne '') { throw 'Legacy payload shim is not empty.' }
+if ((Get-Content (Join-Path $ProjectRoot 'build.ps1') -Raw) -match 'IncludeSoftEtherInstaller|localSoftEtherPayload') { throw 'build.ps1 still references local payload.' }
+Write-Output 'PASS: runtime VPN Gate download and no local payload'
 
 if ($CompileRecipe) {
     # Compile the production recipe with empty app fixtures; this is not a release.

@@ -75,6 +75,10 @@
                   data-action="cfg:softetherDownloadUpdate" data-i18n="softether.downloadUpdate" hidden>Scarica e installa aggiornamento</button>
           <span id="softether-remote-hint" class="form-text" data-i18n="softether.remoteHint" hidden>Questo pulsante scarica l’ultima release ufficiale da GitHub.</span>
         </div>
+        <div id="softether-install-progress" class="softether-install-progress mt-2" hidden>
+          <progress id="softether-install-progress-bar" max="100" value="0" aria-label="Download VPN Gate"></progress>
+          <span id="softether-install-progress-label" class="form-text" data-i18n="softether.installQueued">Preparazione download…</span>
+        </div>
         <div class="settings-actions mt-3">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:softetherVpnGate" data-i18n="softether.vpngate">Mostra server VPN Gate</button>
         </div>
@@ -353,6 +357,12 @@
       </div>
 
       <div class="settings-pane" data-settings-pane="download" style="display:none">
+      <div class="settings-section">
+        <p class="settings-section-label" data-i18n="settings.hardware.title">Hardware e suggerimenti</p>
+        <p class="settings-section-hint" data-i18n="settings.hardware.hint">Analizza il computer che esegue il portale. I suggerimenti sono indicativi e non modificano le impostazioni.</p>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="probe-hardware" data-action="cfg:probeHardware" data-i18n="settings.hardware.scan">Analizza hardware</button>
+        <div id="hardware-results" class="form-text mt-2" role="status" aria-live="polite"></div>
+      </div>
       <div class="settings-section">
         <p class="settings-section-label" data-i18n="settings.video.conversion.after.download">Conversione video dopo il download</p>
         <p class="settings-section-hint" data-i18n="settings.original.mode.preserves.source.quality.conversion.is.optional">La modalità Originale conserva la qualità della sorgente. La conversione è facoltativa, richiede tempo e può ridurre qualità e dimensioni. Si applica ai nuovi download; audio e sottotitoli vengono conservati. Una conversione alla volta.</p>

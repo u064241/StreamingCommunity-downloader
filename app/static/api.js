@@ -93,8 +93,12 @@ const api = {
 const softetherApi = {
   status: () => api.get('/api/softether/status'),
   vpngate: () => api.get('/api/softether/vpngate'),
+  createVpnGateProfile: (body, token) => api.request('POST', '/api/softether/vpngate/profile', {
+    body, headers: { 'X-SoftEther-Token': token },
+  }),
   updates: () => api.get('/api/softether/updates'),
   install: token => api.request('POST', '/api/softether/install', { headers: { 'X-SoftEther-Token': token } }),
+  installStatus: job => api.get('/api/softether/install-status', { job }),
   downloadUpdate: token => api.request('POST', '/api/softether/download-update', { headers: { 'X-SoftEther-Token': token } }),
   openManager: token => api.request('POST', '/api/softether/open-manager', {
     headers: { 'X-SoftEther-Token': token },
