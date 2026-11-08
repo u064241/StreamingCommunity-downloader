@@ -578,7 +578,11 @@ end;
         $checksums | Set-Content -LiteralPath (Join-Path $DistDir 'SHA256SUMS.txt') -Encoding ascii
         Write-Host "Release manifest: $manifestPath" -ForegroundColor Green
         if ($CleanReleaseArtifacts -and $outputPath -ne $exePath) {
-            Remove-Item -LiteralPath $exePath, $helperExePath -Force
+            foreach ($intermediate in @($exePath, $helperExePath)) {
+                if (Test-Path -LiteralPath $intermediate -PathType Leaf) {
+                    Remove-Item -LiteralPath $intermediate -Force
+                }
+            }
             Get-ChildItem -LiteralPath $DistDir -Filter "$AppName-*-Portable.zip" -File |
                 Where-Object { $_.FullName -ne $portablePath } |
                 Remove-Item -Force
