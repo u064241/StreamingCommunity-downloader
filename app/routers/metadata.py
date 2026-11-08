@@ -6,6 +6,7 @@ nothing to configure and no credential to hold.
 
 import asyncio
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
@@ -26,6 +27,7 @@ async def get_title_metadata(
     title_id: str = Path(min_length=1, max_length=64),
     slug: str = Query("", max_length=200),
     version: str = Query("", max_length=200),
+    source: Literal["streamingcommunity"] = "streamingcommunity",
 ):
     """Plot, genres, artwork and a trailer, from whichever provider answered.
 
@@ -40,8 +42,8 @@ async def get_title_metadata(
 
     try:
         return await asyncio.to_thread(
-            metadata.title_metadata, media_type, title_id, slug, version
+            metadata.title_metadata, media_type, title_id, slug, version, source=source
         )
     except Exception:
         logger.exception("Metadata lookup failed for %s/%s", media_type, title_id)
-        return dict(metadata.EMPTY)
+        return {**metadata.EMPTY, "provider": source, "external_id": str(title_id)}

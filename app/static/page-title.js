@@ -14,7 +14,8 @@ let _tpToken = 0;    // guards against a slow response painting over a newer tit
 
 function titleHash(item) {
   const kind = item.type === 'anime' ? 'anime' : (item.type === 'movie' ? 'movie' : 'tv');
-  return hashFor('detail', [kind, item.id, item.slug || '']);
+  const source = item.source || (kind === 'anime' ? 'animeunity' : 'streamingcommunity');
+  return hashFor('detail', [kind, item.id, item.slug || ''], {src: source});
 }
 
 // From a result card or a shelf.
@@ -32,13 +33,14 @@ async function loadTitlePage(route) {
   // before the boot knows it — it used to be sent empty and the endpoint
   // answered "field required". ensureDomain() is now shared with the search,
   // which needs the same guarantee for the same reason.
-  await ensureDomain();
+  const source = route.source || _tpSeed?.source || (route.type === 'anime' ? 'animeunity' : 'streamingcommunity');
+  if (source === 'streamingcommunity') await ensureDomain();
   if (token !== _tpToken) return;
   const seed = _tpSeed; _tpSeed = null;
 
   _tp = {
     ...route,
-    source: seed?.source || currentSource,
+    source,
     name: seed?.name || '',
     // Not for a series: its search record has no release_date, and the
     // last_air_date itemYear() falls back to is the latest season's - the
@@ -96,11 +98,11 @@ async function loadTitlePage(route) {
   showPage('detail');
   _tpRender();
   // Which library folder holds this title - for whoever manages the library.
-  libRenderTitleCard(route, _tp.name);
+  libRenderTitleCard(_tp, _tp.name);
 
   let metaReady = Promise.resolve();
   if (route.type !== 'anime') {
-    const q = { slug: route.slug, version: currentVersion || '' };
+    const q = { slug: route.slug, version: currentVersion || '', source: _tp.source };
     // Metadata and the track list are independent: one reads the title page,
     // the other reaches the stream host. Neither waits on the other.
     metaReady = api.get(`/api/metadata/${route.type}/${route.id}`, q)
@@ -109,6 +111,9 @@ async function loadTitlePage(route) {
 
     metaReady.then(() => {
       if (token !== _tpToken || _tp.comingSoon) return {audio: [], subtitles: []};
+      // /search/languages still belongs to StreamingCommunity. A provider
+      // without a track adapter must not accidentally query that source.
+      if (_tp.source !== 'streamingcommunity') throw new Error(t('title.sourceUnavailable'));
       return api.get(`/api/search/languages/${route.id}`,
             { type: route.type, slug: route.slug, version: currentVersion || '' });
     })
@@ -181,10 +186,11 @@ async function tpLoadSeason(n, token = _tpToken) {
   _tp.episodes = null;                       // renders the loading state
   _tpRenderEpisodes();
   try {
-    const tk = await api.get(`/api/tv/${_tp.id}/token`);
+    const tk = await api.get(`/api/tv/${_tp.id}/token`, {source: _tp.source});
     const eps = await api.get(`/api/tv/${_tp.id}/seasons/${n}/episodes`, {
       slug: _tp.slug, version: currentVersion || '', token: tk.token,
       title: _tp.name, year: _tp.year || '',
+      source: _tp.source,
     });
     if (token !== _tpToken) return;
     _tp.episodes = eps;
@@ -203,7 +209,7 @@ async function _tpLoadAnime(token) {
   _tp.episodes = null;
   _tpRenderEpisodes();
   try {
-    const eps = await api.get(`/api/anime/${_tp.id}/episodes`);
+    const eps = await api.get(`/api/anime/${_tp.id}/episodes`, {source: _tp.source});
     if (token !== _tpToken) return;
     // Spread, not a projection: startAnimeDownload reads episode.number and
     // posts the whole record back. Narrowing it to {id, n} here sent the API
@@ -211,6 +217,7 @@ async function _tpLoadAnime(token) {
     // only so the shared row renderer has the field it expects.
     _tp.episodes = eps.map(e => ({ ...e, n: e.number ?? e.n }));
     _animeCtx = {
+      source: _tp.source,
       animeId: _tp.id, animeName: _tp.name, animeType: _tp.animeType || 'tv',
       animeYear: _tp.year, episodes: _tp.episodes,
       audioLangs: _tpPicked('audio'), subLangs: _tpPicked('subs'), scheduledAt: _tp.scheduledAt,
@@ -227,6 +234,7 @@ async function _tpLoadAnime(token) {
 // the page does not duplicate the download-vs-request branching.
 function _tpSyncEpCtx(token) {
   _epCtx = {
+    source: _tp.source,
     tvId: _tp.id, tvName: _tp.name, slug: _tp.slug, year: _tp.year,
     scheduledAt: _tp.scheduledAt, token, episodes: _tp.episodes || [],
     currentSeason: _tp.season, poster: _tp.poster,
@@ -525,7 +533,7 @@ function _tpRenderFacts() {
   // Last and quiet: the id is what an association in Settings is keyed on,
   // and the only place to read it from.
   if (_tp.id) {
-    const key = libKeyForRoute(_tp.type, _tp.id);
+    const key = libKeyForRoute(_tp.type, _tp.id, _tp.source);
     rows.push(['ID', libIdLabel(key.source, key.external_id), 'th-fact-id']);
   }
   document.getElementById('th-facts').innerHTML = rows
@@ -649,7 +657,7 @@ function tpPrimary() {
   // server-side so dedup and the library check apply to each of them.
   if (!can('DOWNLOAD') && _tp.type === 'tv') { tpRequestSeason(); return; }
   if (_tp.type === 'movie') {
-    startFilmDownload(_tp.id, _tp.name, _tp.year, _tp.scheduledAt, _tpPicked('audio'), _tpPicked('subs'), _tp.poster);
+    startFilmDownload(_tp.id, _tp.name, _tp.year, _tp.scheduledAt, _tpPicked('audio'), _tpPicked('subs'), _tp.poster, _tp.source);
   } else if (_tp.type === 'anime') {
     downloadAllAnime();
   } else if (_tp.seasonsCount > 1) {
@@ -679,7 +687,7 @@ async function tpRequestSeason() {
   if (!await scConfirm(t('title.requestSeasonConfirm', {count: n, season: _tp.season}))) return;
   try {
     const r = await api.post('/api/requests/season', {
-      source: 'streamingcommunity',
+      source: _tp.source,
       external_id: String(_tp.id), title: _tp.name, slug: _tp.slug,
       season: _tp.season, year: _tp.year || null, poster: _tp.poster || null,
       audio_languages: _tpPicked('audio'),
@@ -764,10 +772,10 @@ async function submitRequest(payload, label) {
 
 // ── Film download ──────────────────────────────────────────────────────────────
 
-async function startFilmDownload(id, title, year=null, scheduledAt=null, audioLangs=null, subLangs=null, poster=null) {
+async function startFilmDownload(id, title, year=null, scheduledAt=null, audioLangs=null, subLangs=null, poster=null, source='streamingcommunity') {
   if (!can('DOWNLOAD')) {
     const ok = await submitRequest({
-      source: currentSource, media_type: 'film', external_id: String(id),
+      source, media_type: 'film', external_id: String(id),
       title, year, poster,
       audio_languages: audioLangs || ['ita'],
       subtitle_languages: subLangs || [],
@@ -778,7 +786,7 @@ async function startFilmDownload(id, title, year=null, scheduledAt=null, audioLa
   try {
     const endpoint = scheduledAt ? '/api/download/schedule/film' : '/api/download/film';
     const body = {
-      id, title, year,
+      id, title, year, source,
       audio_languages: audioLangs || ['ita'],
       subtitle_languages: subLangs || ['ita', 'eng'],
     };
@@ -799,12 +807,13 @@ let _epCtx = {};
 
 async function startEpisodeDownload(epIndex) {
   const { tvId, tvName, slug, year, scheduledAt, token, episodes, currentSeason, audioLangs, subLangs, poster } = _epCtx;
+  const source = _epCtx.source || 'streamingcommunity';
   const ep = episodes[epIndex];
   const label = `${tvName} S${String(currentSeason).padStart(2,'0')}E${String(ep.n).padStart(2,'0')}`;
 
   if (!can('DOWNLOAD')) {
     await submitRequest({
-      source: 'streamingcommunity', media_type: 'episode', external_id: String(tvId),
+      source, media_type: 'episode', external_id: String(tvId),
       slug, title: tvName, year, poster,
       season: currentSeason, episode_number: String(ep.n),
       audio_languages: audioLangs || ['ita'],
@@ -815,7 +824,7 @@ async function startEpisodeDownload(epIndex) {
 
   const endpoint = scheduledAt ? '/api/download/schedule/episode' : '/api/download/episode';
   const body = {
-    tv_id: tvId, eps: episodes, ep_index: epIndex, token,
+    source, tv_id: tvId, eps: episodes, ep_index: epIndex, token,
     tv_name: tvName, season: currentSeason, year,
     audio_languages: audioLangs || ['ita'],
     subtitle_languages: subLangs || ['ita', 'eng'],
@@ -874,6 +883,7 @@ async function downloadWholeSeason(season) {
     : t('title.confirmSeason', {action: label, count: episodes.length, season});
   if (!await scConfirm(question)) return;
   await _startBatch('/api/download/season', {
+    source: _epCtx.source || 'streamingcommunity',
     tv_id: tvId, slug, tv_name: tvName, season, year,
     audio_languages: audioLangs, subtitle_languages: subLangs,
     scheduled_at: scheduledAt || null,
@@ -886,6 +896,7 @@ async function downloadWholeSeries() {
   const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
   if (!await scConfirm(t('title.confirmSeries', {action: label, count: seasonsCount, note: _skipNote()}))) return;
   await _startBatch('/api/download/series', {
+    source: _epCtx.source || 'streamingcommunity',
     tv_id: tvId, slug, tv_name: tvName, year,
     audio_languages: audioLangs, subtitle_languages: subLangs,
     scheduled_at: scheduledAt || null,
@@ -898,12 +909,13 @@ async function downloadWholeSeries() {
 
 async function startAnimeDownload(epIndex) {
   const { animeId, animeName, animeType, animeYear, scheduledAt, episodes, audioLangs, subLangs } = _animeCtx;
+  const source = _animeCtx.source || 'animeunity';
   const episode = episodes[epIndex];
   const label = `${animeName} E${episode.number}`;
 
   if (!can('DOWNLOAD')) {
     await submitRequest({
-      source: 'animeunity', media_type: 'anime', external_id: String(animeId),
+      source, media_type: 'anime', external_id: String(animeId),
       title: animeName, year: animeYear, anime_type: animeType,
       episode_number: String(episode.number),
       audio_languages: audioLangs || ['ita'],
@@ -914,7 +926,7 @@ async function startAnimeDownload(epIndex) {
 
   const endpoint = scheduledAt ? '/api/download/schedule/anime' : '/api/download/anime';
   const body = {
-    anime_id: animeId, episode, anime_name: animeName, anime_type: animeType, year: animeYear,
+    source, anime_id: animeId, episode, anime_name: animeName, anime_type: animeType, year: animeYear,
     audio_languages: audioLangs || ['ita'],
     subtitle_languages: subLangs || ['ita', 'eng'],
   };
@@ -932,6 +944,7 @@ async function downloadAllAnime() {
   const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
   if (!await scConfirm(t('title.confirmAnime', {action: label, count: episodes.length, note: _skipNote()}))) return;
   await _startBatch('/api/download/anime-all', {
+    source: _animeCtx.source || 'animeunity',
     anime_id: String(animeId), anime_name: animeName, anime_type: animeType,
     year: animeYear,
     audio_languages: audioLangs, subtitle_languages: subLangs,
@@ -986,7 +999,7 @@ registerActions({
 registerPageHash('detail', {
   read: () => (_tp ? {
     extra: [_tp.type, _tp.id, _tp.slug || ''],
-    params: { s: _tp.season !== _tpSeasons()[0] ? _tp.season : null },
+    params: { src: _tp.source, s: _tp.season !== _tpSeasons()[0] ? _tp.season : null },
   } : {}),
 });
 

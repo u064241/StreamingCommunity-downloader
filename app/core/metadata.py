@@ -47,6 +47,10 @@ def _now() -> float:
 
 
 EMPTY: dict = {
+    # `source` below is legacy metadata provenance (site/none). Provider identity
+    # has its own field so existing consumers and cache TTLs keep working.
+    "provider": "streamingcommunity",
+    "external_id": None,
     "source": "none",
     "plot": None,
     "genres": [],
@@ -74,7 +78,7 @@ EMPTY: dict = {
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 
-def _cache_key(media_type: str, title_id) -> tuple:
+def _cache_key(media_type: str, title_id, source: str = "streamingcommunity") -> tuple:
     """Keyed on the host as well as the title.
 
     Artwork URLs and the plot itself come from whichever domain served them, so
@@ -82,7 +86,7 @@ def _cache_key(media_type: str, title_id) -> tuple:
     the host here, a rotation kept serving the old domain's images for six
     hours — long after every one of them had stopped resolving.
     """
-    return (configured_domain(), media_type, str(title_id))
+    return (source, configured_domain(), media_type, str(title_id))
 
 
 def _cached(key: tuple) -> dict | None:
@@ -114,7 +118,7 @@ def clear_cache() -> None:
         _cache.clear()
 
 
-def cached_tmdb_id(media_type: str, title_id) -> int | None:
+def cached_tmdb_id(media_type: str, title_id, *, source: str = "streamingcommunity") -> int | None:
     """The TMDB id for this title if it is already known. Never does any I/O.
 
     A stream fallback would need an id at download time but must not pay for a
@@ -123,7 +127,9 @@ def cached_tmdb_id(media_type: str, title_id) -> int | None:
     modal has just filled this in; cold means None, which is exactly the
     behaviour there has always been.
     """
-    hit = _cached(_cache_key(media_type, title_id))
+    if source != "streamingcommunity":
+        return None
+    hit = _cached(_cache_key(media_type, title_id, source))
     return hit.get("tmdb_id") if hit else None
 
 
@@ -222,18 +228,22 @@ def _from_props(props: dict) -> dict:
 
 # ── The orchestrator ──────────────────────────────────────────────────────────
 
-def title_metadata(media_type: str, title_id, slug: str, version: str) -> dict:
+def title_metadata(media_type: str, title_id, slug: str, version: str,
+                   *, source: str = "streamingcommunity") -> dict:
     """Everything known about one title.
 
     Never raises for a missing answer: a detail modal with no plot is a modal
     with no plot, not an error page.
     """
-    key = _cache_key(media_type, title_id)
+    if source != "streamingcommunity":
+        raise ValueError(f"Metadata non disponibili per la fonte {source!r}")
+    key = _cache_key(media_type, title_id, source)
     hit = _cached(key)
     if hit is not None:
         return hit
 
-    result = _resolve(title_id, slug, version)
+    result = {**_resolve(title_id, slug, version), "provider": source,
+              "external_id": str(title_id)}
     _store(key, result)
     return result
 

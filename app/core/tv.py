@@ -227,7 +227,11 @@ def download_episode(
     subtitle_languages: list[str] = None,
     strict_audio: bool = False,
     tmdb_id: int = None,
+    *, source: str = "streamingcommunity",
 ) -> str:
+    from app.source_identity import download_source
+
+    source = download_source("episode", source)
     audio_languages = audio_languages or ["ita"]
     subtitle_languages = subtitle_languages or []
 
@@ -272,9 +276,9 @@ def download_episode(
     from app.requests.resolver import EPISODE, series_episode_path
 
     dest_path = (destination("episode", tv_id, root=output_dir, season=season,
-                             episode=ep["n"], year=year)
+                             episode=ep["n"], year=year, source=source)
                  or series_episode_path(EPISODE, tv_id, output_dir, tv_name, season,
-                                        ep["n"], year))
+                                        ep["n"], year, source=source))
 
     final_path = download_m3u8(
         m3u8_index=m3u8_url,

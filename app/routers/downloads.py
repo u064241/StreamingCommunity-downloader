@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request as HttpRequest
 from fastapi.responses import JSONResponse
@@ -56,7 +57,17 @@ def _tmdb_id(media_type: str, title_id) -> int | None:
         return None
 
 
-class FilmDownloadRequest(BaseModel):
+class StreamingCommunityRequest(BaseModel):
+    # Endpoint-specific engines remain explicit until provider download
+    # adapters exist. Reject a different source instead of quietly ignoring it.
+    source: Literal["streamingcommunity"] = "streamingcommunity"
+
+
+class AnimeUnityRequest(BaseModel):
+    source: Literal["animeunity"] = "animeunity"
+
+
+class FilmDownloadRequest(StreamingCommunityRequest):
     id: int
     title: str
     year: str | None = None
@@ -64,7 +75,7 @@ class FilmDownloadRequest(BaseModel):
     subtitle_languages: list[str] = ["ita", "eng"]
 
 
-class EpisodeDownloadRequest(BaseModel):
+class EpisodeDownloadRequest(StreamingCommunityRequest):
     tv_id: int
     eps: list[dict]
     ep_index: int
@@ -81,7 +92,7 @@ class EpisodeInfo(BaseModel):
     number: str | int
 
 
-class AnimeDownloadRequest(BaseModel):
+class AnimeDownloadRequest(AnimeUnityRequest):
     anime_id: str
     episode: EpisodeInfo
     anime_name: str
@@ -91,7 +102,7 @@ class AnimeDownloadRequest(BaseModel):
     subtitle_languages: list[str] = ["ita", "eng"]
 
 
-class SeasonDownloadRequest(BaseModel):
+class SeasonDownloadRequest(StreamingCommunityRequest):
     """A whole season, enumerated server-side.
 
     Deliberately no episode list, token or domain: the browser used to send all
@@ -110,7 +121,7 @@ class SeasonDownloadRequest(BaseModel):
     only_missing: bool = False
 
 
-class SeriesDownloadRequest(BaseModel):
+class SeriesDownloadRequest(StreamingCommunityRequest):
     tv_id: int
     slug: str
     tv_name: str
@@ -122,7 +133,7 @@ class SeriesDownloadRequest(BaseModel):
     only_missing: bool = False
 
 
-class AnimeAllDownloadRequest(BaseModel):
+class AnimeAllDownloadRequest(AnimeUnityRequest):
     anime_id: str
     anime_name: str
     anime_type: str = Field(default="tv", max_length=32)
@@ -239,13 +250,14 @@ def _episode_submits(body, tv_id, slug, tv_name, season, domain, version, token,
 
     episodes = _season_episodes(tv_id, slug, season, domain, version, token)
     indices, skipped = _missing_only(body, list(range(len(episodes))), lambda i: (
-        resolver.episode_on_disk(resolver.EPISODE, "streamingcommunity", tv_id, tv_name,
+        resolver.episode_on_disk(resolver.EPISODE, body.source, tv_id, tv_name,
                                  body.year, season, episodes[i]["n"])
     ))
 
     def make(index):
         def submit(batch_id):
             common = dict(
+                source=body.source,
                 year=body.year,
                 audio_languages=body.audio_languages,
                 subtitle_languages=body.subtitle_languages,
@@ -320,7 +332,7 @@ async def download_anime_all(body: AnimeAllDownloadRequest, http_request: HttpRe
 
         listed = get_episodes(body.anime_id) or []
         indices, skipped = _missing_only(body, list(range(len(listed))), lambda i: (
-            resolver.episode_on_disk(resolver.ANIME, "animeunity", body.anime_id,
+            resolver.episode_on_disk(resolver.ANIME, body.source, body.anime_id,
                                      body.anime_name, body.year, None,
                                      listed[i].get("number"), body.anime_type)
         ))
@@ -330,6 +342,7 @@ async def download_anime_all(body: AnimeAllDownloadRequest, http_request: HttpRe
         def make(episode):
             def submit(batch_id):
                 common = dict(
+                    source=body.source,
                     anime_type=body.anime_type, year=body.year,
                     audio_languages=body.audio_languages,
                     subtitle_languages=body.subtitle_languages,
@@ -358,6 +371,7 @@ async def download_anime_all(body: AnimeAllDownloadRequest, http_request: HttpRe
 def download_film(body: FilmDownloadRequest, http_request: HttpRequest):
     job_id = job_manager.submit_film(
         body.id, body.title, _domain(), year=body.year,
+        source=body.source,
         audio_languages=body.audio_languages,
         subtitle_languages=body.subtitle_languages,
         user_id=_acting_user_id(http_request),
@@ -374,6 +388,7 @@ def download_episode(body: EpisodeDownloadRequest, http_request: HttpRequest):
         body.tv_id, body.eps, body.ep_index,
         _domain(), body.token, body.tv_name, body.season,
         year=body.year,
+        source=body.source,
         audio_languages=body.audio_languages,
         subtitle_languages=body.subtitle_languages,
         user_id=_acting_user_id(http_request),
@@ -386,6 +401,7 @@ def download_episode(body: EpisodeDownloadRequest, http_request: HttpRequest):
 def download_anime(body: AnimeDownloadRequest, http_request: HttpRequest):
     job_id = job_manager.submit_anime_episode(
         body.anime_id, body.episode.model_dump(), body.anime_name, body.anime_type, year=body.year,
+        source=body.source,
         audio_languages=body.audio_languages,
         subtitle_languages=body.subtitle_languages,
         user_id=_acting_user_id(http_request),
@@ -399,6 +415,7 @@ def download_anime(body: AnimeDownloadRequest, http_request: HttpRequest):
 def schedule_film(body: FilmScheduleRequest, http_request: HttpRequest):
     job_id = job_manager.schedule_film(
         body.id, body.title, _domain(), body.scheduled_at, year=body.year,
+        source=body.source,
         audio_languages=body.audio_languages,
         subtitle_languages=body.subtitle_languages,
         user_id=_acting_user_id(http_request),
@@ -414,6 +431,7 @@ def schedule_episode(body: EpisodeScheduleRequest, http_request: HttpRequest):
         body.tv_id, body.eps, body.ep_index,
         _domain(), body.token, body.tv_name, body.season,
         body.scheduled_at, year=body.year,
+        source=body.source,
         audio_languages=body.audio_languages,
         subtitle_languages=body.subtitle_languages,
         user_id=_acting_user_id(http_request),
@@ -426,6 +444,7 @@ def schedule_anime(body: AnimeScheduleRequest, http_request: HttpRequest):
     job_id = job_manager.schedule_anime_episode(
         body.anime_id, body.episode.model_dump(), body.anime_name, body.scheduled_at,
         anime_type=body.anime_type, year=body.year,
+        source=body.source,
         audio_languages=body.audio_languages,
         subtitle_languages=body.subtitle_languages,
         user_id=_acting_user_id(http_request),

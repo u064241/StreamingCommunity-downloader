@@ -16,6 +16,7 @@ from typing import Callable
 from app.config import download_dir, DATA_FILE, VIDEOS_DIR
 from app.core import animeunity, container, naming, paths, probe
 from app.requests import models
+from app.source_identity import download_source
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,7 @@ def destination_path(request: models.Request, templates: dict | None = None) -> 
             request.media_type, request.external_id, root=output_dir,
             season=request.season, episode=request.episode_number, year=request.year,
             single_file=_single_file(request),
+            source=request.source,
         )
         if placed:
             return placed
@@ -108,6 +110,7 @@ def destination_path(request: models.Request, templates: dict | None = None) -> 
                 request.media_type, request.external_id, output_dir, request.title,
                 request.season or 1, request.episode_number or "1", request.year,
                 anime_type=request.anime_type,
+                source=request.source,
             )
     if request.media_type == FILM:
         return paths.film_path(output_dir, request.title, request.year, templates)
@@ -284,7 +287,7 @@ def series_home(output_dir: str, title: str, year, season, *, anime: bool = Fals
 
 def series_episode_path(media_type: str, external_id, output_dir: str, title: str,
                         season, episode_number, year, anime_type: str | None = None,
-                        container: str | None = None) -> str:
+                        container: str | None = None, *, source: str | None = None) -> str:
     """Where a new episode lands when no person has decided: see ``series_home``.
 
     Built with the same ``paths`` builders the check probes, under the year and
@@ -294,7 +297,8 @@ def series_episode_path(media_type: str, external_id, output_dir: str, title: st
 
     anime = media_type == ANIME
     try:
-        exclude = library.rejected_folders(library.SOURCE_BY_KIND[media_type],
+        source = library.SOURCE_BY_KIND[media_type] if source is None else source
+        exclude = library.rejected_folders(source,
                                            media_type, external_id)
     except Exception:
         logger.exception("Cannot read the rejected folders of %s", external_id)
@@ -535,6 +539,7 @@ def _check_audio(request: models.Request, available: dict):
 
 def available_tracks(request: models.Request) -> dict:
     """Audio and subtitle languages currently on offer for this request."""
+    download_source(request.media_type, request.source)
     if request.source == "animeunity":
         episode = _find_anime_episode(request)
         return animeunity.get_episode_languages(episode["id"])
@@ -604,9 +609,11 @@ def resolve(request: models.Request) -> Resolution:
         audio_languages=request.audio_languages,
         subtitle_languages=request.subtitle_languages,
         strict_audio=True,
+        source=request.source,
     )
 
     try:
+        download_source(request.media_type, request.source)
         if request.source == "animeunity":
             episode = _find_anime_episode(request)
             available = animeunity.get_episode_languages(episode["id"])

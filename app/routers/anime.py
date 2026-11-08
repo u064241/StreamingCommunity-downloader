@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -16,7 +17,7 @@ router = APIRouter(
 
 
 @router.get("/{anime_id}/episodes")
-async def get_episodes(anime_id: str):
+async def get_episodes(anime_id: str, source: Literal["animeunity"] = "animeunity"):
     """Fetch all episodes for an anime from AnimeUnity info_api."""
     try:
         episodes = await asyncio.to_thread(animeunity.get_episodes, anime_id)

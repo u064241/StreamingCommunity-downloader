@@ -28,10 +28,10 @@ function libIdLabel(source, id) {
 }
 
 // The title page speaks in route types; the registry in source + media type.
-function libKeyForRoute(type, id) {
-  if (type === 'anime') return { source: 'animeunity', media_type: 'anime', external_id: String(id) };
-  if (type === 'tv') return { source: 'streamingcommunity', media_type: 'episode', external_id: String(id) };
-  return { source: 'streamingcommunity', media_type: 'film', external_id: String(id) };
+function libKeyForRoute(type, id, source = null) {
+  source = source ?? (type === 'anime' ? 'animeunity' : 'streamingcommunity');
+  const media_type = type === 'anime' ? 'anime' : (type === 'tv' ? 'episode' : 'film');
+  return { source, media_type, external_id: String(id) };
 }
 
 function _libOffsets(a) {
@@ -187,7 +187,7 @@ async function libRenderTitleCard(route, title) {
   const card = document.getElementById('th-library-card');
   if (!card) return;
   if (!can('MANAGE_SETTINGS') || !route?.id) { card.hidden = true; return; }
-  const key = libKeyForRoute(route.type, route.id);
+  const key = libKeyForRoute(route.type, route.id, route.source);
   const stamp = `${key.source}/${key.media_type}/${key.external_id}`;
   _libTitleKey = { ...key, title, stamp };
   let rows;

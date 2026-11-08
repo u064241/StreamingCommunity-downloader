@@ -158,7 +158,10 @@ def download_film(id_film: int, title_name: str, domain: str,
                   audio_languages: list[str] = None,
                   subtitle_languages: list[str] = None,
                   strict_audio: bool = False,
-                  tmdb_id: int = None):
+                  tmdb_id: int = None, *, source: str = "streamingcommunity"):
+    from app.source_identity import download_source
+
+    source = download_source("film", source)
     audio_languages = audio_languages or ["ita"]
     subtitle_languages = subtitle_languages or []
 
@@ -190,7 +193,8 @@ def download_film(id_film: int, title_name: str, domain: str,
     # templates would give it (app/library.py); None means there is none.
     from app.library import destination
 
-    dest_path = (destination("film", id_film, root=output_dir, year=year, single_file=True)
+    dest_path = (destination("film", id_film, root=output_dir, year=year, single_file=True,
+                             source=source)
                  or film_path(output_dir, title_name, year))
 
     final_path = download_m3u8(

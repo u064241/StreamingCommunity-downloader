@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from typing import Literal
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -65,11 +66,12 @@ def _fetch_image(domain: str, filename: str) -> tuple[bytes, str]:
 
 
 @router.get("/api/image/{filename:path}")
-async def proxy_image(filename: str):
+async def proxy_image(filename: str, source: Literal["streamingcommunity"] = "streamingcommunity"):
     """Proxy images from the streaming site to avoid hotlink protection.
 
-    The host is the configured domain, not one supplied by the caller: this used
-    to be an open proxy that would fetch any URL the client asked for.
+    This endpoint serves StreamingCommunity filenames only. AnimeUnity artwork
+    uses the absolute URLs supplied by that source; it must never be redirected
+    to the StreamingCommunity CDN. The caller cannot supply an upstream host.
     """
     domain = configured_domain()
     if not domain:

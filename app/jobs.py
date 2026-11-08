@@ -12,6 +12,7 @@ from typing import Optional
 
 from app.config import download_dir, VIDEOS_DIR, TMP_DIR, get_settings
 from app.progress import DownloadCancelledError, WebProgressBar
+from app.source_identity import download_source
 
 
 def _get_library_path(type_: str) -> str:
@@ -134,6 +135,7 @@ class DownloadJob:
     # the library registry files the finished download under, so the title can
     # be found again whatever its folder ends up being called.
     external_id: Optional[str] = None
+    source: Optional[str] = None
 
     # What was handed to the executor, minus the arguments bound to this job
     # object (_JOB_BOUND_KWARGS). Kept so a failed job can be run again without
@@ -310,6 +312,8 @@ class JobManager:
             "job_id": job.job_id,
             "title": job.title,
             "type": job.type,
+            "source": job.source,
+            "external_id": job.external_id,
             "status": job.status,
             "created_at": job.created_at.isoformat(),
             "scheduled_at": job.scheduled_at.isoformat() if job.scheduled_at else None,
@@ -490,6 +494,9 @@ class JobManager:
         self._submit_worker(self._run_download, job, fn, *args, **kwargs)
 
     def _build_call(self, type_: str, params: dict, job: DownloadJob):
+        source = download_source(type_, params.get("source"))
+        if download_source(type_, job.source) != source:
+            raise ValueError("La fonte della programmazione non corrisponde al job")
         pf = self._make_progress_factory(job)
         td = str(TMP_DIR / job.job_id)
         if type_ == "film":
@@ -499,7 +506,7 @@ class JobManager:
                 year=params.get("year"), cancel_event=job.cancel_event,
                 audio_languages=params.get("audio_languages", ["ita"]),
                 subtitle_languages=params.get("subtitle_languages", ["ita", "eng"]),
-                tmdb_id=params.get("tmdb_id"),
+                tmdb_id=params.get("tmdb_id"), source=source,
             )
         if type_ == "episode":
             from app.core.tv import download_episode
@@ -511,7 +518,7 @@ class JobManager:
                 cancel_event=job.cancel_event, year=params.get("year"),
                 audio_languages=params.get("audio_languages", ["ita"]),
                 subtitle_languages=params.get("subtitle_languages", ["ita", "eng"]),
-                tmdb_id=params.get("tmdb_id"),
+                tmdb_id=params.get("tmdb_id"), source=source,
             )
         if type_ == "anime":
             from app.core.animeunity import download_anime_episode
@@ -523,6 +530,7 @@ class JobManager:
                 cancel_event=job.cancel_event, year=params.get("year"),
                 audio_languages=params.get("audio_languages", ["ita"]),
                 subtitle_languages=params.get("subtitle_languages", ["ita", "eng"]),
+                source=source,
             )
         raise ValueError(f"Unknown schedule type: {type_!r}")
 
@@ -680,7 +688,7 @@ class JobManager:
             old.title, old.type, phases=list(old.phases),
             user_id=old.user_id, media_label=old.media_label, year=old.year,
             season=old.season, episode_number=old.episode_number,
-            external_id=old.external_id,
+            external_id=old.external_id, source=old.source,
         )
         fn, args, kwargs = old.call
         return self._submit_job(
@@ -802,6 +810,7 @@ class JobManager:
         """Build a job. ``meta`` carries the notification fields declared on
         DownloadJob (batch_id, user_id, season, …); unknown keys raise, which is
         the point — a typo must not silently vanish."""
+        meta["source"] = download_source(type_, meta.get("source"))
         now = datetime.now(timezone.utc)
         sa = scheduled_at.replace(tzinfo=timezone.utc) if scheduled_at and scheduled_at.tzinfo is None else scheduled_at
         status = "scheduled" if sa and sa > now else "queued"
@@ -827,13 +836,13 @@ class JobManager:
                     subtitle_languages: list[str] = None,
                     strict_audio: bool = False,
                     user_id: int = None,
-                    tmdb_id: int = None) -> str:
+                    tmdb_id: int = None, *, source: str = "streamingcommunity") -> str:
         from app.core.film import download_film
 
         job = self._make_job(title, "film", schedule_id=schedule_id,
                              phases=self._compute_phases(audio_languages or ["ita"]),
                              user_id=user_id, media_label=title, year=year,
-                             external_id=str(id_film))
+                             external_id=str(id_film), source=source)
         return self._submit_job(
             job, download_film,
             id_film, title, domain,
@@ -846,6 +855,7 @@ class JobManager:
             subtitle_languages=subtitle_languages or ["ita", "eng"],
             strict_audio=strict_audio,
             tmdb_id=tmdb_id,
+            source=job.source,
         )
 
     def submit_episode(self, tv_id: int, eps: list[dict], ep_index: int, domain: str,
@@ -856,7 +866,7 @@ class JobManager:
                        strict_audio: bool = False,
                        user_id: int = None, batch_id: str = None,
                        batch_kind: str = None, batch_label: str = None,
-                       tmdb_id: int = None) -> str:
+                       tmdb_id: int = None, *, source: str = "streamingcommunity") -> str:
         from app.core.tv import download_episode, fmt_ep
 
         ep = eps[ep_index]
@@ -866,7 +876,7 @@ class JobManager:
                              user_id=user_id, batch_id=batch_id, batch_kind=batch_kind,
                              batch_label=batch_label, media_label=tv_name, year=year,
                              season=season, episode_number=str(ep["n"]),
-                             external_id=str(tv_id))
+                             external_id=str(tv_id), source=source)
         return self._submit_job(
             job, download_episode,
             tv_id, eps, ep_index, domain, token, tv_name, season,
@@ -879,6 +889,7 @@ class JobManager:
             subtitle_languages=subtitle_languages or ["ita", "eng"],
             strict_audio=strict_audio,
             tmdb_id=tmdb_id,
+            source=job.source,
         )
 
     # AnimeUnity deliberately gains no tmdb_id: an anime here has no TMDB
@@ -891,7 +902,8 @@ class JobManager:
                              subtitle_languages: list[str] = None,
                              strict_audio: bool = False,
                              user_id: int = None, batch_id: str = None,
-                             batch_kind: str = None, batch_label: str = None) -> str:
+                             batch_kind: str = None, batch_label: str = None,
+                             *, source: str = "animeunity") -> str:
         from app.core.animeunity import download_anime_episode
 
         ep_num = episode.get("number", "?")
@@ -900,7 +912,7 @@ class JobManager:
                              phases=self._compute_phases(audio_languages or ["ita"]),
                              user_id=user_id, batch_id=batch_id, batch_kind=batch_kind,
                              batch_label=batch_label, media_label=anime_name, year=year,
-                             episode_number=str(ep_num), external_id=str(anime_id))
+                             episode_number=str(ep_num), external_id=str(anime_id), source=source)
         return self._submit_job(
             job, download_anime_episode,
             anime_id, episode, anime_name, anime_type,
@@ -912,6 +924,7 @@ class JobManager:
             audio_languages=audio_languages or ["ita"],
             subtitle_languages=subtitle_languages or ["ita", "eng"],
             strict_audio=strict_audio,
+            source=job.source,
         )
 
     # ── Schedule (future) ──────────────────────────────────────────────────────
@@ -921,9 +934,10 @@ class JobManager:
                       audio_languages: list[str] = None,
                       subtitle_languages: list[str] = None,
                       user_id: int = None,
-                      tmdb_id: int = None) -> str:
+                      tmdb_id: int = None, *, source: str = "streamingcommunity") -> str:
         params = {
             "id": id_film, "title": title, "domain": domain, "year": year,
+            "source": source,
             "audio_languages": audio_languages or ["ita"],
             "subtitle_languages": subtitle_languages or ["ita", "eng"],
             # Persisted with the schedule: the cache it came from will not
@@ -940,12 +954,13 @@ class JobManager:
                          subtitle_languages: list[str] = None,
                          user_id: int = None, batch_id: str = None,
                          batch_kind: str = None, batch_label: str = None,
-                         tmdb_id: int = None) -> str:
+                         tmdb_id: int = None, *, source: str = "streamingcommunity") -> str:
         from app.core.tv import fmt_ep
         ep = eps[ep_index]
         title = f"{tv_name} S{season:02d}E{fmt_ep(ep['n'])}"
         params = {
             "tv_id": tv_id, "eps": eps, "ep_index": ep_index,
+            "source": source,
             "domain": domain, "token": token, "tv_name": tv_name,
             "season": season, "year": year,
             "audio_languages": audio_languages or ["ita"],
@@ -963,11 +978,13 @@ class JobManager:
                                audio_languages: list[str] = None,
                                subtitle_languages: list[str] = None,
                                user_id: int = None, batch_id: str = None,
-                               batch_kind: str = None, batch_label: str = None) -> str:
+                               batch_kind: str = None, batch_label: str = None,
+                               *, source: str = "animeunity") -> str:
         ep_num = episode.get("number", "?")
         title = f"{anime_name} E{ep_num}"
         params = {
             "anime_id": anime_id, "episode": episode, "anime_name": anime_name,
+            "source": source,
             "anime_type": anime_type, "year": year,
             "audio_languages": audio_languages or ["ita"],
             "subtitle_languages": subtitle_languages or ["ita", "eng"],
@@ -979,6 +996,8 @@ class JobManager:
 
     def _add_schedule(self, type_: str, scheduled_at: datetime, params: dict, title: str,
                       **meta) -> str:
+        params = {**params, "source": download_source(type_, params.get("source"))}
+        meta["source"] = params["source"]
         if self._schedule_store is None:
             raise RuntimeError("ScheduleStore not configured")
         schedule_id = self._schedule_store.add(type_, scheduled_at, params)
@@ -1006,6 +1025,11 @@ class JobManager:
             sid = entry["schedule_id"]
             type_ = entry["type"]
             params = entry["params"]
+            try:
+                source = download_source(type_, params.get("source"))
+            except ValueError:
+                logger.error("Unsupported source for scheduled entry %s; left pending", sid)
+                continue
             sa_raw = datetime.fromisoformat(entry["scheduled_at"])
             scheduled_at = sa_raw if sa_raw.tzinfo else sa_raw.replace(tzinfo=timezone.utc)
             title = params.get("title") or params.get("tv_name") or params.get("anime_name", "?")
@@ -1014,6 +1038,7 @@ class JobManager:
             job = self._make_job(title, type_, scheduled_at=scheduled_at, schedule_id=sid,
                                  phases=self._compute_phases(params.get("audio_languages") or ["ita"]),
                                  media_label=title, year=params.get("year"),
+                                 source=source,
                                  external_id=_schedule_external_id(params))
             with self._lock:
                 self._jobs[job.job_id] = job

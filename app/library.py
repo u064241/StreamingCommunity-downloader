@@ -44,6 +44,7 @@ from datetime import datetime, timedelta, timezone
 
 from app import db
 from app.requests.models import now_iso
+from app.source_identity import LEGACY_SOURCE_BY_KIND
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +58,8 @@ MATCHED = "matched"
 MANUAL = "manual"
 REJECTED = "rejected"
 
-# A job knows its kind, not its source: every film and series comes from
-# StreamingCommunity, every anime from AnimeUnity.
-SOURCE_BY_KIND = {FILM: "streamingcommunity", EPISODE: "streamingcommunity",
-                  ANIME: "animeunity"}
+# Compatibility for callers and jobs written before source was explicit.
+SOURCE_BY_KIND = LEGACY_SOURCE_BY_KIND
 
 # How long a folder may be missing, from a library that could be read, before
 # its association is forgotten.
@@ -456,7 +455,8 @@ def find(source: str, media_type: str, external_id, root: str, *,
 # ── Where the next file goes ──────────────────────────────────────────────────
 
 def destination(kind: str, external_id, *, root: str, season=None, episode=None,
-                year=None, single_file: bool = False, container: str | None = None) -> str | None:
+                year=None, single_file: bool = False, container: str | None = None,
+                source: str | None = None) -> str | None:
     """The path a person's association sends this download to, or None.
 
     Only a manual association decides here: the panel's own filings describe
@@ -470,7 +470,7 @@ def destination(kind: str, external_id, *, root: str, season=None, episode=None,
     from app.core import paths
 
     try:
-        source = SOURCE_BY_KIND.get(kind)
+        source = SOURCE_BY_KIND.get(kind) if source is None else source
         chosen = next((h for h in held(source, kind, external_id, root)
                        if h.association.origin == MANUAL), None)
         if chosen is None:
@@ -512,7 +512,9 @@ def file_download(job) -> None:
     from app.requests import resolver
 
     kind = job.type
-    source = SOURCE_BY_KIND.get(kind)
+    source = getattr(job, "source", None)
+    if source is None:
+        source = SOURCE_BY_KIND.get(kind)
     if not source or not job.external_id or not job.output_path:
         return
     root = resolver.library_dir(kind)

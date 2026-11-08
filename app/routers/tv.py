@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -27,7 +28,7 @@ def _domain() -> str:
 
 
 @router.get("/{tv_id}/token")
-async def fetch_token(tv_id: int):
+async def fetch_token(tv_id: int, source: Literal["streamingcommunity"] = "streamingcommunity"):
     try:
         token = await asyncio.to_thread(get_token, tv_id, _domain())
     except HTTPException:
@@ -38,7 +39,8 @@ async def fetch_token(tv_id: int):
 
 
 @router.get("/{tv_id}/seasons")
-async def fetch_seasons(tv_id: int, slug: str = Query(...), version: str = Query(...)):
+async def fetch_seasons(tv_id: int, slug: str = Query(...), version: str = Query(...),
+                        source: Literal["streamingcommunity"] = "streamingcommunity"):
     try:
         numbers = await asyncio.to_thread(get_season_numbers, tv_id, slug, version, _domain())
     except HTTPException:
@@ -49,7 +51,7 @@ async def fetch_seasons(tv_id: int, slug: str = Query(...), version: str = Query
 
 
 def _mark_in_library(episodes: list[dict], title: str, season: int, year: str,
-                     tv_id=None) -> None:
+                     tv_id=None, *, source: str = "streamingcommunity") -> None:
     """Flag the episodes already sitting in the library.
 
     The title arrives from the caller because the episode list has no other
@@ -70,7 +72,6 @@ def _mark_in_library(episodes: list[dict], title: str, season: int, year: str,
     )
 
     output_dir = library_dir(EPISODE)
-    source = library.SOURCE_BY_KIND[EPISODE]
     # Read once per season rather than per episode: the registry, the series'
     # folders under other years (#24), and each associated folder's listing,
     # which Held reads once and keeps.
@@ -110,6 +111,7 @@ async def fetch_episodes(
     token: str = Query(...),
     title: str = Query("", max_length=200),
     year: str = Query("", max_length=10),
+    source: Literal["streamingcommunity"] = "streamingcommunity",
 ):
     try:
         episodes = await asyncio.to_thread(
@@ -124,7 +126,8 @@ async def fetch_episodes(
     # loop like the fetch above. Skipped when the caller sends no title, since
     # there is then nothing to build a path from.
     if title:
-        await asyncio.to_thread(_mark_in_library, episodes, title, season, year, tv_id)
+        await asyncio.to_thread(_mark_in_library, episodes, title, season, year, tv_id,
+                                source=source)
     return episodes
 
 
@@ -133,6 +136,7 @@ async def fetch_tv_languages(
     tv_id: int,
     slug: str = Query(...),
     version: str = Query(...),
+    source: Literal["streamingcommunity"] = "streamingcommunity",
 ):
     try:
         langs = await asyncio.to_thread(get_tv_languages, tv_id, slug, _domain(), version)
