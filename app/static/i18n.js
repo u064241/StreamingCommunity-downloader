@@ -13,7 +13,7 @@
       'nav.search': 'Cerca', 'nav.downloads': 'Download', 'nav.requests': 'Richieste',
       'nav.myRequests': 'Le mie richieste', 'nav.watches': 'Serie seguite',
       'nav.files': 'File', 'nav.users': 'Utenti', 'nav.settings': 'Impostazioni',
-      'updates.check': 'Controlla aggiornamenti', 'home.next': 'La tua prossima',
+      'updates.check': 'Controlla aggiornamenti', 'home.next': 'Scopri cosa guardare',
       'home.media': 'serie, film, anime.', 'home.subtitle': 'Cerca nel catalogo, scegli audio e sottotitoli, e mandalo in libreria.',
       'search.placeholder': 'Film, serie TV...', 'search.button': 'Cerca',
       'title.related': 'Correlati', 'title.switch': 'Scegli un altro titolo', 'title.item': 'Titolo'
@@ -29,7 +29,7 @@
       'nav.search': 'Search', 'nav.downloads': 'Downloads', 'nav.requests': 'Requests',
       'nav.myRequests': 'My requests', 'nav.watches': 'Followed series',
       'nav.files': 'Files', 'nav.users': 'Users', 'nav.settings': 'Settings',
-      'updates.check': 'Check for updates', 'home.next': 'Your next',
+      'updates.check': 'Check for updates', 'home.next': 'Discover what to watch',
       'home.media': 'series, films, anime.', 'home.subtitle': 'Search the catalog, choose audio and subtitles, and send it to your library.',
       'search.placeholder': 'Films, TV series...', 'search.button': 'Search',
       'title.related': 'Related', 'title.switch': 'Choose another title', 'title.item': 'Title'

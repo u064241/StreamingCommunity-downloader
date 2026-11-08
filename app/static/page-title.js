@@ -676,7 +676,7 @@ function tpBack() {
   // Back where possible, because it returns to the exact search that was
   // there — query, filters and all — rather than to an empty one.
   if (history.length > 1 && document.referrer !== '') { history.back(); return; }
-  navigate('search');
+  navigate('search', [], {src: _tp?.source || currentSource});
 }
 
 // Every episode of the season, as requests. The server enumerates and creates
@@ -963,12 +963,12 @@ async function downloadAllAnime() {
 
 registerActions({
   'tp:back':          () => tpBack(),
-  'tp:crumb-search':  () => { setSource(_tp?.source || currentSource); navigate('search'); },
+  'tp:crumb-search':  () => navigate('search', [], {src: _tp?.source || currentSource}),
   'tp:crumb-kind':    d => {
-    navigate('search');
-    window.setTimeout(() => {
-      if (d.kind === 'tv' || d.kind === 'movie') setKindFilter(d.kind);
-    }, 0);
+    navigate('search', [], {
+      src: _tp?.source || currentSource,
+      type: d.kind === 'tv' || d.kind === 'movie' ? d.kind : null,
+    });
   },
   'tp:primary':       () => tpPrimary(),
   'tp:follow':        () => tpToggleFollow(),

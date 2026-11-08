@@ -185,7 +185,7 @@ function renderResultCards(items, container, baseIndex,
     // backdrop (and for the compact result views).
     const artwork = item.backdrop || item.poster;
     const posterUrl = artwork
-      ? (artwork.startsWith('http') ? artwork : `/api/image/${artwork}`)
+      ? (artwork.startsWith('http') || artwork.startsWith('/') ? artwork : `/api/image/${artwork}`)
       : '';
     const card = document.createElement('div');
     card.className = wrapperClass;
@@ -202,7 +202,7 @@ function renderResultCards(items, container, baseIndex,
       : `<div class="status-ribbon" data-ribbon-for="${escapeHtml(String(item.id))}"></div>`;
     card.innerHTML = `
       <div class="result-card" data-action="search:open" data-idx="${idx}">
-        <div class="poster-wrap ${item.backdrop && item.type !== 'anime' ? 'has-backdrop' : 'poster-fallback'}">
+        <div class="poster-wrap ${item.backdrop ? 'has-backdrop' : 'poster-fallback'}">
           ${posterHtml}
           <div class="poster-noimg" style="${posterUrl?'display:none':''}">&#127916;</div>
           <div class="poster-overlay"></div>
@@ -334,6 +334,15 @@ async function startCardPreview(card) {
 document.addEventListener('pointerover', event => {
   const card = event.target.closest?.('.result-card');
   if (!card || card.contains(event.relatedTarget)) return;
+  // Keep the enlarged card inside its scrolling rail (or the result grid).
+  const bounds = card.closest('.shelf-rail') || card.closest('#search-results');
+  if (bounds) {
+    const edge = bounds.getBoundingClientRect();
+    const rect = card.getBoundingClientRect();
+    const growth = card.offsetWidth * .12;
+    card.style.transformOrigin = rect.left - growth < edge.left ? 'left 18%'
+      : rect.right + growth > edge.right ? 'right 18%' : 'center 18%';
+  }
   const timer = setTimeout(() => startCardPreview(card), 380);
   _cardPreviewTimers.set(card, timer);
 });
@@ -564,6 +573,8 @@ function renderShelves() {
         `<button class="shelf-arrow shelf-arrow-next" hidden data-i18n-aria-label="catalog.next" aria-label="${t('catalog.next')}">` +
           '<i class="ti ti-chevron-right"></i></button>' +
       '</div>';
+    // /api/browse currently supports only these StreamingCommunity sections.
+    // AnimeUnity's latest_episodes/featured shelves have no paginated endpoint.
     if (currentSource === 'streamingcommunity' && ['trending', 'latest', 'top10'].includes(shelf.key)) {
       section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
         `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${shelf.key}">${searchLabel('catalog.browse')} <i class="ti ti-arrow-right" aria-hidden="true"></i></button>`);
