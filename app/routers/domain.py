@@ -1,11 +1,16 @@
 import asyncio
 import json
 import logging
+import importlib.util
+import platform
+import shutil
+from datetime import datetime, timezone
 from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 
 from app import config
 from app.auth.deps import require
@@ -273,16 +278,92 @@ class SettingsUpdate(BaseModel):
     @field_validator("naming_templates")
     @classmethod
     def _check_templates(cls, value):
-        """Refuse at save time what render() cannot afford to complain about.
-
-        render() runs inside a download, after the bytes are already fetched, so
-        it silently defaults rather than raising. Everything it would paper over
-        has to be caught here, while there is still a person looking at it.
-        """
+        """Validate templates before they are stored in application settings."""
         if value is None:
             return None
         return {slot: naming.validate(slot, template) for slot, template in value.items()}
 
+
+# Deliberately exclude credentials, MCP tokens, notification URLs and the
+# database. This backup is intended to be portable and safe to inspect.
+_BACKUP_KEYS = {
+    "domain", "animeunity_domain", "video_host", "download_dir",
+    "libraries", "excluded_folders", "settings",
+}
+
+
+class SettingsBackup(BaseModel):
+    schema_version: Literal[1] = Field(alias="schema")
+    data: dict
+
+
+def _safe_backup_data() -> dict:
+    data = _read_data()
+    return {key: data[key] for key in _BACKUP_KEYS if key in data}
+
+
+@router.get("/diagnostics", dependencies=CAN_MANAGE)
+def diagnostics():
+    """Return bounded, local, read-only health information for the panel."""
+    ffmpeg = shutil.which("ffmpeg")
+    python_info = {
+        "version": platform.python_version(),
+        "implementation": platform.python_implementation(),
+    }
+    optional = {
+        name: bool(importlib.util.find_spec(name))
+        for name in ("fastapi", "uvicorn", "httpx", "filelock", "pydantic")
+    }
+    paths = {
+        "data": {"path": str(config.DATA_FILE.resolve()), "exists": config.DATA_FILE.exists()},
+        "database": {"path": str(config.DB_FILE.resolve()), "exists": config.DB_FILE.exists()},
+        "videos": {"path": str(config.download_dir().resolve()), "exists": config.download_dir().exists()},
+        "temporary": {"path": str(config.TMP_DIR.resolve()), "exists": config.TMP_DIR.exists()},
+    }
+    domain = config.configured_domain()
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "application": {"version": __import__("app").__version__, "python": python_info},
+        "platform": {"system": platform.system(), "release": platform.release(), "machine": platform.machine()},
+        "paths": paths,
+        "domain": {"configured": bool(domain), "host": domain},
+        "tools": {"ffmpeg": {"available": bool(ffmpeg), "path": ffmpeg}, "curl": bool(shutil.which("curl"))},
+        "packages": optional,
+        "writable": {
+            "data": config.DATA_FILE.parent.exists() and os_access(config.DATA_FILE.parent),
+            "temporary": config.TMP_DIR.exists() and os_access(config.TMP_DIR),
+        },
+    }
+
+
+def os_access(path):
+    import os
+    return os.access(path, os.W_OK)
+
+
+@router.get("/settings/backup", dependencies=CAN_MANAGE)
+def export_settings_backup():
+    payload = {"schema": 1, "created_at": datetime.now(timezone.utc).isoformat(), "data": _safe_backup_data()}
+    return JSONResponse(payload, headers={"Content-Disposition": 'attachment; filename="streamingcommunity-settings.json"'})
+
+
+@router.post("/settings/restore", dependencies=CAN_MANAGE)
+def restore_settings_backup(body: SettingsBackup):
+    if not isinstance(body.data, dict):
+        raise HTTPException(status_code=400, detail="Backup non valido")
+    unknown = set(body.data) - _BACKUP_KEYS
+    if unknown:
+        raise HTTPException(status_code=400, detail="Il backup contiene campi non supportati")
+    if not isinstance(body.data.get("settings", {}), dict):
+        raise HTTPException(status_code=400, detail="La sezione settings non è valida")
+    restored = {key: value for key, value in body.data.items() if key in _BACKUP_KEYS}
+    # Merge, so a backup from an older version cannot erase unrelated state.
+    config.update_data(restored)
+    if "animeunity_domain" in restored:
+        animeunity.forget_csrf()
+        home.clear_cache("animeunity")
+    metadata.clear_cache()
+    return {"ok": True, "restored": sorted(restored)}
 
 class NamingPreviewRequest(BaseModel):
     templates: dict[str, str]

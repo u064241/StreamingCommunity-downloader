@@ -1,5 +1,6 @@
 """A failed download can be run again, and the retry replaces the failed entry."""
 
+import os
 import time
 
 from app.jobs import JobManager
@@ -18,7 +19,11 @@ def test_a_failed_job_runs_again_with_the_same_arguments():
     def flaky(tv_id, *, audio_languages, temp_dir, progress_factory, cancel_event):
         calls.append((tv_id, audio_languages, temp_dir, cancel_event))
         if len(calls) == 1:
+            os.makedirs(temp_dir, exist_ok=True)
+            with open(os.path.join(temp_dir, "partial.ts"), "wb") as stream:
+                stream.write(b"partial")
             raise RuntimeError("503")
+        assert os.path.exists(os.path.join(temp_dir, "partial.ts"))
         return "/lib/ep.mkv"
 
     try:
@@ -39,12 +44,36 @@ def test_a_failed_job_runs_again_with_the_same_arguments():
         _wait(new)
         assert new.status == "done"
         assert calls[1][:2] == (77, ["ita", "eng"])
-        # Arguments bound to a job are rebuilt for the new one, not reused.
-        assert new_id in calls[1][2]
+        # The new job gets a fresh cancellation/progress binding, while the
+        # staging directory remains the old one so partial segments are reused.
+        assert job.job_id in calls[1][2]
         assert calls[1][3] is new.cancel_event
+        assert not os.path.exists(calls[1][2])
         # The batch counted this episode already; the retry stands on its own.
         assert new.batch_id is None
         assert (new.media_label, new.season) == ("Serie", 1)
+    finally:
+        jm._executor.shutdown(wait=False)
+
+
+def test_a_failed_job_keeps_partial_staging_until_dismissed():
+    jm = JobManager()
+    try:
+        job = jm._make_job("Film", "film")
+
+        def broken(*, temp_dir, **kwargs):
+            os.makedirs(temp_dir, exist_ok=True)
+            open(os.path.join(temp_dir, "1.ts"), "wb").close()
+            raise RuntimeError("503")
+
+        jm._submit_job(job, broken, temp_dir=f"tmp/{job.job_id}",
+                       progress_factory=None, cancel_event=job.cancel_event)
+        _wait(job)
+        assert job.status == "error"
+        assert os.path.exists(os.path.join("tmp", job.job_id, "1.ts"))
+
+        assert jm.dismiss(job.job_id)
+        assert not os.path.exists(os.path.join("tmp", job.job_id))
     finally:
         jm._executor.shutdown(wait=False)
 

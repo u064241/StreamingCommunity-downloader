@@ -334,24 +334,21 @@ def _run_check(force: bool = False) -> dict:
         _last_check_at = _now()
     result["checked"] = True
 
-    if result["current"]:
-        result["current_ok"] = verify(result["current"]) is not None
-
-    # A working domain does not need replacing. Only an explicit request looks
-    # further, so the ordinary periodic check costs one request to the source
-    # and nothing to anybody else.
-    if result["current_ok"] and not force:
-        _set_pending(None)
-        return result
-
     _set_pending(None)
+    # Telegram is the authoritative source.  Read it even when the configured
+    # domain still answers: the old host may remain reachable briefly after a
+    # rotation and must not win over the official announcement.
     candidates = fetch_telegram_candidates()
+    telegram_candidates = set(candidates)
     try:
         candidates = list(dict.fromkeys(candidates + fetch_candidates()))
     except Exception as exc:
         logger.warning("Cannot read the domain source page: %s", exc)
         if not candidates:
             return result
+
+    if result["current"]:
+        result["current_ok"] = verify(result["current"]) is not None
 
     for host in candidates:
         if host == result["current"]:
@@ -373,7 +370,10 @@ def _run_check(force: bool = False) -> dict:
     if result["candidate"] is None:
         return result
 
-    if _settings().get("domain_auto_apply"):
+    # A verified Telegram candidate is authoritative and is applied without
+    # requiring the optional auto-apply setting.  All plausibility and source
+    # version checks above still apply.
+    if result["candidate"] in telegram_candidates or _settings().get("domain_auto_apply"):
         try:
             apply_candidate(result["candidate"])
             result["applied"] = True
@@ -393,8 +393,7 @@ def _run_check(force: bool = False) -> dict:
     })
     _announce(
         "found",
-        f"La sorgente non risponde più su «{result['current'] or 'nessun dominio'}». "
-        f"Trovato «{result['candidate']}»: apri il pannello per applicarlo.",
+        f"Trovato il nuovo dominio «{result['candidate']}»: apri il pannello per applicarlo.",
     )
     _broadcast_candidate()
     return result

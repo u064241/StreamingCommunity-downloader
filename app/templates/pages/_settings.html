@@ -20,10 +20,10 @@
           </p>
         </div>
       </div>
-      <ul class="nav nav-tabs mb-3" id="settings-tabs">
-        <li class="nav-item"><a class="nav-link" href="#" data-settings-tab="generali">Generali</a></li>
+      <ul class="nav nav-tabs mb-3" id="settings-tabs" role="tablist" aria-label="Sezioni impostazioni">
+        <li class="nav-item" role="presentation"><a class="nav-link" href="#" data-settings-tab="generali" role="tab" aria-controls="settings-pane-generali">Generali</a></li>
         <li class="nav-item">
-          <a class="nav-link active" href="#" data-settings-tab="sorgente" data-i18n="settings.source">Sorgente</a>
+          <a class="nav-link active" href="#" data-settings-tab="sorgente" role="tab" aria-selected="true" aria-controls="settings-pane-sorgente" data-i18n="settings.source">Sorgente</a>
         </li>
         <li class="nav-item">
           <a class="nav-link" href="#" data-settings-tab="librerie" data-i18n="settings.libraries">Librerie</a>
@@ -52,21 +52,33 @@
         <li class="nav-item"><a class="nav-link" href="#" data-settings-tab="log">Log</a></li>
       </ul>
 
-      <div class="settings-pane" data-settings-pane="generali" style="display:none">
+      <div class="settings-pane" id="settings-pane-generali" data-settings-pane="generali" role="tabpanel" style="display:none">
         <div class="settings-section">
           <p class="settings-section-label">Generali</p>
           <p class="settings-section-hint">Preferenze generali dell’interfaccia e delle azioni.</p>
           <label class="form-check form-switch">
             <input class="form-check-input" type="checkbox" id="setting-confirmations-enabled">
-            <span class="form-check-label">Richiedi conferma prima delle azioni</span>
+            <span class="form-check-label">Conferme e notifiche del pannello</span>
           </label>
-          <div class="form-text">Disattivando questa opzione, eliminazioni, annullamenti e pulizie verranno eseguiti direttamente.</div>
+          <div class="form-text">Disattivandola, le azioni non chiedono conferma e il pannello non registra né inoltra notifiche nel campanellino.</div>
           <button class="btn btn-primary btn-sm mt-3" data-action="cfg:saveGeneral" id="save-general-btn">Salva</button>
           <div id="general-settings-feedback" class="form-text"></div>
         </div>
+        <div class="settings-section">
+          <p class="settings-section-label">Diagnostica e configurazione</p>
+          <p class="settings-section-hint">Controlla lo stato locale del portale e salva le impostazioni applicative in un file. Il backup non include password, token o canali notifiche.</p>
+          <div class="settings-actions">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:runDiagnostics">Diagnostica</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:exportSettings">Esporta impostazioni</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:chooseRestore">Ripristina impostazioni</button>
+            <input type="file" id="settings-restore-file" accept="application/json,.json" hidden>
+          </div>
+          <pre id="diagnostics-results" class="form-text mt-3" role="status" aria-live="polite" style="white-space:pre-wrap"></pre>
+          <div id="backup-settings-feedback" class="form-text"></div>
+        </div>
       </div>
 
-      <div class="settings-pane" data-settings-pane="sorgente">
+      <div class="settings-pane" id="settings-pane-sorgente" data-settings-pane="sorgente" role="tabpanel">
       <div class="settings-section">
         <p class="settings-section-label" data-i18n="softether.title">SoftEther VPN (opzionale)</p>
         <p class="settings-section-hint" data-i18n="softether.manual">

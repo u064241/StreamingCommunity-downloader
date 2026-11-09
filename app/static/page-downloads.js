@@ -113,8 +113,8 @@ function connectGlobalStream() {
 // colour, its border and its label. tests/test_assets.py now checks the set.
 const PHASE_LABELS = {
   get scheduled() { return window.t("dynamic.ui1"); }, get queued() { return window.t("dynamic.ui2"); }, get paused() { return window.t("dynamic.ui3"); }, get running() { return window.t("dynamic.ui4"); },
-  video:'Video', get joining() { return window.t("dynamic.ui5"); }, get converting() { return window.t("dynamic.ui6"); },
-  audio:'Audio', get merging() { return window.t("dynamic.ui7"); }, get done() { return window.t("dynamic.ui8"); }, get error() { return window.t("dynamic.ui9"); }, get cancelled() { return window.t("dynamic.ui10"); },
+  video:'Video', joining:'Join', converting:'Conversione',
+  audio:'Audio', merging:'Merge', done:'Completato', error:'Errore', cancelled:'Annullato',
 };
 const PHASE_BADGE = {
   scheduled:'bg-yellow-lt', queued:'bg-secondary-lt', paused:'bg-orange-lt', running:'bg-blue-lt',
@@ -827,6 +827,8 @@ async function clearFinished() {
   const finished = [..._jobs.entries()]
     .filter(([,j]) => j.status==='done'||j.status==='cancelled')
     .map(([id]) => id);
+  if (!finished.length) return;
+  if (!await scConfirm(`Rimuovere ${finished.length} download completati o annullati dall’elenco?`)) return;
   // allSettled, so one refusal does not abandon the rest: every job that
   // can go, goes.
   await Promise.allSettled(finished.map(id => api.del(`/api/download/${id}`)));
@@ -838,12 +840,25 @@ async function clearFinished() {
   updateActiveBadge();
 }
 
+async function clearErrors() {
+  const failed = [..._jobs.entries()]
+    .filter(([, j]) => j.status === 'error')
+    .map(([id]) => id);
+  if (!failed.length) return;
+  if (!await scConfirm(`Rimuovere ${failed.length} download con errore dall’elenco?`)) return;
+  await Promise.allSettled(failed.map(id => api.del(`/api/download/${id}`)));
+  for (const id of failed) _jobs.delete(id);
+  renderAllJobCards();
+  updateActiveBadge();
+}
+
 
 // ── Delegated handlers ───────────────────────────────────────────────────────
 
 registerActions({
   'jobs:refresh':     () => refreshJobs(),
   'jobs:clear':       () => clearFinished(),
+  'jobs:clearErrors':  () => clearErrors(),
   'jobs:filter':      d => setDlFilter(d.filter),
   'jobs:fire':        d => fireNow(d.job),
   'jobs:cancel':      d => cancelJob(d.job),

@@ -238,15 +238,16 @@ def test_rejected_candidates_are_reported(monkeypatch, broken_source):
     assert [r["host"] for r in result["rejected"]] == ["telegra.ph"]
 
 
-def test_a_working_domain_is_left_alone(monkeypatch, _configured_domain, page, public_dns):
+def test_telegram_candidate_wins_over_working_domain(monkeypatch, _configured_domain, page, public_dns):
     monkeypatch.setattr(domain_recovery, "get_domain_version", lambda host: "v1")
+    monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates", lambda: ["streamingcommunityz.rodeo"])
+    monkeypatch.setattr(domain_recovery, "fetch_candidates", lambda: [])
 
     result = domain_recovery.run_check()
 
     assert result["current_ok"] is True
-    assert result["candidate"] is None
-    # The page is somebody else's server: a healthy panel must not touch it.
-    assert page == []
+    assert result["candidate"] == "streamingcommunityz.rodeo"
+    assert result["applied"] is True
 
 
 def test_forcing_looks_even_when_the_domain_works(monkeypatch, _configured_domain, page, public_dns):

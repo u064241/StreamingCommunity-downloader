@@ -397,6 +397,45 @@ async function saveGeneralSettings() {
   } catch (e) { _feedback('general-settings-feedback', errText(e), 'danger'); }
 }
 
+async function runDiagnostics() {
+  const target = document.getElementById('diagnostics-results');
+  if (!target) return;
+  target.textContent = 'Raccolta diagnostica in corso…';
+  try {
+    const data = await api.get('/api/domain/diagnostics');
+    target.textContent = JSON.stringify(data, null, 2);
+  } catch (e) { target.textContent = errText(e); }
+}
+
+async function exportSettingsBackup() {
+  try {
+    const response = await api.request('GET', '/api/domain/settings/backup', { raw: true });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = 'streamingcommunity-settings.json';
+    document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    _feedback('backup-settings-feedback', 'Backup esportato.', 'success');
+  } catch (e) { _feedback('backup-settings-feedback', errText(e), 'danger'); }
+}
+
+function chooseSettingsRestore() {
+  document.getElementById('settings-restore-file')?.click();
+}
+
+async function restoreSettingsBackup(file) {
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    if (!payload || payload.schema !== 1 || !payload.data) throw new Error('Backup non valido.');
+    if (window._confirmationsEnabled !== false && !await scConfirm('Sostituire le impostazioni applicative con quelle del backup?')) return;
+    await api.post('/api/domain/settings/restore', payload);
+    _feedback('backup-settings-feedback', 'Impostazioni ripristinate. Ricarica la pagina per applicarle ovunque.', 'success');
+    _settingsLoaded.clear(); _appSettingsPromise = null;
+  } catch (e) { _feedback('backup-settings-feedback', errText(e), 'danger'); }
+}
+
 // Tabs whose panes only talk to MANAGE_SETTINGS endpoints: without it they would
 // render as empty panes fed by 403s.
 const _SETTINGS_TABS_NEED_MANAGE = ['sorgente', 'librerie', 'associazioni', 'nomi', 'download', 'notifiche', 'hook', 'mcp', 'log', 'generali'];
@@ -407,6 +446,10 @@ const _settingsLoaded = new Set();
 function setupSettingsTabs() {
   const tabs = document.getElementById('settings-tabs');
   if (!tabs) return;
+  document.getElementById('settings-restore-file')?.addEventListener('change', e => {
+    restoreSettingsBackup(e.target.files?.[0]);
+    e.target.value = '';
+  });
   tabs.addEventListener('click', (e) => {
     const link = e.target.closest('[data-settings-tab]');
     if (!link) return;
@@ -1363,6 +1406,9 @@ registerActions({
   'cfg:softetherClose': () => closeSoftEtherManager(),
   'cfg:softetherInstall': () => installSoftEther(),
   'cfg:saveGeneral': () => saveGeneralSettings(),
+  'cfg:runDiagnostics': () => runDiagnostics(),
+  'cfg:exportSettings': () => exportSettingsBackup(),
+  'cfg:chooseRestore': () => chooseSettingsRestore(),
   'cfg:softetherUpdates': () => checkSoftEtherUpdates(),
   'cfg:softetherDownloadUpdate': () => downloadSoftEtherUpdate(),
   'cfg:softetherVpnGate': () => loadVpnGateServers(),

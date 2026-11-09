@@ -32,6 +32,7 @@ function setSource(src) {
   _catalogSection = null;
   _cancelCatalogWork();
   currentSource = src;
+  document.getElementById('src-all')?.classList.toggle('active', src === 'all');
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
   const input = document.getElementById('search-input');
@@ -100,6 +101,7 @@ let _dubOnly = false;
 // rebuilt when the source changes rather than offering one of them a filter the
 // other cannot answer.
 const KIND_FILTERS = {
+  all: [['', 'catalog.all'], ['movie', 'catalog.movie'], ['tv', 'catalog.tv']],
   streamingcommunity: [['', 'catalog.all'], ['movie', 'catalog.movie'], ['tv', 'catalog.tv']],
   animeunity: [['', 'catalog.all'], ['movie', 'catalog.movie'], ['tv', 'catalog.tv'],
                ['ova', 'OVA'], ['ona', 'ONA'], ['special', 'catalog.specials']],
@@ -201,7 +203,8 @@ function renderResultCards(items, container, baseIndex,
       ? ''
       : `<div class="status-ribbon" data-ribbon-for="${escapeHtml(String(item.id))}"></div>`;
     card.innerHTML = `
-      <div class="result-card" data-action="search:open" data-idx="${idx}">
+      <div class="result-card" data-action="search:open" data-idx="${idx}"
+           role="button" tabindex="0" aria-label="Apri ${escapeHtml(item.name)}">
         <div class="poster-wrap ${item.backdrop ? 'has-backdrop' : 'poster-fallback'}">
           ${posterHtml}
           <div class="poster-noimg" style="${posterUrl?'display:none':''}">&#127916;</div>
@@ -364,7 +367,7 @@ async function doSearch(options) {
   // it is: ensureDomain() shares the one request.
   if (currentSource !== 'animeunity') {
     await ensureDomain();
-    if (!currentDomain) { openSettings(); return; }
+    if (!currentDomain && currentSource !== 'all') { openSettings(); return; }
   }
   if (append && (_loadingMore || _searchExhausted)) return;
 
@@ -909,7 +912,8 @@ registerPageHash('search', {
     if (input) input.value = params.q || '';
     // Not setSource(): that clears the grid and re-runs the search, which is
     // the opposite of restoring one. Only the parts that are state.
-    currentSource = !_catalogSection && params.src === 'animeunity' ? 'animeunity' : 'streamingcommunity';
+    currentSource = !_catalogSection && ['all', 'animeunity'].includes(params.src) ? params.src : 'streamingcommunity';
+    document.getElementById('src-all')?.classList.toggle('active', currentSource === 'all');
     document.getElementById('src-sc')?.classList.toggle('active', currentSource === 'streamingcommunity');
     document.getElementById('src-au')?.classList.toggle('active', currentSource === 'animeunity');
     if (input) input.dataset.i18nPlaceholder = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';

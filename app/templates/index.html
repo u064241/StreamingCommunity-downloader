@@ -53,6 +53,9 @@
           </div>
           <div class="mb-4">
             <div class="source-selector">
+              <button class="source-btn" id="src-all" data-action="search:source" data-source="all" data-i18n="search.allSources">
+                <i class="ti ti-world-search"></i>Tutte le fonti
+              </button>
               <button class="source-btn active" id="src-sc" data-action="search:source" data-source="streamingcommunity">
                 <i class="ti ti-device-tv"></i>StreamingCommunity
               </button>
@@ -93,19 +96,23 @@
             <div class="pg-stats" id="dl-stats"></div>
             <div class="pg-actions">
               <button class="btn btn-sm btn-outline-secondary" data-action="jobs:refresh"
-                      id="dl-refresh-btn" title="Rileggi i download dal server">
+                      id="dl-refresh-btn">
                 <i class="ti ti-refresh me-1"></i><span data-i18n="downloads.refresh">Aggiorna</span>
               </button>
               <button class="btn btn-sm btn-outline-primary" data-action="jobs:retryFailed"
-                      id="dl-retry-btn" style="display:none" title="Rimetti in coda tutti i download falliti">
+                      id="dl-retry-btn" style="display:none">
                 <i class="ti ti-reload me-1"></i><span data-i18n="downloads.retryFailed">Riprova falliti</span>
               </button>
               <button class="btn btn-sm btn-outline-secondary" data-action="jobs:clear"
-                      title="Rimuove completati e annullati; i falliti restano finché non li riprovi o li rimuovi">
+                      >
                 <i class="ti ti-trash me-1"></i><span data-i18n="downloads.clearDone">Rimuovi completati</span>
               </button>
+              <button class="btn btn-sm btn-outline-warning" data-action="jobs:clearErrors"
+                      >
+                <i class="ti ti-trash-x me-1"></i><span data-i18n="downloads.clearErrors">Pulisci errori</span>
+              </button>
               <button class="btn btn-sm btn-outline-danger" data-action="jobs:cancelAll"
-                      title="Annulla tutti i download e le conversioni in corso">
+                      >
                 <i class="ti ti-player-stop me-1"></i><span data-i18n="downloads.cancelAll">Annulla tutto</span>
               </button>
             </div>

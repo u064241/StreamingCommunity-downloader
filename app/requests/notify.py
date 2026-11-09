@@ -8,6 +8,7 @@ message gets delivered.
 import logging
 
 from app import db
+from app.config import get_settings
 from app.auth.permissions import Permission
 from app.requests import models
 from app.requests.apprise_channel import AppriseChannel
@@ -160,6 +161,12 @@ def notify(event: str, message: str, user_ids: list[int], request_id: int | None
     words: they are two audiences on the bell, but one webhook, which otherwise
     receives the same news twice.
     """
+    # The single General preference is a quiet mode: it already controls the
+    # confirmation dialogs in the browser and also silences panel/external
+    # notifications. Local transient toasts are intentionally unaffected.
+    if get_settings().get("confirmations_enabled", True) is False:
+        return
+
     unique = list(dict.fromkeys(user_ids))
     outcome = notify_type or EVENT_NOTIFY_TYPE.get(event, INFO)
     external_body = markdown_message if markdown_message is not None else message

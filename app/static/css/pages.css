@@ -250,6 +250,14 @@
       transform-origin: center 18%;
     }
 
+    .result-card:focus-visible {
+      transform: translateY(-4px) !important;
+      position: relative;
+      z-index: 5;
+      border-color: var(--blue) !important;
+      box-shadow: 0 0 0 3px var(--blue-dim) !important;
+    }
+
     /* A hovered shelf card becomes the same visual focus as the original
        catalogue: wider artwork with a connected dark caption panel. */
     .result-card:hover .card-meta {
@@ -387,6 +395,7 @@
       min-height: 2.7em;
       margin-bottom: 5px;
       hyphens: auto;
+      word-break: normal;
     }
 
     .card-meta .card-badges {

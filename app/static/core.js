@@ -239,7 +239,7 @@ function showToast(message, type = 'info', link = null) {
     ? ` <a href="#" class="alert-link text-white ms-1" data-action="toast:go"
           data-page="${escapeHtml(link.page)}">${escapeHtml(link.label)}</a>`
     : '';
-  toast.innerHTML = `<div class="alert ${colors[type]||'bg-info'} alert-dismissible text-white mb-0 shadow" role="alert">
+  toast.innerHTML = `<div class="alert sc-toast-alert ${colors[type]||'bg-info'} alert-dismissible text-white mb-0 shadow" role="alert">
     ${escapeHtml(message)}${go}
     <button type="button" class="btn-close btn-close-white" data-action="toast:dismiss"></button>
   </div>`;
@@ -356,6 +356,18 @@ document.addEventListener('input', e => _dispatchAction(e, 'data-input'));
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter') _dispatchAction(e, 'data-enter');
   else if (e.key === 'Escape') _dispatchAction(e, 'data-escape');
+
+  // Cards and other action-bearing non-controls must be usable without a
+  // mouse. Native buttons already dispatch their own click event, so only
+  // synthesize activation for elements that are not native controls.
+  if ((e.key === 'Enter' || e.key === ' ') &&
+      e.target.closest?.('[data-action]:not(button):not(a):not(input):not(select):not(textarea)')) {
+    const el = e.target.closest('[data-action]');
+    if (el && !el.hasAttribute('disabled') && !el.getAttribute('aria-disabled')) {
+      e.preventDefault();
+      el.click();
+    }
+  }
 });
 
 

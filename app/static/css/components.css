@@ -93,6 +93,17 @@
       background: var(--bg-raised) !important;
     }
 
+    /* Keep keyboard focus visible on every interactive surface, including
+       custom cards and links whose dark border is otherwise easy to miss. */
+    :where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+      outline: 2px solid var(--blue) !important;
+      outline-offset: 3px !important;
+    }
+
+    /* Native title tooltips remain available, but long labels must not force
+       the layout wider than the viewport. */
+    [title] { overflow-wrap: anywhere; }
+
     .btn-outline-success {
       background: transparent !important;
       border-color: var(--green-ring) !important;
@@ -334,6 +345,24 @@
       background: var(--yellow-dim) !important;
       color: var(--yellow) !important;
       border: 1px solid var(--yellow-ring) !important;
+    }
+    /* Keep transient confirmations visible without covering the page. */
+    .sc-toast-alert {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      opacity: .92;
+    }
+    .sc-toast-alert.bg-success {
+      background: color-mix(in srgb, var(--green-dim) 82%, transparent) !important;
+    }
+    .sc-toast-alert.bg-danger {
+      background: color-mix(in srgb, var(--danger-dim) 82%, transparent) !important;
+    }
+    .sc-toast-alert.bg-info {
+      background: color-mix(in srgb, var(--blue-dim) 82%, transparent) !important;
+    }
+    .sc-toast-alert.bg-warning {
+      background: color-mix(in srgb, var(--yellow-dim) 82%, transparent) !important;
     }
     .alert-dismissible .btn-close-white { filter: none !important; opacity: .5 !important; }
 

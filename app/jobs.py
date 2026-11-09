@@ -78,6 +78,20 @@ def remove_download_output(path: str) -> list[str]:
     return removed
 
 
+def _cleanup_temp_dir(path: str | None) -> None:
+    """Remove a job's staging directory when it is no longer resumable."""
+    if not path:
+        return
+    target = os.path.abspath(path)
+    tmp_root = os.path.abspath(str(TMP_DIR))
+    if not _inside(target, tmp_root) or target == tmp_root:
+        logger.warning("Not cleaning temporary path outside TMP_DIR: %s", path)
+        return
+    if os.path.isdir(target):
+        shutil.rmtree(target, ignore_errors=True)
+        logger.info("Cleaned up temp dir: %s", target)
+
+
 def _schedule_external_id(params: dict) -> Optional[str]:
     """The source id a scheduled entry's params carry, whatever its type."""
     value = params.get("id") or params.get("tv_id") or params.get("anime_id")
@@ -667,6 +681,7 @@ class JobManager:
             if not job or job.status not in ("done", "error", "cancelled"):
                 return False
             del self._jobs[job_id]
+        _cleanup_temp_dir(str(TMP_DIR / job.job_id))
         if self._schedule_store is not None:
             self._schedule_store.remove_by_job_id(job_id)
         self._broadcast({"type": "job_dismissed", "job_id": job_id})
@@ -698,9 +713,12 @@ class JobManager:
             external_id=old.external_id, source=old.source,
         )
         fn, args, kwargs = old.call
+        # Keep the failed job's staging directory. The segment downloader can
+        # reuse the .ts files already present there instead of starting over.
+        resume_dir = str(TMP_DIR / old.job_id)
         return self._submit_job(
             job, fn, *args, **kwargs,
-            temp_dir=str(TMP_DIR / job.job_id),
+            temp_dir=resume_dir,
             progress_factory=self._make_progress_factory(job),
             cancel_event=job.cancel_event,
         )
@@ -735,6 +753,11 @@ class JobManager:
             # A parked job is not over: it is resubmitted on resume, and
             # notifies then - or cancel() does, if it never comes back.
             if job.parked is None:
+                # Keep a failed staging directory so the explicit "Riprova"
+                # action can continue from the segments already downloaded.
+                # Successful and cancelled jobs have no reason to retain it.
+                if job.status in ("done", "cancelled"):
+                    _cleanup_temp_dir(kwargs.get("temp_dir") or str(TMP_DIR / job.job_id))
                 self._notify_listeners(job)
 
     def _attempt(self, job: DownloadJob, fn, args, kwargs) -> bool:
@@ -789,11 +812,6 @@ class JobManager:
                 job.status = "error"
                 job.error = str(e)
                 self._emit(job, {"type": "error", "message": str(e)})
-            finally:
-                tmp_path = TMP_DIR / job.job_id
-                if tmp_path.exists():
-                    shutil.rmtree(tmp_path, ignore_errors=True)
-                    logger.info("Cleaned up temp dir: %s", tmp_path)
         finally:
             self._slots.release()
         return False

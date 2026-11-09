@@ -33,7 +33,8 @@ def _domain() -> str:
 @router.get("")
 async def search(
     q: str = Query(..., min_length=1, max_length=200),
-    # Only explicitly registered sources are dispatched, with no fallback.
+    # ``all`` is an orchestration mode, not a provider: it queries every
+    # registered catalogue in parallel and keeps each result's source.
     source: str = Query(default="streamingcommunity", min_length=1, max_length=64),
     # 1-based, and the same number for both sources even though their pages are
     # different sizes (60 and 30): the caller asks for "the next lot" and each
@@ -46,9 +47,29 @@ async def search(
     dubbed: bool = Query(default=False),
     registry: ProviderRegistry = Depends(get_registry),
 ):
-    results = await call_provider(
-        registry.search, source, q, page=page, media_type=media_type, dubbed=dubbed)
-    return [result.to_legacy() for result in results]
+    if source != "all":
+        results = await call_provider(
+            registry.search, source, q, page=page, media_type=media_type, dubbed=dubbed)
+        return [result.to_legacy() for result in results]
+
+    # A missing/broken source must not hide results from the other catalogue.
+    # AnimeUnity is the only source supporting the dubbed filter, therefore an
+    # all-source request deliberately ignores that source-specific filter.
+    async def search_one(provider_source: str):
+        try:
+            return await call_provider(
+                registry.search, provider_source, q, page=page,
+                media_type=media_type if media_type in {"movie", "tv"} else None,
+                dubbed=False)
+        except HTTPException as exc:
+            logger.warning("Unified search source %s unavailable: %s", provider_source, exc.detail)
+            return []
+
+    batches = await asyncio.gather(*(search_one(name) for name in registry.sources()))
+    merged = []
+    for batch in batches:
+        merged.extend(result.to_legacy() for result in batch)
+    return merged
 
 
 @router.get("/languages/{title_id}")
