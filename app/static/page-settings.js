@@ -38,6 +38,7 @@ function _feedback(id, message = '', kind = 'muted') {
 
 let _softetherBusy = false;
 let _softetherBlockDetected = false;
+let _softetherIpRefreshTimer = null;
 // Local-only test path: localhost can exercise the installer without first
 // provoking a real source block. Remote panels remain block-gated unless the
 // explicit ?sc-vpn-test=1 query flag is used.
@@ -49,13 +50,19 @@ function _softetherError(error) {
   if (typeof key === 'string' && key.startsWith('softether.')) return t(key);
   if (error?.status === 403) return t('softether.denied');
   if (error?.status === 401) return t('softether.authentication');
-  return t('softether.requestFailed');
+  // Keep the translated fallback for network failures, but expose a useful
+  // local JavaScript error while diagnosing rendering/API integration issues.
+  // Without this, a successful 200 response followed by a render exception
+  // is incorrectly reported as a panel connectivity problem.
+  const detail = error instanceof ApiError ? error.message : error?.message;
+  return detail ? `${t('softether.requestFailed')} (${detail})` : t('softether.requestFailed');
 }
 
 async function loadSoftEtherStatus(openManager = false) {
   if (_softetherBusy) return;
   _softetherBusy = true;
   const open = document.getElementById('softether-open');
+  const close = document.getElementById('softether-close');
   const refresh = document.getElementById('softether-refresh');
   const install = document.getElementById('softether-install');
   const updateCheck = document.getElementById('softether-update-check');
@@ -63,9 +70,12 @@ async function loadSoftEtherStatus(openManager = false) {
   refresh.disabled = true;
   _feedback('softether-status', t('softether.checking'));
   let available = false;
+  let running = false;
   try {
     const status = await softetherApi.status();
     available = status.supported && status.installed;
+    running = Boolean(status.running);
+    if (close) close.disabled = !running;
     if (install) install.hidden = available || !status.vpngate_available || (!_softetherBlockDetected && !_softetherTestMode);
     if (updateCheck) updateCheck.disabled = !available;
     const bundledHint = document.getElementById('softether-bundled-hint');
@@ -80,7 +90,8 @@ async function loadSoftEtherStatus(openManager = false) {
   } catch (error) {
     _feedback('softether-status', _softetherError(error), 'danger');
   } finally {
-    open.disabled = !available;
+    open.disabled = !available || running;
+    if (close && !available) close.disabled = true;
     refresh.disabled = false;
     _softetherBusy = false;
   }
@@ -91,7 +102,12 @@ async function installSoftEther() {
   const progress = document.getElementById('softether-install-progress');
   const bar = document.getElementById('softether-install-progress-bar');
   const label = document.getElementById('softether-install-progress-label');
-  if (button) button.disabled = true;
+  if (window._softEtherInstallJobId) {
+    try { await softetherApi.cancelInstall(window._softEtherInstallJobId); }
+    catch (error) { _feedback('softether-status', _softetherError(error), 'danger'); }
+    return;
+  }
+  if (button) { button.disabled = false; button.textContent = 'Interrompi installazione'; }
   if (progress) progress.hidden = false;
   if (bar) { bar.value = 0; bar.removeAttribute('aria-valuenow'); }
   if (label) _settingsText(label, t('softether.installQueued'));
@@ -99,6 +115,7 @@ async function installSoftEther() {
   try {
     const status = await softetherApi.status();
     const started = await softetherApi.install(status.token);
+    window._softEtherInstallJobId = started.job_id;
     let current;
     do {
       current = await softetherApi.installStatus(started.job_id);
@@ -108,13 +125,15 @@ async function installSoftEther() {
         const key = current.state === 'downloading' ? 'softether.installProgress'
           : current.state === 'extracting' ? 'softether.extracting'
           : current.state === 'starting' ? 'softether.startingInstaller'
-          : current.state === 'started' ? 'softether.installComplete' : 'softether.installQueued';
+          : current.state === 'installing' ? 'softether.startingInstaller'
+          : current.state === 'completed' ? 'softether.installComplete' : 'softether.installQueued';
         _settingsText(label, key === 'softether.installProgress'
           ? t(key, { percent: percent === null ? '…' : Math.round(percent) }) : t(key));
       }
       if (current.state === 'error') throw new Error(current.error || 'softether.installFailed');
-      if (!['started', 'error'].includes(current.state)) await new Promise(resolve => setTimeout(resolve, 700));
-    } while (current.state !== 'started');
+      if (current.state === 'cancelled') throw new Error('Installazione interrotta');
+      if (!['completed', 'error', 'cancelled'].includes(current.state)) await new Promise(resolve => setTimeout(resolve, 700));
+    } while (current.state !== 'completed');
     _feedback('softether-status', t('softether.installStarted'), 'success');
     // The external installer needs user interaction. Once it exits, refresh
     // the local detection so the UI reflects the newly installed Client Manager.
@@ -122,8 +141,23 @@ async function installSoftEther() {
   } catch (error) {
     _feedback('softether-status', _softetherError(error), 'danger');
   } finally {
-    if (button) button.disabled = false;
+    window._softEtherInstallJobId = null;
+    if (button) { button.disabled = false; button.textContent = t('softether.install'); }
     if (progress) progress.hidden = true;
+    await loadSoftEtherStatus();
+  }
+}
+
+async function closeSoftEtherManager() {
+  const close = document.getElementById('softether-close');
+  if (close) close.disabled = true;
+  try {
+    const status = await softetherApi.status();
+    await softetherApi.closeManager(status.token);
+    _feedback('softether-status', 'VPN chiusa.', 'success');
+    await loadSoftEtherStatus();
+  } catch (error) {
+    _feedback('softether-status', _softetherError(error), 'danger');
     await loadSoftEtherStatus();
   }
 }
@@ -156,9 +190,9 @@ async function checkSoftEtherUpdates() {
   _feedback('softether-updates', t('softether.checkingUpdates'));
   try {
     const result = await softetherApi.updates();
-    const key = result.status === 'available' ? 'softether.updateAvailable'
-      : 'softether.updateUnavailable';
-    _feedback('softether-updates', result.status === 'available'
+    const key = result.status === 'update_available' ? 'softether.updateAvailable'
+      : result.status === 'up_to_date' ? 'softether.upToDate' : 'softether.updateUnavailable';
+    _feedback('softether-updates', result.status === 'update_available'
       ? t(key, { version: result.version }) : t(key), result.status === 'available' ? 'warning' : 'muted');
     const updateButton = document.getElementById('softether-update-install');
     if (updateButton) updateButton.hidden = result.status !== 'available';
@@ -185,17 +219,69 @@ async function downloadSoftEtherUpdate() {
   } finally { if (button) button.disabled = false; }
 }
 
+function formatVpnGateUptime(hours) {
+  const totalDays = Math.max(0, Math.round(Number(hours || 0) / 24));
+  if (totalDays < 1) return `${Math.max(0, Math.round(Number(hours || 0)))} h`;
+  const years = Math.floor(totalDays / 365);
+  const days = totalDays % 365;
+  if (years && days) return `${years} a ${days} g`;
+  if (years) return `${years} a`;
+  return `${totalDays} g`;
+}
+
+function formatVpnGateNumber(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return '0';
+  try {
+    return new Intl.NumberFormat(document.documentElement.lang || 'it-IT', {
+      notation: 'compact', maximumFractionDigits: 2
+    }).format(number);
+  } catch (_) {
+    return number.toLocaleString('it-IT');
+  }
+}
+
 async function loadVpnGateServers() {
-  const target = document.getElementById('softether-vpngate');
+  const target = document.getElementById('softether-vpngate-list');
+  const hide = document.getElementById('softether-vpngate-hide');
+  const feedback = document.getElementById('softether-vpngate-feedback');
   if (!target) return;
+  _feedback('softether-vpngate-feedback');
   _settingsText(target, t('softether.vpngateChecking'));
   try {
     const result = await softetherApi.vpngate();
     const servers = result.servers || [];
-    if (!servers.length) { _settingsText(target, t('softether.vpngateEmpty')); return; }
-    target.innerHTML = `<div class="softether-vpngate-list">${servers.slice(0, 15).map((s, i) =>
-      `<div class="softether-vpngate-row"><span>${escapeHtml(s.country || s.countryCode)} · ${escapeHtml(s.host)}:${s.port || 443}</span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps${(_softetherBlockDetected || _softetherTestMode) ? ` <button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button>` : ''}</span></div>`
+    let ipInfo = null;
+    try { ipInfo = await softetherApi.publicIp(); } catch (_) { /* IP service unavailable */ }
+    let profilesRaw = '';
+    let localProfiles = [];
+    let profileDetails = {};
+    try {
+      const profileData = await softetherApi.vpngateProfiles();
+      profilesRaw = profileData.raw || '';
+      localProfiles = profileData.profiles || [];
+      profileDetails = profileData.details || {};
+    } catch (_) { /* service may be stopped */ }
+    if (!servers.length && !localProfiles.length) { _settingsText(target, t('softether.vpngateEmpty')); return; }
+    target.hidden = false;
+    _feedback('softether-vpngate-feedback');
+    const ipBanner = ipInfo ? `<div id="softether-vpngate-ip" class="softether-vpngate-ip mb-2"><strong>IP pubblico</strong>: ${escapeHtml(ipInfo.current)}${ipInfo.changed ? ` · originale: ${escapeHtml(ipInfo.original)} · uscita VPN rilevata` : ' · nessuna variazione rilevata'}</div>` : '';
+    const listedNames = new Set(servers.map(s => `VPN Gate ${s.countryCode || s.host}`));
+    const orphanProfiles = localProfiles.filter(name => !listedNames.has(name));
+    const profileActions = name => `<button type="button" class="btn btn-sm btn-primary" data-vpngate-connect="${escapeHtml(name)}">Connetti</button> <button type="button" class="btn btn-sm btn-secondary" data-vpngate-disconnect="${escapeHtml(name)}">Disconnetti</button> <button type="button" class="btn btn-sm btn-danger" data-vpngate-delete="${escapeHtml(name)}">Elimina</button>`;
+    const orphanHtml = orphanProfiles.map(name => { const detail = profileDetails[name] || {}; const live = detail.country ? `${escapeHtml(detail.country)} · ` : ''; const metrics = detail.ping != null ? `${detail.ping} ms · ${(Number(detail.speed || 0) / 1000000).toFixed(1)} Mbps · ${formatVpnGateNumber(detail.sessions)} sessioni` : `Profilo locale non presente nell’elenco VPN Gate attuale${detail.status ? ' · ' + escapeHtml(detail.status) : ''}`; return `<div class="softether-vpngate-row"><span><strong>${live}${escapeHtml(detail.host || 'server locale')}${detail.port ? ':' + detail.port : ''}</strong><small class="d-block text-muted">${detail.name ? escapeHtml(detail.name) + ' · ' : ''}${metrics}</small></span><span>${profileActions(name)}</span></div>`; }).join('');
+    target.innerHTML = ipBanner + `<div class="softether-vpngate-list">${orphanHtml}${servers.slice(0, 15).map((s, i) =>
+      `<div class="softether-vpngate-row"><span><strong>${escapeHtml(s.country || s.countryCode)}</strong> · ${escapeHtml(s.host)}:${s.port || 443}<small class="d-block text-muted">${s.name ? escapeHtml(s.name) + ' · ' : ''}Raggiungibile · ${formatVpnGateNumber(s.sessions)} sessioni</small></span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps${(_softetherBlockDetected || _softetherTestMode) ? ` ${profilesRaw.includes(`VPN Gate ${s.countryCode || s.host}`) ? profileActions(`VPN Gate ${s.countryCode || s.host}`) : `<button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button>`}` : ''}</span></div>`
     ).join('')}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
+    if (hide) hide.hidden = false;
+    if (!window._softEtherRefreshTimer) {
+      window._softEtherRefreshTimer = setInterval(() => {
+        if (!target.hidden) loadVpnGateServers();
+      }, 5 * 60 * 1000);
+    }
+    if (!_softetherIpRefreshTimer) {
+      _softetherIpRefreshTimer = setInterval(refreshVpnGateIp, 15000);
+    }
     target.querySelectorAll('[data-vpngate-index]').forEach(button => button.addEventListener('click', async () => {
       const server = servers[Number(button.dataset.vpngateIndex)];
       button.disabled = true;
@@ -203,11 +289,61 @@ async function loadVpnGateServers() {
         const status = await softetherApi.status();
         await softetherApi.createVpnGateProfile({host: server.host, port: server.port || 443,
           name: `VPN Gate ${server.countryCode || server.host}`}, status.token);
-        _settingsText(target, t('softether.vpngateCreated'));
-      } catch (error) { _feedback('softether-vpngate', _softetherError(error), 'danger'); }
+        _feedback('softether-vpngate-feedback');
+        _feedback('softether-vpngate-feedback', t('softether.vpngateCreated'), 'success');
+        await loadVpnGateServers();
+      } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
       finally { button.disabled = false; }
     }));
-  } catch (error) { _feedback('softether-vpngate', _softetherError(error), 'danger'); }
+    target.querySelectorAll('[data-vpngate-delete]').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        const status = await softetherApi.status();
+        await softetherApi.deleteVpnGateProfile({name: button.dataset.vpngateDelete}, status.token);
+        _feedback('softether-vpngate-feedback', 'Profilo eliminato', 'success'); await loadVpnGateServers();
+      } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
+      finally { button.disabled = false; }
+    }));
+    target.querySelectorAll('[data-vpngate-connect], [data-vpngate-disconnect]').forEach(button => button.addEventListener('click', async () => {
+      const connect = button.dataset.vpngateConnect !== undefined;
+      const name = connect ? button.dataset.vpngateConnect : button.dataset.vpngateDisconnect;
+      button.disabled = true;
+      _feedback('softether-vpngate-feedback', connect ? 'Connessione in corso…' : 'Disconnessione in corso…', 'warning');
+      try {
+        const status = await softetherApi.status();
+        const result = connect
+          ? await softetherApi.connectVpnGateProfile({name}, status.token)
+          : await softetherApi.disconnectVpnGateProfile({name}, status.token);
+        _feedback('softether-vpngate-feedback', connect && result.connected ? 'Connesso. Aggiornamento IP in corso…' : connect ? 'Connessione non confermata.' : 'Disconnesso.', connect && !result.connected ? 'danger' : 'success');
+        await refreshVpnGateIp();
+      } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
+      finally { button.disabled = false; }
+    }));
+  } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
+}
+
+async function refreshVpnGateIp() {
+  const target = document.getElementById('softether-vpngate-list');
+  const banner = document.getElementById('softether-vpngate-ip');
+  if (!target || target.hidden || !banner) return;
+  try {
+    const ipInfo = await softetherApi.publicIp();
+    banner.innerHTML = `<strong>IP pubblico</strong>: ${escapeHtml(ipInfo.current)}${ipInfo.changed ? ` · originale: ${escapeHtml(ipInfo.original)} · uscita VPN rilevata` : ' · nessuna variazione rilevata'}`;
+  } catch (_) {
+    // The server list remains usable if the external public-IP service is
+    // temporarily unavailable.
+  }
+}
+
+function hideVpnGateServers() {
+  const target = document.getElementById('softether-vpngate-list');
+  const hide = document.getElementById('softether-vpngate-hide');
+  if (target) target.hidden = true;
+  if (hide) hide.hidden = true;
+  if (_softetherIpRefreshTimer) {
+    clearInterval(_softetherIpRefreshTimer);
+    _softetherIpRefreshTimer = null;
+  }
 }
 
 // Each tab fetches its own data the first time it is opened, so opening the
@@ -220,6 +356,7 @@ const _SETTINGS_TAB_LOADERS = {
   // at all, for data only this tab reads.
   librerie: () => Promise.all([loadLibraries().then(renderLibrariesList), loadDownloadDirectory()]),
   log: () => loadApplicationLogs(),
+  generali: () => loadGeneralSettings(),
   associazioni: () => loadLibraryAssociations(),
   nomi: () => loadNamingTemplates(),
   // Both read the same endpoint, and _loadAppSettings() shares the promise, so
@@ -237,14 +374,32 @@ let _appSettingsPromise = null;
 
 function _loadAppSettings() {
   if (!_appSettingsPromise) {
-    _appSettingsPromise = api.get('/api/domain/settings').catch(() => null);
+    _appSettingsPromise = api.get('/api/domain/settings').then(data => {
+      window._confirmationsEnabled = data.confirmations_enabled !== false;
+      return data;
+    }).catch(() => null);
   }
   return _appSettingsPromise;
 }
 
+async function loadGeneralSettings() {
+  const data = await _loadAppSettings();
+  const input = document.getElementById('setting-confirmations-enabled');
+  if (input) input.checked = data?.confirmations_enabled !== false;
+}
+
+async function saveGeneralSettings() {
+  const input = document.getElementById('setting-confirmations-enabled');
+  try {
+    await api.put('/api/domain/settings', { confirmations_enabled: !!input?.checked });
+    window._confirmationsEnabled = !!input?.checked;
+    _feedback('general-settings-feedback', 'Impostazioni salvate', 'success');
+  } catch (e) { _feedback('general-settings-feedback', errText(e), 'danger'); }
+}
+
 // Tabs whose panes only talk to MANAGE_SETTINGS endpoints: without it they would
 // render as empty panes fed by 403s.
-const _SETTINGS_TABS_NEED_MANAGE = ['sorgente', 'librerie', 'associazioni', 'nomi', 'download', 'notifiche', 'hook', 'mcp', 'log'];
+const _SETTINGS_TABS_NEED_MANAGE = ['sorgente', 'librerie', 'associazioni', 'nomi', 'download', 'notifiche', 'hook', 'mcp', 'log', 'generali'];
 
 let _settingsTab = 'sorgente';
 const _settingsLoaded = new Set();
@@ -1205,10 +1360,13 @@ registerActions({
   'cfg:probeHardware': () => probeHardware(),
   'cfg:softetherStatus': () => loadSoftEtherStatus(),
   'cfg:softetherOpen': () => openSoftEtherManager(),
+  'cfg:softetherClose': () => closeSoftEtherManager(),
   'cfg:softetherInstall': () => installSoftEther(),
+  'cfg:saveGeneral': () => saveGeneralSettings(),
   'cfg:softetherUpdates': () => checkSoftEtherUpdates(),
   'cfg:softetherDownloadUpdate': () => downloadSoftEtherUpdate(),
   'cfg:softetherVpnGate': () => loadVpnGateServers(),
+  'cfg:softetherVpnGateHide': () => hideVpnGateServers(),
   'cfg:refreshLogs': () => loadApplicationLogs(),
   'cfg:browseDownloadDirectory': () => browseDownloadDirectory(),
   'cfg:saveDownloadDirectory': () => saveDownloadDirectory(),

@@ -106,6 +106,7 @@ SETTINGS_DEFAULTS = {
     "subtitle_mode": "embed",
     # The MCP endpoint at /mcp. Off by default: it lets an agent act as a user.
     "mcp_enabled": False,
+    "confirmations_enabled": True,
 }
 
 

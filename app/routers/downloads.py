@@ -497,6 +497,11 @@ def cancel_batch(batch_id: str, request: HttpRequest, delete_files: bool = False
     return {"batch_id": batch_id, "cancelled": cancelled, "removed": removed}
 
 
+@router.post("/all/cancel", status_code=200, dependencies=CAN_CONTROL_JOBS)
+def cancel_all_downloads():
+    return {"cancelled": job_manager.cancel_all()}
+
+
 # Starts a download, so it takes what starting one takes — not the job-control
 # permission approvers hold for stopping what they approved.
 @router.post("/{job_id}/retry", status_code=202, dependencies=CAN_DOWNLOAD)

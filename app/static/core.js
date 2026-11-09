@@ -131,6 +131,7 @@ function isAnimeFilm(kind) {
 }
 
 function scConfirm(msg) {
+  if (window._confirmationsEnabled === false) return Promise.resolve(true);
   return new Promise(resolve => {
     document.getElementById('sc-confirm-msg').textContent = msg;
     const ok = document.getElementById('sc-confirm-ok');
@@ -217,7 +218,7 @@ function hideModal(id) {
   document.body.classList.remove('modal-open');
 }
 document.addEventListener('click', (e) => {
-  if (e.target.classList.contains('modal') && e.target.classList.contains('show'))
+  if (e.target.classList.contains('modal') && e.target.classList.contains('show') && e.target.id !== 'player-modal')
     hideModal(e.target.id);
   if (e.target.closest('[data-bs-dismiss="modal"]')) {
     const modal = e.target.closest('.modal');

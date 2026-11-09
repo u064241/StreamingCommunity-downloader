@@ -26,7 +26,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title"><i class="ti ti-circle-x me-2 text-danger"></i>Rifiuta richiesta</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn btn-sm btn-outline-light" data-bs-dismiss="modal" title="Chiudi player" aria-label="Chiudi player">X</button>
       </div>
       <div class="modal-body">
         <p class="mb-2" id="deny-title" style="font-weight:600"></p>
@@ -122,11 +122,14 @@
     <div class="modal-content player-shell">
       <div class="modal-header border-0">
         <h5 class="modal-title" id="player-modal-title" style="color:rgba(255,255,255,.6)"></h5>
+        <button type="button" class="btn btn-sm btn-outline-light me-2" id="video-player-stop" data-i18n="files.playerStop" title="Stop">Stop</button>
+        <button type="button" class="btn btn-sm btn-outline-light me-2" id="video-player-external" title="Apri con il player di sistema">Player di sistema</button>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-0">
         <video id="video-player" controls preload="metadata"
                class="player-video"></video>
+        <div id="video-player-tracks" class="px-3 py-2 small text-muted" hidden></div>
       </div>
     </div>
   </div>

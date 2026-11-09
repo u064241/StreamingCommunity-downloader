@@ -643,6 +643,13 @@ class JobManager:
             removed += 1
         return cancelled, removed
 
+    def cancel_all(self) -> int:
+        """Cancel every unfinished job, without touching completed files."""
+        with self._lock:
+            jobs = [j for j in self._jobs.values()
+                    if j.status in ("scheduled", "queued", "paused", "running")]
+        return sum(self.cancel(job.job_id) for job in jobs)
+
     def _park(self, job: DownloadJob, fn, args, kwargs) -> bool:
         """Leave the executor for a paused job. False when it was resumed or
         cancelled in the meantime, which the caller handles."""
@@ -870,7 +877,10 @@ class JobManager:
         from app.core.tv import download_episode, fmt_ep
 
         ep = eps[ep_index]
+        episode_title = ep.get("name") or ep.get("title") or ep.get("episode_name") or ""
         title = f"{tv_name} S{season:02d}E{fmt_ep(ep['n'])}"
+        if episode_title:
+            title += f" - {episode_title}"
         job = self._make_job(title, "episode", schedule_id=schedule_id,
                              phases=self._compute_phases(audio_languages or ["ita"]),
                              user_id=user_id, batch_id=batch_id, batch_kind=batch_kind,

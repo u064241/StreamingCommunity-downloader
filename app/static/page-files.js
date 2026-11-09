@@ -262,9 +262,8 @@ function renderSearchResults(results, query) {
         ${pathMeta}
         <span class="fm-meta">${size}</span>
         <div class="fm-actions">
-          ${playable ? `<button class="btn btn-sm btn-outline-primary" data-play-path="${escapeHtml(item.path)}" data-play-name="${escapeHtml(item.name)}"><i class="ti ti-player-play"></i></button>` : ''}
+          ${playable ? `<button class="btn btn-sm btn-primary file-play-button" data-play-path="${escapeHtml(item.path)}" data-play-name="${escapeHtml(item.name)}" title="Riproduci" aria-label="Riproduci"><i class="ti ti-player-play-filled"></i><span>Play</span></button>` : ''}
           <button class="btn btn-sm btn-outline-secondary" data-rename-path="${escapeHtml(item.path)}" data-rename-name="${escapeHtml(item.name)}"><i class="ti ti-pencil"></i></button>
-          <a class="btn btn-sm btn-outline-secondary" href="/api/files/download/${encodeURI(item.path)}"><i class="ti ti-download"></i></a>
           <button class="btn btn-sm btn-outline-danger" data-delete-path="${escapeHtml(item.path)}" data-delete-name="${escapeHtml(item.name)}"><i class="ti ti-trash"></i></button>
         </div>`;
     }
@@ -385,9 +384,8 @@ function renderTreeItems(items, container, depth) {
         <span class="fm-name">${escapeHtml(item.name)}</span>
         <span class="fm-meta">${size}</span>
         <div class="fm-actions">
-          ${playable?`<button class="btn btn-sm btn-outline-primary" data-play-path="${escapeHtml(item.path)}" data-play-name="${escapeHtml(item.name)}"><i class="ti ti-player-play"></i></button>`:''}
+          ${playable?`<button class="btn btn-sm btn-primary file-play-button" data-play-path="${escapeHtml(item.path)}" data-play-name="${escapeHtml(item.name)}" title="Riproduci" aria-label="Riproduci"><i class="ti ti-player-play-filled"></i><span>Play</span></button>`:''}
           <button class="btn btn-sm btn-outline-secondary" data-rename-path="${escapeHtml(item.path)}" data-rename-name="${escapeHtml(item.name)}"><i class="ti ti-pencil"></i></button>
-          <a class="btn btn-sm btn-outline-secondary" href="/api/files/download/${encodeURI(item.path)}"><i class="ti ti-download"></i></a>
           <button class="btn btn-sm btn-outline-danger" data-delete-path="${escapeHtml(item.path)}" data-delete-name="${escapeHtml(item.name)}"><i class="ti ti-trash"></i></button>
         </div>`;
       container.appendChild(row);
@@ -427,13 +425,70 @@ async function batchDeletePaths(paths) {
   } catch(e) { showToast(window.t("dynamic.ui61"),'danger'); }
 }
 
-function playFile(path, name) {
+async function playFile(path, name) {
+  // Local files are opened with the system player so multiple audio tracks
+  // and subtitles remain available (the browser video element cannot expose
+  // them reliably for every MP4/MKV combination).
+  try {
+    await api.post('/api/files/open', {path});
+    showToast('Aperto con il player di sistema', 'success');
+    return;
+  } catch (e) {
+    showToast('Player di sistema non disponibile: apertura nel browser', 'warning');
+  }
   document.getElementById('player-modal-title').textContent=name;
   const video = document.getElementById('video-player');
+  const tracks = document.getElementById('video-player-tracks');
+  tracks.innerHTML = '';
+  tracks.hidden = true;
+  video.querySelectorAll('track').forEach(t => t.remove());
   video.src=`/api/files/stream/${encodeURI(path)}`; video.load();
   showModal('player-modal');
+  const external = document.getElementById('video-player-external');
+  if (external) external.onclick = async () => {
+    try {
+      await api.post('/api/files/open', {path});
+      showToast('Aperto con il player di sistema', 'success');
+    } catch (e) { showToast(errText(e, 'Impossibile aprire il player di sistema'), 'danger'); }
+  };
+  try {
+    const data = await api.get(`/api/files/tracks/${encodeURI(path)}`);
+    const audio = data.audio || [];
+    const subs = data.subtitles || [];
+    if (audio.length || subs.length) {
+      tracks.hidden = false;
+      tracks.innerHTML = `<span class="me-3"><i class="ti ti-volume me-1"></i>Audio: ${audio.length ? audio.map(t => escapeHtml(t.title || t.language || 'und')).join(', ') : 'nessuna traccia rilevata'}</span>`;
+      for (const sub of subs) {
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.label = sub.title || sub.language || 'Sottotitoli';
+        track.srclang = sub.language || 'und';
+        track.src = `/api/files/subtitle/${encodeURIComponent(sub.index)}/${encodeURI(path)}`;
+        track.default = subs.indexOf(sub) === 0;
+        video.appendChild(track);
+      }
+      if (subs.length) {
+        tracks.insertAdjacentHTML('beforeend', `<span><i class="ti ti-language me-1"></i>Sottotitoli: ${subs.map(t => escapeHtml(t.title || t.language || 'und')).join(', ')}. Attivali dal menu CC del player.</span>`);
+        video.textTracks[0].mode = 'showing';
+      }
+    } else {
+      tracks.hidden = false;
+      tracks.textContent = 'Nessuna traccia audio o sottotitolo incorporato rilevato.';
+    }
+  } catch (e) {
+    tracks.hidden = false;
+    tracks.textContent = 'Lingue e sottotitoli non rilevabili: ffprobe non disponibile o file non indicizzato.';
+  }
+  const stop = document.getElementById('video-player-stop');
+  if (stop) stop.onclick = () => {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  };
   document.getElementById('player-modal').addEventListener('click', (e) => {
-    if (e.target.closest('[data-bs-dismiss="modal"]')) { video.pause(); video.src=''; }
+    if (e.target.closest('[data-bs-dismiss="modal"]')) {
+      video.pause(); video.removeAttribute('src'); video.load();
+    }
   }, {once:true});
 }
 

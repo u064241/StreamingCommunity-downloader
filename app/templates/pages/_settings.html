@@ -21,6 +21,7 @@
         </div>
       </div>
       <ul class="nav nav-tabs mb-3" id="settings-tabs">
+        <li class="nav-item"><a class="nav-link" href="#" data-settings-tab="generali">Generali</a></li>
         <li class="nav-item">
           <a class="nav-link active" href="#" data-settings-tab="sorgente" data-i18n="settings.source">Sorgente</a>
         </li>
@@ -51,6 +52,20 @@
         <li class="nav-item"><a class="nav-link" href="#" data-settings-tab="log">Log</a></li>
       </ul>
 
+      <div class="settings-pane" data-settings-pane="generali" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-label">Generali</p>
+          <p class="settings-section-hint">Preferenze generali dell’interfaccia e delle azioni.</p>
+          <label class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="setting-confirmations-enabled">
+            <span class="form-check-label">Richiedi conferma prima delle azioni</span>
+          </label>
+          <div class="form-text">Disattivando questa opzione, eliminazioni, annullamenti e pulizie verranno eseguiti direttamente.</div>
+          <button class="btn btn-primary btn-sm mt-3" data-action="cfg:saveGeneral" id="save-general-btn">Salva</button>
+          <div id="general-settings-feedback" class="form-text"></div>
+        </div>
+      </div>
+
       <div class="settings-pane" data-settings-pane="sorgente">
       <div class="settings-section">
         <p class="settings-section-label" data-i18n="softether.title">SoftEther VPN (opzionale)</p>
@@ -63,14 +78,17 @@
         <div id="softether-updates" class="form-text" role="status" aria-live="polite"></div>
         <div class="settings-actions">
           <button type="button" class="btn btn-primary btn-sm" id="softether-open"
-                  data-action="cfg:softetherOpen" data-i18n="softether.open" disabled>Apri SoftEther</button>
+                  data-action="cfg:softetherOpen" data-i18n="softether.open" disabled>Apri VPN</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-close"
+                  data-action="cfg:softetherClose" disabled>Chiudi VPN</button>
           <button type="button" class="btn btn-primary btn-sm" id="softether-install"
                   data-action="cfg:softetherInstall" data-i18n="softether.install" hidden>Installa SoftEther</button>
           <span id="softether-bundled-hint" class="form-text" data-i18n="softether.bundledHint">Setup locale incluso nell’installer del pannello.</span>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-refresh"
+          <button type="button" class="btn btn-primary btn-sm" id="softether-refresh"
                   data-action="cfg:softetherStatus" data-i18n="softether.refresh">Ricontrolla</button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-update-check"
+          <button type="button" class="btn btn-primary btn-sm" id="softether-update-check"
                   data-action="cfg:softetherUpdates" data-i18n="softether.checkUpdates">Controlla aggiornamenti VPN</button>
+          <span class="form-text text-warning d-block mt-2" data-i18n="softether.openSequence">Se SoftEther è stato chiuso completamente, premi prima Ricontrolla e poi Apri VPN.</span>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-update-install"
                   data-action="cfg:softetherDownloadUpdate" data-i18n="softether.downloadUpdate" hidden>Scarica e installa aggiornamento</button>
           <span id="softether-remote-hint" class="form-text" data-i18n="softether.remoteHint" hidden>Questo pulsante scarica l’ultima release ufficiale da GitHub.</span>
@@ -80,9 +98,11 @@
           <span id="softether-install-progress-label" class="form-text" data-i18n="softether.installQueued">Preparazione download…</span>
         </div>
         <div class="settings-actions mt-3">
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:softetherVpnGate" data-i18n="softether.vpngate">Mostra server VPN Gate</button>
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:softetherVpnGate" data-i18n="softether.vpngate">Mostra server VPN Gate</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="softether-vpngate-hide" data-action="cfg:softetherVpnGateHide" hidden>Nascondi server VPN Gate</button>
         </div>
-        <div id="softether-vpngate" class="form-text mt-2" role="status" aria-live="polite"></div>
+        <div id="softether-vpngate-list" class="mt-2" role="status" aria-live="polite"></div>
+        <div id="softether-vpngate-feedback" class="form-text" role="status" aria-live="polite"></div>
       </div>
       <!-- ── Sorgente ──────────────────────────────────────────────────── -->
       <div class="settings-section">

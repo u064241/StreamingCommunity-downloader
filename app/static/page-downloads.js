@@ -246,7 +246,7 @@ function _fireBtnHtml(jobId) {
 }
 function _stopBtnHtml(jobId) {
   return `<button class="btn btn-sm btn-outline-danger ms-1" data-action="jobs:cancel"
-                  data-job="${jobId}" title="${window.t('dynamic.extra51')}"><i class="ti ti-player-stop"></i></button>`;
+                  data-job="${jobId}" title="${window.t('dynamic.extra51')}"><i class="ti ti-player-stop"></i><span class="d-none d-md-inline ms-1">Annulla</span></button>`;
 }
 
 // A failed job stays until someone decides about it: run it again, or let it go.
@@ -411,9 +411,9 @@ function renderDlStats() {
     ['running', window.t("dynamic.ui4"), 'pg-stat-live'],
     ['waiting', window.t("dynamic.ui2"), 'pg-stat-wait'],
     // Only when there is one: most panels never schedule anything.
-    ...(counts.scheduled ? [['scheduled', 'Programmati', 'pg-stat-sched']] : []),
-    ['done', 'Completati', 'pg-stat-ok'],
-    ['error', 'Errori', 'pg-stat-error'],
+    ...(counts.scheduled ? [['scheduled', window.t("downloads.scheduled"), 'pg-stat-sched']] : []),
+    ['done', window.t("downloads.completed"), 'pg-stat-ok'],
+    ['error', window.t("downloads.errors"), 'pg-stat-error'],
   ];
   el.innerHTML = chips.map(([key, label, cls]) =>
     `<span class="pg-stat ${counts[key] ? cls : 'pg-stat-zero'}">
@@ -770,6 +770,17 @@ async function cancelJob(jobId) {
   } catch(e) { showToast(errText(e), 'danger'); }
 }
 
+async function cancelAllJobs() {
+  const active = [..._jobs.values()].filter(_isUnfinished);
+  if (!active.length) { showToast('Non ci sono download o conversioni da annullare', 'info'); return; }
+  if (!await scConfirm(`Annullare tutti i ${active.length} download/conversioni in corso? I file completati resteranno nella libreria.`)) return;
+  try {
+    const result = await api.post('/api/download/all/cancel');
+    showToast(`Annullati ${result.cancelled} processi`, 'info');
+    await refreshJobs();
+  } catch (e) { showToast(errText(e, 'Impossibile annullare tutti i processi'), 'danger'); }
+}
+
 // The list is normally kept current by the event stream. This re-reads it from
 // the server for the times that is not enough — a laptop coming back from
 // sleep, a proxy that closed the connection, a tab that fell far behind.
@@ -836,6 +847,7 @@ registerActions({
   'jobs:filter':      d => setDlFilter(d.filter),
   'jobs:fire':        d => fireNow(d.job),
   'jobs:cancel':      d => cancelJob(d.job),
+  'jobs:cancelAll':   () => cancelAllJobs(),
   'jobs:retry':       d => retryJob(d.job),
   'jobs:retryFailed': () => retryFailed(),
   'jobs:dismiss':     d => dismissJob(d.job),

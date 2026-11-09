@@ -109,6 +109,38 @@ def media_languages(path: str) -> dict | None:
     return {"audio": audio, "subtitles": subtitles | _sidecar_subtitles(path)}
 
 
+def media_tracks(path: str) -> dict | None:
+    """Return playable audio/subtitle stream metadata for the local player."""
+    ffprobe = get_ffprobe_exe()
+    if ffprobe is None or not os.path.exists(path):
+        return None
+    try:
+        proc = subprocess.run(
+            [ffprobe, "-v", "error", "-print_format", "json",
+             "-show_entries", "stream=index,codec_type:stream_tags=language,title",
+             path], capture_output=True, timeout=PROBE_TIMEOUT,
+             stdin=subprocess.DEVNULL, **hidden_process_options(),
+        )
+        if proc.returncode != 0:
+            return None
+        streams = json.loads(proc.stdout or b"{}").get("streams", [])
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        return None
+    result = {"audio": [], "subtitles": []}
+    for stream in streams:
+        kind = stream.get("codec_type")
+        output_kind = "subtitles" if kind == "subtitle" else kind
+        if output_kind not in result:
+            continue
+        tags = stream.get("tags") or {}
+        result[output_kind].append({
+            "index": stream.get("index"),
+            "language": canonical_lang(tags.get("language")),
+            "title": tags.get("title") or "",
+        })
+    return result
+
+
 def missing_languages(path: str, audio: list[str], subtitles: list[str]) -> dict | None:
     """Which of the requested languages ``path`` does not already carry.
 

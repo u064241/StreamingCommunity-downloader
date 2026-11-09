@@ -93,14 +93,29 @@ const api = {
 const softetherApi = {
   status: () => api.get('/api/softether/status'),
   vpngate: () => api.get('/api/softether/vpngate'),
+  publicIp: () => api.get('/api/softether/public-ip'),
+  vpngateProfiles: () => api.get('/api/softether/vpngate/profiles'),
   createVpnGateProfile: (body, token) => api.request('POST', '/api/softether/vpngate/profile', {
+    body, headers: { 'X-SoftEther-Token': token },
+  }),
+  deleteVpnGateProfile: (body, token) => api.request('POST', '/api/softether/vpngate/profile/delete', {
+    body, headers: { 'X-SoftEther-Token': token },
+  }),
+  connectVpnGateProfile: (body, token) => api.request('POST', '/api/softether/vpngate/profile/connect', {
+    body, headers: { 'X-SoftEther-Token': token },
+  }),
+  disconnectVpnGateProfile: (body, token) => api.request('POST', '/api/softether/vpngate/profile/disconnect', {
     body, headers: { 'X-SoftEther-Token': token },
   }),
   updates: () => api.get('/api/softether/updates'),
   install: token => api.request('POST', '/api/softether/install', { headers: { 'X-SoftEther-Token': token } }),
   installStatus: job => api.get('/api/softether/install-status', { job }),
+  cancelInstall: job => api.request('POST', `/api/softether/install-cancel?job=${encodeURIComponent(job)}`),
   downloadUpdate: token => api.request('POST', '/api/softether/download-update', { headers: { 'X-SoftEther-Token': token } }),
   openManager: token => api.request('POST', '/api/softether/open-manager', {
+    headers: { 'X-SoftEther-Token': token },
+  }),
+  closeManager: token => api.request('POST', '/api/softether/close-manager', {
     headers: { 'X-SoftEther-Token': token },
   }),
 };

@@ -87,41 +87,42 @@
         <div id="page-downloads" style="display:none">
           <div class="pg-head">
             <div class="pg-head-main">
-              <h1 class="pg-h1">Download</h1>
-              <p class="pg-sub">
-                Ogni download attraversa le sue fasi in ordine — video, una traccia
-                per lingua audio, poi l'unione. La barra segue i segmenti ottenuti.
-              </p>
+              <h1 class="pg-h1" data-i18n="downloads.title">Download</h1>
+              <p class="pg-sub" data-i18n="downloads.subtitle">Ogni download attraversa le sue fasi in ordine — video, una traccia per lingua audio, poi l’unione. La barra segue i segmenti ottenuti.</p>
             </div>
             <div class="pg-stats" id="dl-stats"></div>
             <div class="pg-actions">
               <button class="btn btn-sm btn-outline-secondary" data-action="jobs:refresh"
                       id="dl-refresh-btn" title="Rileggi i download dal server">
-                <i class="ti ti-refresh me-1"></i>Aggiorna
+                <i class="ti ti-refresh me-1"></i><span data-i18n="downloads.refresh">Aggiorna</span>
               </button>
               <button class="btn btn-sm btn-outline-primary" data-action="jobs:retryFailed"
                       id="dl-retry-btn" style="display:none" title="Rimetti in coda tutti i download falliti">
-                <i class="ti ti-reload me-1"></i>Riprova falliti
+                <i class="ti ti-reload me-1"></i><span data-i18n="downloads.retryFailed">Riprova falliti</span>
               </button>
               <button class="btn btn-sm btn-outline-secondary" data-action="jobs:clear"
                       title="Rimuove completati e annullati; i falliti restano finché non li riprovi o li rimuovi">
-                <i class="ti ti-trash me-1"></i>Rimuovi completati
+                <i class="ti ti-trash me-1"></i><span data-i18n="downloads.clearDone">Rimuovi completati</span>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" data-action="jobs:cancelAll"
+                      title="Annulla tutti i download e le conversioni in corso">
+                <i class="ti ti-player-stop me-1"></i><span data-i18n="downloads.cancelAll">Annulla tutto</span>
               </button>
             </div>
           </div>
           <div class="pg-bar" id="dl-filters">
-            <button class="queue-filter active" data-action="jobs:filter" data-filter="all">Tutti</button>
-            <button class="queue-filter" data-action="jobs:filter" data-filter="running">In corso</button>
-            <button class="queue-filter" data-action="jobs:filter" data-filter="waiting">In attesa</button>
-            <button class="queue-filter" data-action="jobs:filter" data-filter="scheduled">Programmati</button>
-            <button class="queue-filter" data-action="jobs:filter" data-filter="done">Completati</button>
-            <button class="queue-filter" data-action="jobs:filter" data-filter="error">Errori</button>
+            <button class="queue-filter active" data-action="jobs:filter" data-filter="all" data-i18n="downloads.all">Tutti</button>
+            <button class="queue-filter" data-action="jobs:filter" data-filter="running" data-i18n="downloads.running">In corso</button>
+            <button class="queue-filter" data-action="jobs:filter" data-filter="waiting" data-i18n="downloads.waiting">In attesa</button>
+            <button class="queue-filter" data-action="jobs:filter" data-filter="scheduled" data-i18n="downloads.scheduled">Programmati</button>
+            <button class="queue-filter" data-action="jobs:filter" data-filter="done" data-i18n="downloads.completed">Completati</button>
+            <button class="queue-filter" data-action="jobs:filter" data-filter="error" data-i18n="downloads.errors">Errori</button>
           </div>
           <!-- Sibling of the container, never inside it: rendering the job list
                clears the container, and a node living in there would be gone. -->
           <div id="jobs-empty" class="text-center py-6">
             <i class="ti ti-download d-block mb-2" style="font-size:2.5rem;opacity:.2"></i>
-            <span style="font-size:13px;opacity:.5">Nessun download in corso</span>
+            <span style="font-size:13px;opacity:.5" data-i18n="downloads.empty">Nessun download in corso</span>
           </div>
           <div id="jobs-container"></div>
         </div>

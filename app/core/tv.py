@@ -140,7 +140,10 @@ def _episode(ep: dict) -> dict:
     return {
         "id": ep["id"],
         "n": ep["number"],
-        "name": ep.get("name"),
+        # The source has used both ``name`` and ``title`` for the episode
+        # caption over time.  Keep the first non-empty value for filenames and
+        # the episode list instead of silently falling back to SxxExx only.
+        "name": ep.get("name") or ep.get("title") or ep.get("episode_title"),
         "plot": ep.get("plot") or None,
         "duration": ep.get("duration"),
         "still": _episode_image(ep.get("images")),
@@ -279,6 +282,17 @@ def download_episode(
                              episode=ep["n"], year=year, source=source)
                  or series_episode_path(EPISODE, tv_id, output_dir, tv_name, season,
                                         ep["n"], year, source=source))
+    # Keep the stable SxxExx identifier, but include the source episode title
+    # so files are useful outside the portal as well (e.g. "... S04E04 - ...").
+    episode_title = sanitize_filename(
+        ep.get("name") or ep.get("title") or ep.get("episode_name") or ""
+    ).strip()
+    if episode_title and dest_path:
+        current = os.path.basename(dest_path)
+        stem, extension = os.path.splitext(current)
+        suffix = f" - {episode_title}"
+        if not stem.lower().endswith(suffix.lower()):
+            dest_path = os.path.join(os.path.dirname(dest_path), f"{stem} - {episode_title}{extension}")
 
     final_path = download_m3u8(
         m3u8_index=m3u8_url,

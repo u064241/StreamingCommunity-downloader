@@ -16,6 +16,9 @@
       'updates.check': 'Controlla aggiornamenti', 'home.next': 'Scopri cosa guardare',
       'home.media': 'serie, film, anime.', 'home.subtitle': 'Cerca nel catalogo, scegli audio e sottotitoli, e mandalo in libreria.',
       'search.placeholder': 'Film, serie TV...', 'search.button': 'Cerca',
+      'downloads.title': 'Download', 'downloads.subtitle': 'Ogni download attraversa le sue fasi in ordine — video, una traccia per lingua audio, poi l’unione. La barra segue i segmenti ottenuti.',
+      'downloads.refresh': 'Aggiorna', 'downloads.retryFailed': 'Riprova falliti', 'downloads.clearDone': 'Rimuovi completati',
+      'downloads.cancelAll': 'Annulla tutto', 'downloads.all': 'Tutti', 'downloads.running': 'In corso', 'downloads.waiting': 'In attesa', 'downloads.scheduled': 'Programmati', 'downloads.completed': 'Completati', 'downloads.errors': 'Errori', 'downloads.empty': 'Nessun download in corso',
       'title.related': 'Correlati', 'title.switch': 'Scegli un altro titolo', 'title.item': 'Titolo'
     },
     en: {
@@ -32,6 +35,9 @@
       'updates.check': 'Check for updates', 'home.next': 'Discover what to watch',
       'home.media': 'series, films, anime.', 'home.subtitle': 'Search the catalog, choose audio and subtitles, and send it to your library.',
       'search.placeholder': 'Films, TV series...', 'search.button': 'Search',
+      'downloads.title': 'Downloads', 'downloads.subtitle': 'Each download goes through its stages in order — video, one audio track per language, then merging. The bar follows the downloaded segments.',
+      'downloads.refresh': 'Refresh', 'downloads.retryFailed': 'Retry failed', 'downloads.clearDone': 'Remove completed',
+      'downloads.cancelAll': 'Cancel all', 'downloads.all': 'All', 'downloads.running': 'Running', 'downloads.waiting': 'Waiting', 'downloads.scheduled': 'Scheduled', 'downloads.completed': 'Completed', 'downloads.errors': 'Errors', 'downloads.empty': 'No active downloads',
       'title.related': 'Related', 'title.switch': 'Choose another title', 'title.item': 'Title'
     }
   };
@@ -357,6 +363,7 @@
     "title.quality": {it: "Qualità", en: "Quality"},
     "title.genre": {it: "Genere", en: "Genre"},
     "title.playTrailer": {it: "Riproduci il trailer", en: "Play trailer"},
+    "files.playerStop": {it: "Stop", en: "Stop"},
     "title.episodesUnavailable": {it: "In arrivo: episodi non ancora disponibili.", en: "Coming soon: episodes not yet available."},
     "title.onlyMissing": {it: "Solo mancanti", en: "Missing only"},
     "title.skipHint": {it: "Salta gli episodi il cui file è già in libreria", en: "Skip episodes whose files are already in the library"},
@@ -1715,7 +1722,8 @@
   const extraCatalog = {
     'softether.title': ['SoftEther VPN (opzionale)', 'SoftEther VPN (optional)'],
     'softether.manual': ['Apri il Client Manager installato su questo PC per gestire manualmente la VPN. Il pannello non avvia servizi, driver, profili o connessioni. Dopo aver gestito la connessione in SoftEther, puoi riprovare manualmente l’operazione bloccata.', 'Open the Client Manager installed on this PC to manage the VPN manually. The panel does not start services, drivers, profiles or connections. After managing the connection in SoftEther, you can manually retry the blocked operation.'],
-    'softether.open': ['Apri SoftEther', 'Open SoftEther'],
+    'softether.open': ['Apri VPN', 'Open VPN'],
+    'softether.openSequence': ['Se SoftEther è stato chiuso completamente, premi prima Ricontrolla e poi Apri VPN.', 'If SoftEther was completely closed, select Check again first, then Open VPN.'],
     'softether.install': ['Installa VPN Gate', 'Install VPN Gate'],
     'softether.startingInstall': ['Avvio dell’installer SoftEther… Conferma l’installazione nella finestra di Windows.', 'Starting the SoftEther installer… Confirm installation in the Windows dialog.'],
     'softether.installStarted': ['Installer SoftEther avviato. Completa l’installazione e premi Ricontrolla.', 'SoftEther installer started. Complete the installation and select Check again.'],
@@ -1734,7 +1742,7 @@
     'softether.vpngateEmpty': ['Nessun server VPN Gate disponibile.', 'No VPN Gate servers available.'],
     'softether.vpngateNotice': ['Server pubblici di terze parti: verifica il gestore prima dell’uso.', 'Public third-party servers: verify the operator before use.'],
     'softether.vpngateCreate': ['Crea profilo', 'Create profile'],
-    'softether.vpngateCreated': ['Profilo VPN Gate creato. Apri SoftEther per collegarti manualmente.', 'VPN Gate profile created. Open SoftEther to connect manually.'],
+    'softether.vpngateCreated': ['Profilo VPN Gate creato. Apri la VPN per collegarti manualmente.', 'VPN Gate profile created. Open the VPN client to connect manually.'],
     'softether.invalidServer': ['Server VPN non valido.', 'Invalid VPN server.'],
     'softether.invalidProfileName': ['Nome profilo non valido.', 'Invalid profile name.'],
     'softether.profileFailed': ['Impossibile creare il profilo VPN Gate.', 'Unable to create the VPN Gate profile.'],
@@ -1743,6 +1751,7 @@
     'softether.checkingUpdates': ['Controllo aggiornamenti SoftEther…', 'Checking SoftEther updates…'],
     'softether.updateAvailable': ['È disponibile SoftEther VPN Client v{version}. Apri la pagina ufficiale per scaricarlo.', 'SoftEther VPN Client v{version} is available. Open the official page to download it.'],
     'softether.updateUnavailable': ['Nessun aggiornamento SoftEther verificabile al momento.', 'No verifiable SoftEther update is available at the moment.'],
+    'softether.upToDate': ['SoftEther VPN Client è già aggiornato.', 'SoftEther VPN Client is already up to date.'],
     'softether.downloadUpdate': ['Scarica e installa aggiornamento', 'Download and install update'],
     'softether.startingDownload': ['Download dell’installer SoftEther in corso…', 'Downloading the SoftEther installer…'],
     'softether.downloadStarted': ['Installer scaricato e avviato. Completa l’installazione nella finestra di Windows.', 'Installer downloaded and started. Complete the installation in the Windows dialog.'],
@@ -1757,7 +1766,7 @@
     'softether.opened': ['Avvio del Client Manager richiesto. Scegli e gestisci la connessione nella sua finestra.', 'Client Manager launch requested. Choose and manage the connection in its window.'],
     'softether.localOnly': ['Apri le Impostazioni dal pannello locale (localhost o 127.0.0.1) e premi Ricontrolla.', 'Open Settings from the local panel (localhost or 127.0.0.1) and select Check again.'],
     'softether.detectionFailed': ['Impossibile verificare l’installazione di SoftEther.', 'Unable to check the SoftEther installation.'],
-    'softether.openFailed': ['Impossibile aprire il Client Manager. Verifica l’installazione e i permessi di Windows.', 'Unable to open Client Manager. Check the installation and Windows permissions.'],
+    'softether.openFailed': ['Impossibile aprire il Client Manager. Premi Ricontrolla e poi riprova con Apri VPN.', 'Unable to open Client Manager. Select Check again, then try Open VPN again.'],
     'softether.noParameters': ['La richiesta non può contenere percorsi o parametri.', 'The request cannot contain paths or parameters.'],
     'softether.denied': ['Non hai il permesso di aprire SoftEther dalle Impostazioni.', 'You do not have permission to open SoftEther from Settings.'],
     'softether.authentication': ['Accedi al pannello per usare questa funzione.', 'Sign in to the panel to use this feature.'],

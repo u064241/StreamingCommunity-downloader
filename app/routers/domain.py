@@ -268,6 +268,7 @@ class SettingsUpdate(BaseModel):
     # fields, so the switch reported "Salvato." and saved nothing.
     jellyfin_refresh_on_download: bool | None = None
     mcp_enabled: bool | None = None
+    confirmations_enabled: bool | None = None
 
     @field_validator("naming_templates")
     @classmethod

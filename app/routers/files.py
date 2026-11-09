@@ -3,17 +3,20 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.auth.deps import require
 from app.auth.permissions import Permission
 from app.config import download_dir, VIDEOS_DIR, DATA_FILE
 from app.core import container
+from app.core import probe
+from app.core.ffmpeg_path import get_ffmpeg_exe, ffmpeg_file_arg, hidden_process_options
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -227,6 +230,64 @@ def stream_file(file_path: str):
         media_type=container.mime_for(target),
         headers={"Content-Disposition": "inline"},
     )
+
+
+@router.get("/tracks/{file_path:path}", dependencies=CAN_VIEW)
+def file_tracks(file_path: str):
+    target = _safe_path(file_path)
+    return JSONResponse(probe.media_tracks(str(target)) or {"audio": [], "subtitles": []})
+
+
+@router.get("/subtitle/{stream_index}/{file_path:path}", dependencies=CAN_VIEW)
+def stream_subtitle(stream_index: int, file_path: str):
+    """Convert one embedded subtitle to WebVTT for browsers that cannot read MKV text tracks."""
+    target = _safe_path(file_path)
+    if stream_index < 0 or stream_index > 999:
+        raise HTTPException(status_code=400, detail="Invalid subtitle stream")
+    executable = get_ffmpeg_exe()
+    if not executable:
+        raise HTTPException(status_code=503, detail="FFmpeg non disponibile")
+    command = [executable, "-v", "error", "-i", ffmpeg_file_arg(str(target)),
+               "-map", f"0:{stream_index}", "-f", "webvtt", "pipe:1"]
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   stdin=subprocess.DEVNULL, **hidden_process_options())
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Impossibile avviare FFmpeg") from exc
+
+    def output():
+        try:
+            while True:
+                chunk = process.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+
+    return StreamingResponse(output(), media_type="text/vtt",
+                             headers={"Content-Disposition": "inline"})
+
+
+class OpenFileRequest(BaseModel):
+    path: str
+
+
+@router.post("/open", dependencies=CAN_VIEW)
+def open_with_system_player(body: OpenFileRequest):
+    target = _safe_path(body.path)
+    if target.suffix.lower() not in {".mp4", ".mkv"}:
+        raise HTTPException(status_code=400, detail="Formato non riproducibile")
+    try:
+        if os.name == "nt":
+            os.startfile(str(target))
+        else:
+            subprocess.Popen(["xdg-open", str(target)], start_new_session=True)
+    except (OSError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=503, detail="Player di sistema non disponibile") from exc
+    return {"ok": True}
 
 
 @router.get("/download/{file_path:path}", dependencies=CAN_VIEW)

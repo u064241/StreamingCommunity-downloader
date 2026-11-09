@@ -25,6 +25,7 @@ def panel(monkeypatch):
     monkeypatch.setattr(softether.subprocess, "Popen", launch)
     manager = Path("C:/Program Files/SoftEther VPN Client/vpncmgr_x64.exe")
     monkeypatch.setattr(softether, "_find_manager", lambda: manager)
+    monkeypatch.setattr(softether, "_manager_running", lambda _manager: False)
     client = TestClient(app, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50000))
     client.cookies.set(session.SESSION_COOKIE, "test-session")
     return client, user, launch, manager
@@ -86,8 +87,11 @@ def test_status_and_exact_manager_launch(panel):
     assert response.headers["cache-control"] == "no-store"
     launch.assert_not_called()
     assert client.post("/api/softether/open-manager", headers=headers()).json() == {"opened": True}
-    launch.assert_called_once_with([str(manager)], executable=str(manager),
-                                  cwd=str(manager.parent), shell=False, close_fds=True)
+    assert launch.call_args.args == ([str(manager)],)
+    assert launch.call_args.kwargs["cwd"] == str(manager.parent)
+    assert launch.call_args.kwargs["shell"] is False
+    assert launch.call_args.kwargs["close_fds"] is True
+    assert launch.call_args.kwargs["startupinfo"].wShowWindow == 6
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows launcher")
