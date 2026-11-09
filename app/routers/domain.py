@@ -449,7 +449,21 @@ def set_app_settings(body: SettingsUpdate):
 
 @router.put("", dependencies=CAN_MANAGE)
 async def set_domain(body: DomainUpdate):
-    domain = _domain_host(body.domain)
+    requested_domain = _domain_host(body.domain)
+
+    # The Telegram channel is authoritative.  A manually entered domain may
+    # still be valid for a short time after a rotation, so do the forced
+    # recovery check before accepting it.  If the channel publishes a verified
+    # replacement, run_check() applies it and that value must win over the
+    # value in the form.  When Telegram is unavailable, keep the normal manual
+    # verification path as a safe fallback.
+    try:
+        recovery = await asyncio.to_thread(domain_recovery.run_check, True)
+    except Exception as exc:
+        logger.warning("Telegram domain check during save failed: %s", exc)
+        recovery = {"applied": False}
+
+    domain = config.configured_domain() if recovery.get("applied") else requested_domain
     try:
         version = await asyncio.to_thread(get_domain_version, domain)
     except RuntimeError as e:

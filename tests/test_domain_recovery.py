@@ -19,6 +19,7 @@ import pytest
 from app import config
 from app.auth.permissions import ALL_PERMISSIONS
 from app.core import domain_recovery
+from app.routers import domain as domain_router
 from tests.conftest import do_setup, make_user, session_for
 
 
@@ -397,6 +398,32 @@ def test_dismissing_clears_the_candidate(client, admin):
     assert client.post("/api/domain/candidate/dismiss",
                        headers=_csrf(admin)).status_code == 200
     assert domain_recovery.pending() is None
+
+
+def test_saving_domain_checks_telegram_before_accepting_manual_value(
+    client, admin, monkeypatch, _configured_domain, public_dns
+):
+    """A valid form value must not bypass the authoritative channel check."""
+    calls = []
+
+    def fake_check(force=False):
+        calls.append(force)
+        config.update_data({"domain": "streamingcommunityz.nexus"})
+        return {"applied": True}
+
+    monkeypatch.setattr(domain_recovery, "run_check", fake_check)
+    monkeypatch.setattr(domain_router, "get_domain_version", lambda host: "v9")
+
+    res = client.put(
+        "/api/domain",
+        json={"domain": "streamingcommunityz.boo"},
+        headers=_csrf(admin),
+    )
+
+    assert res.status_code == 200
+    assert calls == [True]
+    assert res.json()["domain"] == "streamingcommunityz.nexus"
+    assert _stored(_configured_domain)["domain"] == "streamingcommunityz.nexus"
 
 
 def test_the_recovery_settings_survive_a_settings_save(client, admin):
