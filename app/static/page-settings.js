@@ -58,6 +58,11 @@ function _softetherError(error) {
   return detail ? `${t('softether.requestFailed')} (${detail})` : t('softether.requestFailed');
 }
 
+function _softetherWizard(key) {
+  const target = document.getElementById('softether-wizard');
+  if (target) _settingsText(target, t(`softether.wizard.${key}`));
+}
+
 async function loadSoftEtherStatus(openManager = false) {
   if (_softetherBusy) return;
   _softetherBusy = true;
@@ -83,6 +88,7 @@ async function loadSoftEtherStatus(openManager = false) {
     const key = !status.supported ? 'softether.unsupported'
       : status.installed ? 'softether.ready' : 'softether.missing';
     _feedback('softether-status', t(key), available ? 'success' : 'warning');
+    _softetherWizard(!status.supported ? 'checking' : !available ? 'install' : 'list');
     if (openManager && available) {
       await softetherApi.openManager(status.token);
       _feedback('softether-status', t('softether.opened'), 'success');
@@ -135,6 +141,7 @@ async function installSoftEther() {
       if (!['completed', 'error', 'cancelled'].includes(current.state)) await new Promise(resolve => setTimeout(resolve, 700));
     } while (current.state !== 'completed');
     _feedback('softether-status', t('softether.installStarted'), 'success');
+    _softetherWizard('recheck');
     // The external installer needs user interaction. Once it exits, refresh
     // the local detection so the UI reflects the newly installed Client Manager.
     await new Promise(resolve => setTimeout(resolve, 1200));
@@ -249,6 +256,7 @@ async function loadVpnGateServers() {
   _feedback('softether-vpngate-feedback');
   _settingsText(target, t('softether.vpngateChecking'));
   try {
+    _softetherWizard('profile');
     const result = await softetherApi.vpngate();
     const servers = result.servers || [];
     let ipInfo = null;
@@ -315,6 +323,7 @@ async function loadVpnGateServers() {
           ? await softetherApi.connectVpnGateProfile({name}, status.token)
           : await softetherApi.disconnectVpnGateProfile({name}, status.token);
         _feedback('softether-vpngate-feedback', connect && result.connected ? 'Connesso. Aggiornamento IP in corso…' : connect ? 'Connessione non confermata.' : 'Disconnesso.', connect && !result.connected ? 'danger' : 'success');
+        if (connect && result.connected) _softetherWizard('connected');
         await refreshVpnGateIp();
       } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
       finally { button.disabled = false; }
