@@ -169,7 +169,7 @@
       bottom: 10px;              /* clear of the rail's own padding */
       /* The whole strip is the target, full rail height by this width — the
          chip below is only what you see of it. */
-      width: 56px;
+      width: 72px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -186,8 +186,10 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 44px;
-      height: 44px;
+      width: 72px;
+      height: 72px;
+      font-size: 46px;           /* the chevron itself, not just its chip */
+      line-height: 1;
       border-radius: 50%;
       background: var(--bg-raised);
       border: 1px solid var(--border-mid);

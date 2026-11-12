@@ -688,6 +688,11 @@ function _wireShelfArrows(section) {
   prev.addEventListener('click', () => rail.scrollBy({left: -step(), behavior: 'smooth'}));
   next.addEventListener('click', () => rail.scrollBy({left: step(), behavior: 'smooth'}));
   rail.addEventListener('scroll', sync, {passive: true});
+  // A rail is measured before its posters have loaded and while the page is
+  // still laying out, so the arrows of later rows were left hidden. Measure
+  // again when the rail resizes and whenever an image inside it finishes.
+  rail.addEventListener('load', sync, true);
+  if (typeof ResizeObserver === 'function') new ResizeObserver(sync).observe(rail);
   sync();
   return sync;
 }
@@ -888,8 +893,10 @@ async function loadHomeSections() {
     section.innerHTML = `<div class="shelf-head"><div class="shelf-title">${catalogLabelMarkup(data.title)}</div>` +
       `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${spec.section}"` +
       ` data-genre="${spec.genre_id || ''}">${searchLabel('catalog.browse')} <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div>` +
-      `<div class="shelf-rail-wrap"><button class="shelf-arrow shelf-arrow-prev" hidden data-i18n-aria-label="catalog.previous" aria-label="${t('catalog.previous')}">‹</button>` +
-      `<div class="shelf-rail"></div><button class="shelf-arrow shelf-arrow-next" hidden data-i18n-aria-label="catalog.next" aria-label="${t('catalog.next')}">›</button></div>`;
+      `<div class="shelf-rail-wrap"><button class="shelf-arrow shelf-arrow-prev" hidden data-i18n-aria-label="catalog.previous" aria-label="${t('catalog.previous')}">` +
+      `<i class="ti ti-chevron-left"></i></button>` +
+      `<div class="shelf-rail"></div><button class="shelf-arrow shelf-arrow-next" hidden data-i18n-aria-label="catalog.next" aria-label="${t('catalog.next')}">` +
+      `<i class="ti ti-chevron-right"></i></button></div>`;
     renderResultCards(data.items.slice(0, 30), section.querySelector('.shelf-rail'), _searchResults.length, 'shelf-item');
     _searchResults.push(...data.items.slice(0, 30));
     if (!data.items.length) section.insertAdjacentHTML('beforeend', `<p class="text-muted">${searchLabel('catalog.empty')}</p>`);
