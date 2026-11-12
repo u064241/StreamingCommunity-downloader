@@ -19,8 +19,11 @@ from tests.conftest import do_setup, make_user, session_for
 
 
 @pytest.fixture(autouse=True)
-def _empty_cache():
+def _empty_cache(monkeypatch):
     home.clear_cache()
+    # An expired start page is refreshed in background; inline here, so a test
+    # can count the request the refresh made as soon as shelves() returns.
+    monkeypatch.setattr(home, "_spawn", lambda job: job())
     yield
     home.clear_cache()
 
@@ -200,6 +203,36 @@ def test_the_cache_expires(sc, monkeypatch):
     assert len(sc["calls"]) == 2
 
 
+def test_an_expired_start_page_is_answered_at_once_and_refreshed(sc, monkeypatch):
+    """Stale-while-revalidate: the old shelves now, the new ones next time."""
+    sc["html"] = _sc_home({"name": "trending", "titles": [_sc_title(1)]})
+    home.shelves("streamingcommunity", "source.test")
+
+    jobs = []
+    monkeypatch.setattr(home, "_spawn", jobs.append)
+    monkeypatch.setattr(home, "_now", lambda: home.time.time() + 3600)
+    sc["html"] = _sc_home({"name": "trending", "titles": [_sc_title(2)]})
+
+    served = home.shelves("streamingcommunity", "source.test")
+    assert served[0]["items"][0]["id"] == 1
+    assert home.last_served("streamingcommunity")["stale"] == "refreshing"
+    assert len(jobs) == 1 and len(sc["calls"]) == 1
+
+    jobs[0]()
+    assert home.shelves("streamingcommunity", "source.test")[0]["items"][0]["id"] == 2
+
+
+def test_the_cache_lives_half_an_hour(sc, monkeypatch):
+    sc["html"] = _sc_home({"name": "trending", "titles": [_sc_title(1)]})
+    home.shelves("streamingcommunity", "source.test")
+
+    # 30 min minus the 20% jitter is still fresh.
+    monkeypatch.setattr(home, "_now", lambda: home.time.time() + 30 * 60 * 0.8 - 5)
+    home.shelves("streamingcommunity", "source.test")
+
+    assert len(sc["calls"]) == 1
+
+
 def test_a_domain_rotation_does_not_serve_the_old_shelves(sc):
     """The host is in the key, so the old domain's shelves cannot be reached.
     This is where the cache parts company with metadata's, which keys on the
@@ -262,6 +295,44 @@ def test_the_endpoint_answers_shelves(client, signed_in, monkeypatch):
 
     assert body["source"] == "streamingcommunity"
     assert body["shelves"][0]["key"] == "trending"
+
+
+def test_the_endpoint_says_when_the_shelves_were_fetched(client, signed_in, sc, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "configured_domain", lambda: "source.test")
+    sc["html"] = _sc_home({"name": "trending", "titles": [_sc_title(1)]})
+
+    first = client.get("/api/home")
+    second = client.get("/api/home")
+
+    assert first.headers["X-Cache"] == "MISS" and first.headers["X-Cache-Updated"]
+    assert second.headers["X-Cache"] == "HIT"
+    assert second.headers["X-Cache-Updated"] == first.headers["X-Cache-Updated"]
+    assert "X-Stale" not in second.headers
+    assert set(second.json()) == {"source", "shelves", "genres"}   # shape unchanged
+    assert len(sc["calls"]) == 1
+
+
+def test_the_endpoint_flags_a_stale_copy(client, signed_in, sc, monkeypatch):
+    from app import config
+    from app.core import source_budget
+    monkeypatch.setattr(config, "configured_domain", lambda: "source.test")
+    sc["html"] = _sc_home({"name": "trending", "titles": [_sc_title(1)]})
+    client.get("/api/home")
+
+    monkeypatch.setattr(home, "_now", lambda: home.time.time() + 3600)
+    source_budget.report_pushback("test")
+    response = client.get("/api/home")
+
+    assert response.headers["X-Stale"] == "backoff"
+    assert response.json()["shelves"][0]["items"][0]["id"] == 1
+
+
+def test_the_source_status_endpoint_is_read_only(client, signed_in):
+    status = client.get("/api/source/status")
+    assert status.status_code == 200
+    assert {"requests_last_hour", "backoff_until", "last_refresh"} <= set(status.json())
+    assert client.post("/api/source/status").status_code in (403, 405)
 
 
 def test_streamingcommunity_needs_a_configured_domain(client, signed_in, monkeypatch):

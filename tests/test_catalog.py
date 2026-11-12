@@ -2,7 +2,7 @@ import pytest
 import requests
 
 from app.core import catalog, home, page
-from tests.conftest import enable_open_mode, make_user, session_for
+from tests.conftest import enable_open_mode
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +60,7 @@ def test_cache_expiry_domain_and_home_invalidation(monkeypatch):
     catalog.browse("a.test", "upcoming")
     catalog.browse("a.test", "upcoming")
     catalog.browse("b.test", "upcoming")
-    clock[0] = 901
+    clock[0] = catalog.TTL * 1.2 + 1  # past the ±20% jitter
     catalog.browse("a.test", "upcoming")
     home.clear_cache("streamingcommunity")
     catalog.browse("a.test", "upcoming")
@@ -101,10 +101,34 @@ def test_catalog_endpoints_validate_and_use_configured_host(client, monkeypatch,
     assert client.get(path + "?section=upcoming").status_code == 409
 
 
-def test_catalog_requires_search_privilege(client):
-    from app.auth.models import SETTING_AUTH_MODE, set_setting
-    set_setting(SETTING_AUTH_MODE, "jellyfin")
-    user = make_user("no-access", "jf-denied", 0)
-    session_for(client, user.id)
+def test_catalog_answers_the_local_user_and_writes_refuse_cross_site(client, monkeypatch, stub_jobs):
+    """No accounts, so no privilege to lack: the catalogue answers the local
+    user. What still protects the panel is the Origin / Sec-Fetch-Site guard,
+    which refuses a write driven by another site's page.
+
+    Replaces the old "requires search privilege" 403 test, which needed an
+    account without permissions — something that no longer exists."""
+    from app.routers import home as router
+
+    monkeypatch.setattr(router, "configured_domain", lambda: "trusted.test")
+    monkeypatch.setattr(catalog, "browse",
+                        lambda host, *a, **k: {"items": [title(1)], "has_more": False, "page": 1})
     for path in ["/api/browse?section=upcoming", "/api/home/section?section=latest"]:
-        assert client.get(path).status_code == 403
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.json()["items"][0]["id"] == 1
+
+    body = {"id": 1, "title": "Movie"}
+    for headers in ({"Origin": "https://evil.example"},
+                    {"Sec-Fetch-Site": "cross-site"},
+                    {"Origin": "null"}):
+        response = client.post("/api/download/film", json=body, headers=headers)
+        assert response.status_code == 403, headers
+    assert stub_jobs == []
+
+    # The same write from the panel's own origin goes through: it is the
+    # origin that was refused, not the endpoint.
+    response = client.post("/api/download/film", json=body,
+                           headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"})
+    assert response.status_code == 202
+    assert len(stub_jobs) == 1

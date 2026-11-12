@@ -33,15 +33,11 @@ DOWNLOAD_FAILED = "download_failed"
 DOWNLOAD_BATCH_COMPLETED = "download_batch_completed"
 DOWNLOAD_BATCH_FAILED = "download_batch_failed"
 
-# Followed series. A follow by someone who cannot start downloads asks a
-# question at the moment it is made, rather than staying silent until the source
-# happens to publish — which can be weeks, and left the follower with nothing to
-# look at and the approver with nothing to decide.
-WATCH_NEEDS_APPROVAL = "watch_needs_approval"
-WATCH_AUTO_APPROVED = "watch_auto_approved"
-# Someone joined a followed series asking for tracks it does not download. One
-# watch means one file per episode, so it is a decision, not a per-user setting.
-WATCH_LANGUAGES_DIFFER = "watch_languages_differ"
+# Events of the followed-series feature, which has been removed. Nothing emits
+# them any more; a channel saved with them still loads and saves (the validator
+# drops them), and old bell rows carrying them stay readable.
+RETIRED_EVENTS = frozenset({"watch_needs_approval", "watch_auto_approved",
+                            "watch_languages_differ"})
 
 # The source domain rotating. FOUND asks for a decision — a candidate is only
 # ever proposed, never adopted, unless auto-apply is on — so it is the one
@@ -70,9 +66,6 @@ ALL_EVENTS = (
     DOWNLOAD_FAILED,
     DOWNLOAD_BATCH_COMPLETED,
     DOWNLOAD_BATCH_FAILED,
-    WATCH_NEEDS_APPROVAL,
-    WATCH_AUTO_APPROVED,
-    WATCH_LANGUAGES_DIFFER,
     SOURCE_DOMAIN_FOUND,
     SOURCE_DOMAIN_APPLIED,
     HOOK_FAILED,
@@ -99,9 +92,6 @@ EVENT_NOTIFY_TYPE = {
     DOWNLOAD_FAILED: FAILURE,
     DOWNLOAD_BATCH_COMPLETED: SUCCESS,
     DOWNLOAD_BATCH_FAILED: FAILURE,
-    WATCH_NEEDS_APPROVAL: WARNING,
-    WATCH_AUTO_APPROVED: SUCCESS,
-    WATCH_LANGUAGES_DIFFER: WARNING,
     SOURCE_DOMAIN_FOUND: WARNING,
     SOURCE_DOMAIN_APPLIED: SUCCESS,
     HOOK_FAILED: WARNING,
@@ -216,11 +206,14 @@ def settings_manager_ids() -> list[int]:
 
 # ── Reading ────────────────────────────────────────────────────────────────────
 
-# A None user is the panel itself, which is who the bell belongs to when there
-# are no accounts. Its rows are never visible to a real user: with accounts,
-# every notification has a real recipient.
+# A None user is the panel itself: direct downloads notify it (user_id NULL).
+# The local user's bell shows its own rows (requests it filed or must approve)
+# plus the panel's, since the panel has one user. Rows addressed to any other
+# jf_user id (legacy accounts) are never matched.
 def _owner_clause(user_id: int | None) -> tuple[str, tuple]:
-    return ("user_id IS NULL", ()) if user_id is None else ("user_id = ?", (user_id,))
+    if user_id is None:
+        return "user_id IS NULL", ()
+    return "(user_id = ? OR user_id IS NULL)", (user_id,)
 
 
 def list_for_user(user_id: int | None, limit: int = 50) -> list[dict]:

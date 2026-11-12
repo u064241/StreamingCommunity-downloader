@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 
 from app.core.headers import get_headers, sanitize_filename
 from app.core.m3u8 import download_m3u8, fetch_master_languages, M3U8_Parser
+from app.core import source_budget
 from app.core.page import get_localized, site_url
 from app.core._shared import (
     MissingAudioTrackError,
@@ -18,17 +19,33 @@ from app.core._shared import (
     _get_m3u8_url,
     embed_referer,
     apply_video_host,
+    with_retry,
 )
+from app.core.headers import fit_title
 from app.core.paths import episode_path, fmt_ep  # noqa: F401  (fmt_ep re-exported)
 
 logger = logging.getLogger(__name__)
 
 
 def get_token(id_tv: int, domain: str) -> str:
+    """The XSRF token a title's watch page sets as a cookie.
+
+    The watch page is a title page of the source like any other, so it is paid
+    for out of the hourly budget and refused during a backoff
+    (``source_budget.SourceUnavailable``, raised before anything is sent).
+    """
     session = requests.Session()
     ua = get_headers()
+
+    def visit(url: str, path: str):
+        source_budget.acquire(path)
+        response = session.get(url, headers={"user-agent": ua}, timeout=10)
+        source_budget.observe(getattr(response, "status_code", None), path)
+        return response
+
     for path in (f"/it/watch/{id_tv}", f"/watch/{id_tv}"):
-        session.get(f"https://{domain}{path}", headers={"user-agent": ua}, timeout=10)
+        url = f"https://{domain}{path}"
+        with_retry(lambda: visit(url, path), what="watch page")
         if "XSRF-TOKEN" in session.cookies:
             return unquote(session.cookies["XSRF-TOKEN"])
     raise RuntimeError("XSRF-TOKEN cookie not found after page visit")
@@ -57,7 +74,14 @@ def get_title_props(id_film: int, title_name: str, site_version: str, domain: st
     )
     if not req.ok:
         raise RuntimeError(f"Cannot fetch TV info: HTTP {req.status_code}")
-    return req.json()["props"]["title"]
+    payload = req.json()
+    title = payload["props"]["title"]
+    # Free bookkeeping on the answer already in hand: the site version it was
+    # rendered under, and any field of the title card the panel does not know.
+    if isinstance(payload, dict):
+        source_budget.note_version(domain, payload.get("version"))
+    source_budget.note_fields("title", title)
+    return title
 
 
 def season_numbers(props: dict) -> list[int]:
@@ -155,22 +179,26 @@ def _get_iframe(tv_id, ep_id, domain, token):
     params = {"episode_id": ep_id, "next_episode": "1"}
     cookies = {"XSRF-TOKEN": token}
     for path in (f"/iframe/{tv_id}", f"/it/iframe/{tv_id}"):
-        req = requests.get(
-            f"https://{domain}{path}",
-            params=params,
-            cookies=cookies,
-            headers={
-                "referer": site_url(domain, f"/watch/{tv_id}?e={ep_id}"),
-                "user-agent": ua,
-            },
-            timeout=15,
+        url = f"https://{domain}{path}"
+        req = with_retry(
+            lambda: requests.get(
+                url,
+                params=params,
+                cookies=cookies,
+                headers={
+                    "referer": site_url(domain, f"/watch/{tv_id}?e={ep_id}"),
+                    "user-agent": ua,
+                },
+                timeout=15,
+            ),
+            what="episode iframe",
         )
         if req.ok:
             break
     else:
         raise RuntimeError(f"Cannot fetch episode iframe: HTTP {req.status_code}")
 
-    url_embed = apply_video_host(BeautifulSoup(req.text, "lxml").find("iframe").get("src"))
+    url_embed = apply_video_host(iframe_src(req.text))
     # The vixcloud /embed/ is behind Cloudflare — fetch via cloudscraper.
     script_text = _fetch_vixcloud_embed(url_embed, referer=f"https://{domain}/")
     return script_text, url_embed
@@ -179,7 +207,7 @@ def _get_iframe(tv_id, ep_id, domain, token):
 # Track collection is identical for films, episodes and anime — the same
 # vixcloud master playlist in all three cases — so there is one
 # implementation, in film.py, and strict mode cannot diverge between them.
-from app.core.film import _collect_audio_tracks, _collect_subtitle_tracks  # noqa: E402
+from app.core.film import _collect_audio_tracks, _collect_subtitle_tracks, iframe_src  # noqa: E402
 
 
 def get_tv_languages(tv_id: int, slug: str, domain: str, version: str) -> dict:
@@ -239,18 +267,20 @@ def download_episode(
     subtitle_languages = subtitle_languages or []
 
     ep = eps[ep_index]
-    logger.info(f"Downloading S{season:02d}E{fmt_ep(ep['n'])} — {ep['name']}")
+    logger.info(f"Downloading S{season:02d}E{fmt_ep(ep['n'])} — {ep.get('name') or ''}")
 
     def _primary() -> StreamSource:
         embed_content, url_embed = _get_iframe(tv_id, ep["id"], domain, token)
         json_win_video, json_win_param = _parse_content(embed_content, url_embed)
-        logger.info("Video ID: %s token: %.8s... audio lang: %s", json_win_video['id'], json_win_param.get('token', ''), json_win_video.get('lang', 'it'))
+        logger.info("Video ID: %s token: <redacted> audio lang: %s", json_win_video['id'], json_win_video.get('lang', 'it'))
 
+        # ``or ''``: the source sends episodes with no caption, and quote(None)
+        # is a TypeError that failed the download before it started.
         embed_referer = (
             f"https://{json_win_video['host']}/embed/{json_win_video['id']}"
-            f"?token={json_win_param['token']}&title={quote(tv_name)}"
+            f"?token={json_win_param['token']}&title={quote(tv_name or '')}"
             f"&referer=1&expires={json_win_param['expires']}"
-            f"&description=S{season}%3AE{ep['n']}+{quote(ep['name'])}&nextEpisode=1"
+            f"&description=S{season}%3AE{ep['n']}+{quote(ep.get('name') or '')}&nextEpisode=1"
         )
         return StreamSource(
             m3u8_url=_get_m3u8_url(json_win_video, json_win_param),
@@ -267,8 +297,10 @@ def download_episode(
         logger.info("Resolved S%02dE%s through the %s fallback",
                     season, fmt_ep(ep["n"]), stream.provider)
 
+    missing_tracks: list[str] = []
     audio_track_urls = _collect_audio_tracks(
-        m3u8_url, embed_referer, audio_languages, strict=strict_audio
+        m3u8_url, embed_referer, audio_languages, strict=strict_audio,
+        missing=missing_tracks,
     )
     subtitle_track_urls = _collect_subtitle_tracks(m3u8_url, embed_referer, subtitle_languages)
 
@@ -284,14 +316,19 @@ def download_episode(
                                         ep["n"], year, source=source))
     # Keep the stable SxxExx identifier, but include the source episode title
     # so files are useful outside the portal as well (e.g. "... S04E04 - ...").
-    episode_title = sanitize_filename(
-        ep.get("name") or ep.get("title") or ep.get("episode_name") or ""
-    ).strip()
+    # Sanitised only when there is one: sanitize_filename never returns an
+    # empty name, so an episode with no caption was filed as "… - senza-nome".
+    raw_title = str(ep.get("name") or ep.get("title") or ep.get("episode_name") or "").strip()
+    episode_title = sanitize_filename(raw_title).strip() if raw_title else ""
     if episode_title and dest_path:
         current = os.path.basename(dest_path)
         stem, extension = os.path.splitext(current)
+        # The caption is the only part cut to fit: a long one used to push the
+        # name past what the filesystem takes, and the failure arrived at the
+        # join, after the whole episode had been fetched.
+        episode_title = fit_title(episode_title, len(stem) + len(" - ") + len(extension))
         suffix = f" - {episode_title}"
-        if not stem.lower().endswith(suffix.lower()):
+        if episode_title and not stem.lower().endswith(suffix.lower()):
             dest_path = os.path.join(os.path.dirname(dest_path), f"{stem} - {episode_title}{extension}")
 
     final_path = download_m3u8(
@@ -306,6 +343,7 @@ def download_episode(
         subtitle_languages=subtitle_languages,
         audio_track_urls=audio_track_urls,
         subtitle_track_urls=subtitle_track_urls,
+        missing_tracks=missing_tracks,
     )
 
     # download_m3u8 returns the real output path: the destination is built in

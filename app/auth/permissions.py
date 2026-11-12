@@ -1,9 +1,9 @@
-"""Panel permissions, stored as a bitwise integer on ``jf_user.permissions``.
+"""Panel permission bits.
 
-The flags are deliberately **independent**: there is no ADMIN bit that implies
-the others. Seerr short-circuits every check when a user has ADMIN, which would
-make it impossible to have an administrator who manages settings and users but
-never sees the request queue — which is a requirement here.
+The panel is single-user: the local user (app/auth/deps.py LOCAL_USER) holds
+every bit. The bits are kept because each route still declares what it does
+through ``require(...)``; MANAGE_USERS is no longer checked anywhere, since
+there is no user list to manage.
 """
 
 from enum import IntFlag
@@ -14,8 +14,8 @@ class Permission(IntFlag):
     DOWNLOAD = 1 << 0          # start a download directly, bypassing the request queue
     REQUEST = 1 << 1           # create requests
     MANAGE_REQUESTS = 1 << 2   # see the queue, approve, deny, fix
-    MANAGE_USERS = 1 << 3      # import Jellyfin users, assign permissions, enable/disable
-    MANAGE_SETTINGS = 1 << 4   # source domain, libraries, performance, Jellyfin connection
+    MANAGE_USERS = 1 << 3      # retired: user management is gone, no route checks it
+    MANAGE_SETTINGS = 1 << 4   # source domain, libraries, performance
     MANAGE_FILES = 1 << 5      # move, rename, delete in the file manager
     VIEW_LIBRARY = 1 << 6      # browse and stream the library
 
@@ -29,11 +29,6 @@ ALL_PERMISSIONS = (
     | Permission.MANAGE_FILES
     | Permission.VIEW_LIBRARY
 )
-
-# What a freshly imported user gets when no explicit set is given: they can ask
-# for content and browse what is already there, nothing else.
-DEFAULT_PERMISSIONS = Permission.REQUEST | Permission.VIEW_LIBRARY
-
 
 def has(value: int, *required: Permission, mode: str = "and") -> bool:
     """Bitwise check of ``required`` against a stored permissions integer."""

@@ -1,60 +1,81 @@
-"""In-app notifications, and who is allowed to see or decide which request."""
+"""In-app notifications, and who is allowed to see or decide which request.
 
+The panel is single-user: the local user (bound to its jf_user row, migration
+12) files requests and approves them, and its bell shows its own notifications
+plus the panel-wide ones (user_id NULL). What is still worth pinning:
+
+* the queue's route guards still refuse a user without the permission
+  (``restrict_local_user`` takes it away);
+* a request or notification belonging to any other jf_user row (a legacy
+  account left in an old database) is never shown, marked or deleted;
+* writes still need to come from the panel's own origin.
+"""
+
+from app import db
 from app.auth.permissions import ALL_PERMISSIONS, Permission
-from app.requests import notify
-from tests.conftest import do_setup, make_user, session_for
+from app.requests import models as request_models, notify
+from tests.conftest import do_setup, make_user, restrict_local_user
 from tests.test_requests import FILM_BODY, _create, _login, _user
 
 
-def _pair(client):
-    return (
-        _user(client, "bob", Permission.REQUEST),
-        _user(client, "carol", Permission.REQUEST),
+def _legacy_request(external_id="123", title="Test Film"):
+    """A request owned by a legacy account row, not by the local user."""
+    other = make_user("legacy", "jf-legacy-id", int(Permission.REQUEST))
+    request, _ = request_models.create(
+        source="streamingcommunity", media_type="film", external_id=external_id,
+        title=title, audio_languages=["ita"], subtitle_languages=[],
+        requested_by=other.id,
     )
+    return other, request
 
 
 # ── Scoping ────────────────────────────────────────────────────────────────────
 
 def test_my_requests_shows_only_mine(client, admin_credentials, source, stub_jobs):
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-
-    csrf = _login(client, bob)
+    _legacy_request("999", "Altro Film")
+    csrf = _login(client, _user(client))
     _create(client, csrf, FILM_BODY)
-    csrf = _login(client, carol)
-    _create(client, csrf, {**FILM_BODY, "external_id": "999", "title": "Altro Film"})
 
     mine = client.get("/api/requests/mine").json()
 
-    assert [r["title"] for r in mine] == ["Altro Film"]
+    assert [r["title"] for r in mine] == ["Test Film"]
 
 
 def test_a_requester_cannot_read_someone_elses_request(
+    client, admin_credentials, source, stub_jobs, monkeypatch
+):
+    """Without MANAGE_REQUESTS, a request you do not subscribe to is a 404."""
+    do_setup(client, admin_credentials)
+    _, request = _legacy_request()
+    restrict_local_user(monkeypatch, Permission.REQUEST)
+
+    assert client.get(f"/api/requests/{request.id}").status_code == 404
+
+
+def test_the_local_user_reads_any_request_as_approver(
     client, admin_credentials, source, stub_jobs
 ):
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    csrf = _login(client, bob)
-    request_id = _create(client, csrf, FILM_BODY).json()["request"]["id"]
+    _, request = _legacy_request()
 
-    _login(client, carol)
-
-    assert client.get(f"/api/requests/{request_id}").status_code == 404
+    assert client.get(f"/api/requests/{request.id}").status_code == 200
 
 
-def test_a_requester_cannot_see_the_queue(client, admin_credentials, source, stub_jobs):
+def test_a_requester_cannot_see_the_queue(client, admin_credentials, source, stub_jobs, monkeypatch):
     do_setup(client, admin_credentials)
-    bob, _ = _pair(client)
-    _login(client, bob)
+    restrict_local_user(monkeypatch, Permission.REQUEST)
 
     assert client.get("/api/requests").status_code == 403
 
 
-def test_a_requester_cannot_approve_or_deny(client, admin_credentials, source, stub_jobs):
+def test_a_requester_cannot_approve_or_deny(
+    client, admin_credentials, source, stub_jobs, monkeypatch
+):
     do_setup(client, admin_credentials)
-    bob, _ = _pair(client)
-    csrf = _login(client, bob)
+    csrf = _login(client, _user(client))
     request_id = _create(client, csrf, FILM_BODY).json()["request"]["id"]
+    restrict_local_user(monkeypatch, Permission.REQUEST)
 
     assert client.post(
         f"/api/requests/{request_id}/approve", headers={"X-CSRF-Token": csrf}
@@ -67,86 +88,71 @@ def test_a_requester_cannot_approve_or_deny(client, admin_credentials, source, s
     assert stub_jobs == []
 
 
-def test_an_admin_without_manage_requests_never_sees_the_queue(
-    client, admin_credentials, source, stub_jobs
+def test_settings_rights_do_not_open_the_queue(
+    client, admin_credentials, source, stub_jobs, monkeypatch
 ):
-    """The reason permissions are independent rather than hierarchical."""
+    """Permissions are independent rather than hierarchical."""
     do_setup(client, admin_credentials)
-    settings_admin = make_user(
-        "settings-admin", "jf-settings-admin-id",
-        int(Permission.MANAGE_SETTINGS | Permission.MANAGE_USERS | Permission.MANAGE_FILES),
+    restrict_local_user(
+        monkeypatch, Permission.MANAGE_SETTINGS | Permission.MANAGE_USERS | Permission.MANAGE_FILES
     )
-    _login(client, settings_admin)
 
-    assert client.get("/api/users").status_code == 200
+    assert client.get("/api/domain/settings").status_code == 200
     assert client.get("/api/requests").status_code == 403
 
 
 def test_card_status_shows_only_what_the_user_may_know(
-    client, admin_credentials, source, stub_jobs
+    client, admin_credentials, source, stub_jobs, monkeypatch
 ):
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    csrf = _login(client, bob)
-    _create(client, csrf, FILM_BODY)
+    _legacy_request()
+    status_body = {"source": "streamingcommunity", "external_ids": ["123"]}
 
-    csrf = _login(client, carol)
-    carols_view = client.post(
-        "/api/requests/status",
-        json={"source": "streamingcommunity", "external_ids": ["123"]},
-        headers={"X-CSRF-Token": csrf},
-    ).json()
+    approvers_view = client.post("/api/requests/status", json=status_body).json()
+    restrict_local_user(monkeypatch, Permission.REQUEST)
+    requesters_view = client.post("/api/requests/status", json=status_body).json()
 
-    boss = _user(client, "boss", ALL_PERMISSIONS)
-    csrf = _login(client, boss)
-    approvers_view = client.post(
-        "/api/requests/status",
-        json={"source": "streamingcommunity", "external_ids": ["123"]},
-        headers={"X-CSRF-Token": csrf},
-    ).json()
-
-    assert carols_view == {}
+    assert requesters_view == {}
     assert approvers_view["123"]["status"] == "pending"
 
 
 # ── Notifications ──────────────────────────────────────────────────────────────
 
 def test_approvers_are_notified_of_a_new_request(client, admin_credentials, source, stub_jobs):
+    """The local user is the approver, so its own request lands on its bell."""
     do_setup(client, admin_credentials)
-    boss = _user(client, "boss", ALL_PERMISSIONS)
-    bob, _ = _pair(client)
-    csrf = _login(client, bob)
+    me = _user(client, "boss", ALL_PERMISSIONS)
+    csrf = _login(client, me)
 
     _create(client, csrf, FILM_BODY)
 
-    events = [n["event"] for n in notify.list_for_user(boss.id)]
+    events = [n["event"] for n in notify.list_for_user(me.id)]
     assert notify.REQUEST_CREATED in events
-    assert notify.list_for_user(bob.id) == []
+    bell = [n["event"] for n in client.get("/api/notifications").json()["items"]]
+    assert notify.REQUEST_CREATED in bell
 
 
-def test_a_disabled_approver_is_not_notified(client, admin_credentials, source, stub_jobs):
-    from app.auth import models as auth_models
-
+def test_a_disabled_legacy_account_is_not_notified(client, admin_credentials, source, stub_jobs):
+    """Only enabled rows holding MANAGE_REQUESTS are approvers."""
     do_setup(client, admin_credentials)
-    boss = _user(client, "boss", ALL_PERMISSIONS)
-    auth_models.set_enabled(boss.id, False)
-    bob, _ = _pair(client)
-    csrf = _login(client, bob)
+    disabled = make_user("old-boss", "jf-old-boss-id", int(ALL_PERMISSIONS), enabled=False)
+    csrf = _login(client, _user(client))
 
     _create(client, csrf, FILM_BODY)
 
-    assert notify.list_for_user(boss.id) == []
+    assert disabled.id not in notify.approver_ids()
+    addressed = db.query_one(
+        "SELECT COUNT(*) AS n FROM jf_notification WHERE user_id = ?", (disabled.id,))["n"]
+    assert addressed == 0
 
 
 def test_notifications_are_listed_with_an_unread_count(
     client, admin_credentials, source, stub_jobs
 ):
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    csrf = _login(client, bob)
+    csrf = _login(client, _user(client))
     _create(client, csrf, FILM_BODY)
-    csrf = _login(client, carol)
-    _create(client, csrf, FILM_BODY)  # joins, notifying both
+    _create(client, csrf, FILM_BODY)  # joins the open one
 
     payload = client.get("/api/notifications").json()
 
@@ -154,45 +160,55 @@ def test_notifications_are_listed_with_an_unread_count(
     assert all(item["read_at"] is None for item in payload["items"])
 
 
+def test_the_bell_includes_panel_wide_notifications(client):
+    """Direct downloads notify the panel (user_id NULL): the one user sees them."""
+    notify.notify(notify.DOWNLOAD_COMPLETED, "Film scaricato", [], panel_wide=True)
+
+    payload = client.get("/api/notifications").json()
+
+    assert [n["message"] for n in payload["items"]] == ["Film scaricato"]
+    assert payload["unread"] == 1
+
+
 def test_marking_read_only_touches_your_own_notifications(
     client, admin_credentials, source, stub_jobs
 ):
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    csrf = _login(client, bob)
-    _create(client, csrf, FILM_BODY)
-    csrf = _login(client, carol)
-    _create(client, csrf, FILM_BODY)
+    other, request = _legacy_request()
+    notify.notify(notify.REQUEST_APPROVED, "Per l'account legacy", [other.id], request.id)
+    others_ids = [n["id"] for n in notify.list_for_user(other.id)]
+    assert others_ids
+    csrf = _login(client, _user(client))
+    _create(client, csrf, {**FILM_BODY, "external_id": "555", "title": "Mio"})
+    mine = client.get("/api/notifications").json()["items"]
+    assert mine and not {n["id"] for n in mine} & set(others_ids)
 
-    carols = client.get("/api/notifications").json()["items"]
-    bobs_ids = [n["id"] for n in notify.list_for_user(bob.id)]
-
-    csrf = _login(client, carol)
     response = client.post(
         "/api/notifications/read",
-        json={"ids": [n["id"] for n in carols] + bobs_ids},
+        json={"ids": [n["id"] for n in mine] + others_ids},
         headers={"X-CSRF-Token": csrf},
     )
 
     assert response.json()["unread"] == 0
-    assert notify.unread_count(bob.id) == len(bobs_ids)
+    assert notify.unread_count(other.id) == len(others_ids)
 
 
-def test_notifications_need_a_session(client, admin_credentials):
-    do_setup(client, admin_credentials)
-    client.cookies.clear()
-    assert client.get("/api/notifications").status_code == 401
+def test_notification_writes_refuse_a_cross_site_origin(client):
+    """No session to require any more: what stops a foreign page from clearing
+    the bell is the Origin / Sec-Fetch-Site guard."""
+    foreign = {"Origin": "https://evil.example"}
+    assert client.post("/api/notifications/read", json={}, headers=foreign).status_code == 403
+    assert client.post("/api/notifications/delete", json={}, headers=foreign).status_code == 403
+    cross_site = {"Sec-Fetch-Site": "cross-site"}
+    assert client.post("/api/notifications/delete", json={}, headers=cross_site).status_code == 403
 
 
 # ── Deleting ───────────────────────────────────────────────────────────────────
 
-def _notify_both(client, bob, carol, external_id, title):
-    """One film asked for by both. The second request joins the first, which is
-    what puts a notification on each of their bells."""
-    csrf = _login(client, bob)
-    _create(client, csrf, {**FILM_BODY, "external_id": external_id, "title": title})
-    csrf = _login(client, carol)
-    _create(client, csrf, {**FILM_BODY, "external_id": external_id, "title": title})
+def _two_notifications(client):
+    csrf = _login(client, _user(client))
+    _create(client, csrf, {**FILM_BODY, "external_id": "123", "title": "Film"})
+    _create(client, csrf, {**FILM_BODY, "external_id": "999", "title": "Altro Film"})
     return csrf
 
 
@@ -200,11 +216,7 @@ def test_deleting_one_notification_leaves_the_rest(
     client, admin_credentials, source, stub_jobs
 ):
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    _notify_both(client, bob, carol, "123", "Film")
-    _notify_both(client, bob, carol, "999", "Altro Film")
-
-    csrf = _login(client, bob)
+    csrf = _two_notifications(client)
     mine = client.get("/api/notifications").json()["items"]
     assert len(mine) >= 2
 
@@ -224,10 +236,8 @@ def test_deleting_without_ids_clears_the_bell(
     client, admin_credentials, source, stub_jobs
 ):
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    _notify_both(client, bob, carol, "123", "Film")
+    csrf = _two_notifications(client)
 
-    csrf = _login(client, bob)
     response = client.post("/api/notifications/delete", json={},
                            headers={"X-CSRF-Token": csrf})
 
@@ -240,39 +250,31 @@ def test_deleting_without_ids_clears_the_bell(
 def test_deleting_cannot_reach_someone_elses_notifications(
     client, admin_credentials, source, stub_jobs
 ):
-    """Scoped exactly as marking read is: another user's ids are not matched,
+    """Scoped exactly as marking read is: another row's ids are not matched,
     so the count reports what actually went rather than claiming success."""
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    _notify_both(client, bob, carol, "123", "Film")
-    bobs_ids = [n["id"] for n in notify.list_for_user(bob.id)]
-    assert bobs_ids
+    other, request = _legacy_request()
+    notify.notify(notify.REQUEST_APPROVED, "Per l'account legacy", [other.id], request.id)
+    others_ids = [n["id"] for n in notify.list_for_user(other.id)]
+    assert others_ids
 
-    csrf = _login(client, carol)
-    response = client.post("/api/notifications/delete", json={"ids": bobs_ids},
-                           headers={"X-CSRF-Token": csrf})
+    response = client.post("/api/notifications/delete", json={"ids": others_ids})
 
     assert response.json()["deleted"] == 0
-    assert len(notify.list_for_user(bob.id)) == len(bobs_ids)
+    assert len(notify.list_for_user(other.id)) == len(others_ids)
 
 
-def test_clearing_the_bell_leaves_other_users_alone(
+def test_clearing_the_bell_leaves_other_rows_alone(
     client, admin_credentials, source, stub_jobs
 ):
-    """The no-ids form deletes everything the *caller* owns, not everything."""
+    """The no-ids form deletes everything the *caller* sees, not everything."""
     do_setup(client, admin_credentials)
-    bob, carol = _pair(client)
-    csrf = _notify_both(client, bob, carol, "123", "Film")
-    bobs = len(notify.list_for_user(bob.id))
-    assert bobs and notify.list_for_user(carol.id)
+    other, request = _legacy_request()
+    notify.notify(notify.REQUEST_APPROVED, "Per l'account legacy", [other.id], request.id)
+    others = len(notify.list_for_user(other.id))
+    csrf = _two_notifications(client)
 
     client.post("/api/notifications/delete", json={}, headers={"X-CSRF-Token": csrf})
 
-    assert len(notify.list_for_user(bob.id)) == bobs
-    assert notify.list_for_user(carol.id) == []
-
-
-def test_deleting_needs_a_session(client, admin_credentials):
-    do_setup(client, admin_credentials)
-    client.cookies.clear()
-    assert client.post("/api/notifications/delete", json={}).status_code == 401
+    assert len(notify.list_for_user(other.id)) == others
+    assert client.get("/api/notifications").json()["items"] == []

@@ -199,7 +199,10 @@ def test_registries_are_independent_and_default_capabilities_are_honest():
     assert "pilot" not in second.sources()
     assert first.get("animeunity") is not second.get("animeunity")
     assert first.get("animeunity").capabilities.home
-    assert not first.get("animeunity").capabilities.download
+    # The two download engines say so explicitly; RaiPlay is metadata only.
+    assert first.get("animeunity").capabilities.download is True
+    assert first.get("streamingcommunity").capabilities.download is True
+    assert first.get("raiplay").capabilities.download is False
 
 
 def test_search_only_provider_has_no_home(client, registry):
@@ -260,7 +263,7 @@ def test_registry_loading_does_not_import_backends_or_start_source_requests():
     script = """
 import sys
 from app.providers import get_registry
-assert get_registry().sources() == ('streamingcommunity', 'animeunity')
+assert get_registry().sources() == ('streamingcommunity', 'animeunity', 'raiplay')
 assert not {'app.config', 'app.core.page', 'app.core.animeunity', 'app.core.home', 'requests'} & sys.modules.keys()
 """
     subprocess.run([sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1], check=True)

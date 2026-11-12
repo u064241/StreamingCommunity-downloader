@@ -1,6 +1,7 @@
 """Read-only release information for the fork distribution."""
 
 import ipaddress
+import logging
 import secrets
 import zipfile
 from urllib.parse import urlsplit
@@ -15,6 +16,7 @@ from app.updates import check
 from app import distribution, portable_updates
 from app.update_download import UpdateDownloadError
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/updates", tags=["updates"])
 CAN_READ = [
     Depends(require(Permission.REQUEST, Permission.DOWNLOAD, Permission.MANAGE_SETTINGS, mode="or"))
@@ -63,15 +65,25 @@ class ApplyUpdate(BaseModel):
 def _run(operation, *args):
     try:
         return operation(*args)
-    except (UpdateDownloadError, OSError, ValueError, KeyError, TypeError, AttributeError, zipfile.BadZipFile,
-            requests.RequestException) as exc:
+    except UpdateDownloadError as exc:
+        # Raised on purpose with a fixed, user-facing reason.
+        logger.warning("Portable update refused: %s", exc)
         raise HTTPException(409, f"Aggiornamento non disponibile: {exc}") from exc
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, zipfile.BadZipFile,
+            requests.RequestException) as exc:
+        # Unexpected: paths, URLs and parser messages stay in the server log.
+        logger.exception("Portable update failed")
+        raise HTTPException(409, "Aggiornamento non disponibile") from exc
 
 
 @router.get("/portable", dependencies=[MANAGE, Depends(_local)])
 def portable_status():
     mode = distribution.mode()
-    return {"mode": mode, "available": mode == "portable", "token": _local_token}
+    # Without an expected signer the update is never applied automatically, so
+    # the panel must not offer it.
+    signed = portable_updates.signature_check_enabled()
+    return {"mode": mode, "available": mode == "portable" and signed,
+            "signature_verification": signed, "token": _local_token}
 
 
 @router.post("/portable/prepare", dependencies=[Depends(_local)])

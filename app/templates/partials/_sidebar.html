@@ -22,6 +22,12 @@
               <span class="nav-link-title" data-i18n="nav.search">Cerca</span>
             </a>
           </li>
+          <li class="nav-item" data-perm="REQUEST|DOWNLOAD">
+            <a class="nav-link" href="#" data-page="archive" data-action="nav">
+              <span class="nav-link-icon"><i class="ti ti-archive"></i></span>
+              <span class="nav-link-title" data-i18n="nav.archive">Archivio</span>
+            </a>
+          </li>
           <li class="nav-item" data-perm="DOWNLOAD|MANAGE_REQUESTS">
             <a class="nav-link" href="#" data-page="downloads" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-download"></i></span>
@@ -36,30 +42,16 @@
               <span class="badge bg-yellow ms-auto" id="queue-pending-count" style="display:none"></span>
             </a>
           </li>
-          <li class="nav-item" data-perm="REQUEST|DOWNLOAD" data-hide-perm="DOWNLOAD" data-requires-auth="1">
+          <li class="nav-item" data-perm="REQUEST|DOWNLOAD" data-hide-perm="DOWNLOAD">
             <a class="nav-link" href="#" data-page="my-requests" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-send"></i></span>
               <span class="nav-link-title" data-i18n="nav.myRequests">Le mie richieste</span>
-            </a>
-          </li>
-          <!-- No data-requires-auth: a followed series works without Jellyfin
-               too, it just belongs to the panel instead of to a user. -->
-          <li class="nav-item" data-perm="REQUEST|DOWNLOAD">
-            <a class="nav-link" href="#" data-page="watches" data-action="nav">
-              <span class="nav-link-icon"><i class="ti ti-bell-ringing"></i></span>
-              <span class="nav-link-title" data-i18n="nav.watches">Serie seguite</span>
             </a>
           </li>
           <li class="nav-item" data-perm="VIEW_LIBRARY">
             <a class="nav-link" href="#" data-page="files" data-action="nav">
               <span class="nav-link-icon"><i class="ti ti-folder-filled"></i></span>
               <span class="nav-link-title" data-i18n="nav.files">File</span>
-            </a>
-          </li>
-          <li class="nav-item" data-perm="MANAGE_USERS">
-            <a class="nav-link" href="#" data-page="users" data-action="nav">
-              <span class="nav-link-icon"><i class="ti ti-users"></i></span>
-              <span class="nav-link-title" data-i18n="nav.users">Utenti</span>
             </a>
           </li>
         </ul>

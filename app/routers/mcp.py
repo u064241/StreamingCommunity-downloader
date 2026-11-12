@@ -2,7 +2,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends, Request
 
-from app.auth.deps import OPEN_MODE_USER, current_user, require
+from app.auth.deps import current_user, is_local_user, require
 from app.auth.permissions import Permission
 from app.config import get_settings
 from app.mcp import auth as mcp_auth
@@ -17,7 +17,7 @@ def _owner_name() -> str | None:
     owner = mcp_auth.token_owner()
     if owner is None:
         return None
-    return "Pannello" if owner is OPEN_MODE_USER else owner.username
+    return "Pannello" if is_local_user(owner) else owner.username
 
 
 @router.get("/status", dependencies=CAN_MANAGE)
@@ -39,7 +39,7 @@ async def regenerate_mcp_token(request: Request):
     """Mint a new token, owned by the caller. The old one stops working."""
     user = current_user(request)
     token = await asyncio.to_thread(mcp_auth.generate_token, user)
-    return {"token": token, "owner": "Pannello" if user is OPEN_MODE_USER else user.username}
+    return {"token": token, "owner": "Pannello" if is_local_user(user) else user.username}
 
 
 @router.delete("/token", dependencies=CAN_MANAGE)

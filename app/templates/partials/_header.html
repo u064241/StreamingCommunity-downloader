@@ -9,8 +9,8 @@
               <span class="panel-version" title="Versione del pannello">SC Panel v{{ app_version }}</span>
 
               <!-- Notification bell -->
-              <!-- No data-requires-auth: without accounts the bell shows the
-                   panel's own notifications rather than a user's. -->
+              <!-- The local user's bell: its own notifications (requests) and
+                   the panel's (direct downloads, domain, hooks). -->
               <div class="notif-wrap">
                 <button class="header-icon-btn" id="notif-button" data-action="notif:toggle" title="Notifiche">
                   <i class="ti ti-bell"></i>
@@ -26,18 +26,6 @@
                   </div>
                   <div id="notif-list"></div>
                 </div>
-              </div>
-
-              <!-- Current user -->
-              <div class="user-chip" data-requires-auth="1">
-                <div class="user-chip-avatar" id="user-initials">?</div>
-                <div class="user-chip-text">
-                  <div class="user-chip-name" id="user-name">—</div>
-                  <div class="user-chip-role" id="user-role"></div>
-                </div>
-                <button class="header-icon-btn" data-action="session:logout" title="Esci">
-                  <i class="ti ti-logout"></i>
-                </button>
               </div>
 
             </div>

@@ -97,7 +97,7 @@
     }
     .search-filters:empty { margin-bottom: 0; }
 
-    #search-more .source-btn { display: inline-flex; }
+    #search-more .source-btn, #archive-more .source-btn { display: inline-flex; }
 
     /* ═══════════════════════════════════════════════════════
        START PAGE — the source's own shelves
@@ -225,6 +225,54 @@
     }
     @media (min-width: 992px) {
       .shelf-item { flex-basis: 190px; width: 190px; }
+    }
+
+    /* "Top 10 di oggi": as on the source, each title stands in front of its
+       rank, a large outlined numeral. The item grows by a left gutter that
+       holds the number; the card overlaps its right part, so the digit stays
+       readable on the left and slides under the artwork. */
+    .shelf-item.shelf-item-ranked {
+      --rank-gutter: 62px;
+      position: relative;
+      flex-basis: calc(166px + var(--rank-gutter));
+      width: calc(166px + var(--rank-gutter));
+      padding-left: var(--rank-gutter);
+    }
+    .shelf-item-ranked .rank-number {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      z-index: 0;
+      font-family: var(--font-ui), system-ui, sans-serif;
+      font-size: 132px;
+      font-weight: 900;
+      line-height: .78;
+      letter-spacing: -10px;
+      color: var(--bg-base);
+      -webkit-text-stroke: 3px rgba(208, 216, 230, .72);
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .shelf-item-ranked .result-card {
+      position: relative;
+      z-index: 1;
+    }
+    @media (min-width: 992px) {
+      .shelf-item.shelf-item-ranked {
+        --rank-gutter: 72px;
+        flex-basis: calc(190px + var(--rank-gutter));
+        width: calc(190px + var(--rank-gutter));
+      }
+      .shelf-item-ranked .rank-number { font-size: 150px; }
+    }
+    @media (max-width: 575.98px) {
+      .shelf-item.shelf-item-ranked { --rank-gutter: 48px; }
+      .shelf-item-ranked .rank-number {
+        font-size: 104px;
+        letter-spacing: -7px;
+        -webkit-text-stroke-width: 2px;
+      }
     }
 
     /* ═══════════════════════════════════════════════════════
@@ -674,6 +722,15 @@
 
     .softether-vpngate-list { display: grid; gap: .35rem; max-width: 46rem; }
     .softether-vpngate-row { display: flex; justify-content: space-between; gap: 1rem; padding: .4rem .6rem; border: 1px solid var(--border-color, #273044); border-radius: .4rem; }
+    .softether-vpngate-section { font-weight: 600; font-size: .85rem; margin-top: .4rem; opacity: .85; }
+    .softether-vpngate-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .35rem; }
+    .softether-vpngate-actions .btn[disabled] { opacity: .45; cursor: not-allowed; }
+    .softether-vpngate-badge { display: inline-block; margin-left: .35rem; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid transparent; vertical-align: middle; }
+    .softether-vpngate-badge--connected { background: rgba(46, 160, 67, .18); color: #3fb950; border-color: rgba(46, 160, 67, .5); }
+    .softether-vpngate-badge--offline { background: rgba(210, 153, 34, .15); color: #d29922; border-color: rgba(210, 153, 34, .45); }
+    .softether-vpngate-badge--unknown { background: rgba(139, 148, 158, .15); color: #8b949e; border-color: rgba(139, 148, 158, .4); }
+    .softether-vpngate-badge--registered { background: rgba(61, 109, 242, .16); color: #6d8ff5; border-color: rgba(61, 109, 242, .45); }
+    @media (max-width: 576px) { .softether-vpngate-row { flex-direction: column; } .softether-vpngate-actions { justify-content: flex-start; } }
     .softether-install-progress { display: flex; flex-direction: column; gap: .25rem; max-width: 36rem; }
     .softether-install-progress progress {
       width: 100%; height: .65rem; accent-color: #3d6df2;

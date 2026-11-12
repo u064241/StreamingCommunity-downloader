@@ -89,13 +89,79 @@ def hidden_process_options() -> dict:
     return {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
 
-def run_ffmpeg(stream):
-    import ffmpeg
+# The longest a join or a remux may run. Both are stream copies, which finish
+# in minutes even for a long film; an FFmpeg still going after this is stuck on
+# its input, and without a limit it held the job, its download slot and the
+# destination lock for as long as the process lived.
+FFMPEG_TIMEOUT = 2 * 60 * 60
+
+_POLL_INTERVAL = 0.2
+
+
+def _stop(process) -> None:
+    """Terminate, then kill what does not listen."""
     import subprocess
-    result = subprocess.run(
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def run_command(cmd: list[str], cancel_event=None, timeout: float = FFMPEG_TIMEOUT):
+    """Run an FFmpeg argv to completion: ``(returncode, stdout, stderr)``.
+
+    ``subprocess.run`` could be neither cancelled nor timed out, so a cancelled
+    job kept its FFmpeg until the process ended by itself. This polls instead,
+    the way ``transcode._encode`` does, and stops the process on cancel
+    (DownloadCancelledError) or once *timeout* seconds have passed
+    (RuntimeError).
+
+    *cmd* is always an argument list and never goes through a shell: titles
+    from a third-party site end up in these paths. Output goes to temporary
+    files rather than pipes, which nobody drains while this is polling — a
+    chatty FFmpeg would fill the pipe and block forever.
+    """
+    import subprocess
+    import tempfile
+    import time
+
+    if not isinstance(cmd, (list, tuple)):
+        raise TypeError("FFmpeg arguments must be a list, never a shell string")
+
+    deadline = time.monotonic() + timeout
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        process = subprocess.Popen(list(cmd), stdin=subprocess.DEVNULL, stdout=out,
+                                   stderr=err, shell=False, **hidden_process_options())
+        try:
+            while True:
+                try:
+                    process.wait(timeout=_POLL_INTERVAL)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+                if cancel_event is not None and cancel_event.is_set():
+                    from app.progress import DownloadCancelledError
+                    raise DownloadCancelledError("Download annullato dall'utente")
+                if time.monotonic() > deadline:
+                    raise RuntimeError(
+                        f"FFmpeg interrotto: ancora in esecuzione dopo {int(timeout // 60)} minuti")
+        finally:
+            _stop(process)
+        out.seek(0)
+        err.seek(0)
+        return process.returncode, out.read(), err.read()
+
+
+def run_ffmpeg(stream, cancel_event=None, timeout: float = FFMPEG_TIMEOUT):
+    import ffmpeg
+    returncode, stdout, stderr = run_command(
         ffmpeg.compile(stream, cmd=get_ffmpeg_exe(), overwrite_output=True),
-        capture_output=True, stdin=subprocess.DEVNULL, **hidden_process_options(),
+        cancel_event=cancel_event, timeout=timeout,
     )
-    if result.returncode:
-        raise ffmpeg.Error("ffmpeg", result.stdout, result.stderr)
-    return result.stdout, result.stderr
+    if returncode:
+        raise ffmpeg.Error("ffmpeg", stdout, stderr)
+    return stdout, stderr

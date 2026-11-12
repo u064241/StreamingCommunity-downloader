@@ -1,34 +1,17 @@
-# A separate image: see updater/Dockerfile.
-updater/
+# Allowlist: nothing enters the build context unless it is named here. A new
+# file at the repository root (a database, a release ZIP, a .env) is therefore
+# left out by default instead of being baked into the image by `COPY . .`.
+*
 
-__pycache__
-*.pyc
-*.pyo
-.venv
-venv
-videos/
-tmp/
-.git
-.gitignore
-.pytest_cache/
+# What the panel needs at runtime: the package (code, templates, static files),
+# its entry point and its dependency list.
+!app/
+!main.py
+!requirements.txt
+!LICENSE
+!README.md
 
-docker-compose.yml
-
-# Runtime state of a local `python main.py`: gitignored, so CI never sees it,
-# but a local `docker build .` would bake it in — panel.db holds the Jellyfin
-# API key, and root-owned copies in /app trip a non-root `user:` (#28).
-panel.db
-panel.db-*
-data.json
-data.json.lock
-schedule.json
-
-# README screenshots and the design doc: repo-only, never needed at runtime.
-# Keeping them out also stops the design doc from being served and drops ~5 MB
-# from the image. The favicon lives in app/static/, not here.
-docs/
-design/
-
-# Tests and their dependencies do not belong in the runtime image.
-tests/
-requirements-dev.txt
+# Never useful inside app/.
+**/__pycache__
+**/*.pyc
+**/*.pyo

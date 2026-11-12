@@ -45,8 +45,10 @@ class _Response:
 
 
 @pytest.fixture
-def master(monkeypatch):
-    """Serve one master playlist body for every request."""
+def master(monkeypatch, public_dns):
+    """Serve one master playlist body for every request.
+
+    ``public_dns``: safe_get resolves cdn.example.test before the faked GET."""
     holder = {"body": MUXED, "status": 200}
 
     def fake_get(url, *args, **kwargs):

@@ -7,19 +7,25 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege by default: only the publishing job asks for more.
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Actions are pinned to a commit: a tag can be moved, a SHA cannot. The comment
+# beside each one is the release that SHA belonged to when it was pinned.
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
           cache: pip
@@ -30,11 +36,68 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+  # The desktop build is Windows-only: registry, Authenticode and path handling
+  # are never exercised by the Linux job above.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Run frontend tests
+        run: node --test tests/*.cjs
+
+  # Pull requests only prove that the image still builds: nothing is pushed and
+  # the job holds no write permission.
+  build-check:
+    needs: test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+
   build-and-push:
     needs: test
-    # A push to main is not a release: it runs the tests and publishes nothing,
-    # so `latest` and the version the panel announces can only move together.
-    if: github.ref != 'refs/heads/main'
+    # Only release tags and the default branch publish. Any other branch runs
+    # the tests above and never gets a token that can write packages.
+    if: >-
+      github.event_name == 'push' &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+       github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,9 +105,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # Release builds (v* tags) and work-in-progress builds go to two different
+      # Release builds (v* tags) and default-branch builds go to two different
       # GHCR packages. A branch build can then never be pulled by a deployment
       # pointing at the release image, and the whole -dev package can be cleared
       # out without touching release history.
@@ -58,8 +121,7 @@ jobs:
           fi
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -67,67 +129,40 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ steps.target.outputs.image }}
-          # Spelled out below instead of left to the action's automatic rule. A
-          # pre-release tag is never `latest`, as the panel's check never offers it.
+          # Spelled out below instead of left to the action's automatic rule.
+          # `latest` moves only with a release tag, and a pre-release tag is
+          # never `latest`, as the panel's check never offers it.
           flavor: latest=false
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
-            type=raw,value=dev,enable=${{ github.ref_type == 'branch' && github.ref != 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.ref_type == 'branch' }}
             type=sha,format=short
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # The optional service that updates the panel's container. Same refs and
-      # tags as the panel, in a package of its own.
-      - name: Extract metadata (updater)
-        id: meta_updater
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.target.outputs.image }}-updater
-          flavor: latest=false
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
-            type=raw,value=dev,enable=${{ github.ref_type == 'branch' && github.ref != 'refs/heads/main' }}
-            type=sha,format=short
-
-      - name: Build and push (updater)
-        uses: docker/build-push-action@v5
-        with:
-          context: updater
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta_updater.outputs.tags }}
-          labels: ${{ steps.meta_updater.outputs.labels }}
-          cache-from: type=gha,scope=updater
-          cache-to: type=gha,mode=max,scope=updater
-
       - name: Summarise what was published
-        if: github.event_name != 'pull_request'
         run: |
           {
             echo "### Immagine pubblicata"
             echo
             echo '```'
             echo "${{ steps.meta.outputs.tags }}"
-            echo "${{ steps.meta_updater.outputs.tags }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

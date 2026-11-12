@@ -1,10 +1,10 @@
-"""Migration v8: an existing deployment keeps the mode it was already in.
+"""Migration v8 still runs on old databases, and its outcome no longer matters.
 
-Which mode the panel runs in moved from the ``AUTH_ENABLED`` environment
-variable to the ``auth_mode`` setting the wizard writes. A database that
-predates the move has no answer stored, so the variable is read one last time
-here — and only for a database that already existed, since a fresh install
-must always be asked.
+v8 carried the ``AUTH_ENABLED`` environment variable over into the
+``auth_mode`` setting. The panel is now always local and single-user, so the
+setting is ignored; the migration is kept (migrations are never removed) and
+these tests pin that it still behaves, and that whatever it stored has no say
+over how the panel runs.
 """
 
 import pytest
@@ -43,7 +43,7 @@ def test_existing_open_deployment_is_carried_over(legacy_db, monkeypatch):
     db.run_migrations()
 
     assert _auth_mode() == "open"
-    assert models.setup_done() is True
+    assert models.runtime_open_mode() is True
 
 
 def test_existing_deployment_that_asked_for_jellyfin_still_gets_the_wizard(
@@ -57,7 +57,7 @@ def test_existing_deployment_that_asked_for_jellyfin_still_gets_the_wizard(
     db.run_migrations()
 
     assert _auth_mode() is None
-    assert models.setup_done() is False
+    assert models.runtime_open_mode() is True
 
 
 def test_existing_deployment_with_users_is_left_alone(legacy_db, monkeypatch):
@@ -77,7 +77,7 @@ def test_existing_deployment_with_a_jellyfin_url_is_left_alone(legacy_db, monkey
     installs are already recognised by setup_done(), and must not be turned
     open behind the admin's back."""
     monkeypatch.delenv("AUTH_ENABLED", raising=False)
-    models.set_setting(models.SETTING_JELLYFIN_URL, "http://jellyfin.local:8096")
+    models.set_setting("jellyfin_url", "http://jellyfin.local:8096")
 
     db.run_migrations()
 
@@ -108,3 +108,15 @@ def test_the_backfill_runs_once_and_does_not_fight_a_later_choice(
     db.run_migrations()
 
     assert _auth_mode() == "jellyfin"
+
+
+def test_a_stored_jellyfin_mode_does_not_bring_the_login_back(client):
+    """An install that used to sign in through Jellyfin opens as the local user."""
+    models.set_setting(models.SETTING_AUTH_MODE, "jellyfin")
+    models.set_setting("jellyfin_url", "http://jellyfin.local:8096")
+
+    me = client.get("/api/auth/me")
+
+    assert me.status_code == 200
+    assert me.json()["auth_enabled"] is False
+    assert client.get("/", headers={"accept": "text/html"}).status_code == 200

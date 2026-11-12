@@ -86,10 +86,33 @@ def test_movflags_is_mp4_only():
 
 
 def test_the_join_is_otherwise_identical():
+    """Two differences, both mp4's: faststart, and the bitstream filter that
+    rewraps the ADTS audio a stream copy would otherwise hand the muxer."""
     mkv = container.join_options("/lib/Film.mkv")
     mp4 = container.join_options("/lib/Film.mp4")
-    assert mkv == {k: v for k, v in mp4.items() if k != "movflags"}
+    assert mkv == {k: v for k, v in mp4.items() if k not in ("movflags", "bsf:a")}
     assert mkv["c:v"] == "copy"
+    assert mp4["bsf:a"] == "aac_adtstoasc"
+
+
+def test_the_join_copies_the_audio_instead_of_re_encoding_it():
+    """Every join used to decode the source's AAC and encode it again at 192k:
+    a generation of quality and most of the join's time, for audio that was
+    already native to both containers."""
+    for path in ("/lib/Film.mkv", "/lib/Film.mp4"):
+        options = container.join_options(path)
+        assert options["c:a"] == "copy"
+        # A filter and a stream copy cannot share a stream: FFmpeg refuses.
+        assert "af" not in options and "b:a" not in options
+
+
+def test_the_re_encode_is_still_there_as_the_fallback():
+    """For audio the copy cannot take — and it never touches the picture."""
+    options = container.join_options("/lib/Film.mp4", reencode_audio=True)
+    assert options["c:a"] == "aac"
+    assert options["c:v"] == "copy"
+    assert "bsf:a" not in options, "the encoder already writes what mp4 wants"
+    assert options["movflags"] == "+faststart"
 
 
 def test_the_temp_audio_files_are_mp4_whatever_the_setting_says():
@@ -173,14 +196,12 @@ def fake_ffmpeg(monkeypatch):
         else:
             with open(target, "wb") as handle:
                 handle.write(b"half")  # a real failure leaves debris behind
-
-        class Proc:
-            returncode = run.returncode
-            stderr = b"boom"
-        return Proc()
+        return run.returncode, b"", b"boom"
 
     run.returncode = 0
-    monkeypatch.setattr(fmt.subprocess, "run", run)
+    # The remux goes through ffmpeg_path.run_command (cancellable, bounded)
+    # rather than subprocess.run, so that is the seam to stand in at.
+    monkeypatch.setattr(fmt, "run_command", run)
     return run
 
 
@@ -251,7 +272,7 @@ def downloader(tmp_path, monkeypatch):
     remuxed = []
     monkeypatch.setattr(
         fmt, "remux",
-        lambda video, audio_tracks=None, subtitle_tracks=None: (
+        lambda video, audio_tracks=None, subtitle_tracks=None, cancel_event=None: (
             remuxed.append({"audio": audio_tracks or [], "subs": subtitle_tracks or []}),
             video,
         )[1],
@@ -391,11 +412,11 @@ def test_saving_the_format_leaves_the_other_settings_alone(client, admin):
     assert config.get_settings()["max_concurrent_downloads"] == before
 
 
-def test_the_jellyfin_refresh_switch_actually_persists(client, admin):
-    """It was in the defaults, read by downloads_hooks and PUT by the settings
-    page, but missing from SettingsUpdate — so pydantic dropped it and the
-    switch reported success while saving nothing."""
-    res = client.put("/api/domain/settings", headers=_csrf(admin),
-                     json={"jellyfin_refresh_on_download": True})
+def test_the_retired_jellyfin_refresh_switch_is_refused(client, admin):
+    """The built-in Jellyfin refresh was removed: the field is no longer part
+    of the settings, and a stale value stored by an older version is not
+    reported back."""
+    config.save_settings({**config.get_settings(), "jellyfin_refresh_on_download": True})
+    res = client.get("/api/domain/settings", headers=_csrf(admin))
     assert res.status_code == 200
-    assert config.get_settings()["jellyfin_refresh_on_download"] is True
+    assert "jellyfin_refresh_on_download" not in res.json()

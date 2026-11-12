@@ -104,34 +104,28 @@ class HookUpdate(BaseModel):
         return _validate_events(value)
 
 
+_REDACTED = "••••"
+
+
 def _public(hook: dict) -> dict:
-    """A hook as the frontend sees it. The URL is masked: it carries the token."""
+    """A hook as the frontend sees it.
+
+    The URL carries the token, and so do the headers (``Authorization``,
+    ``X-Emby-Token``): neither is sent back. ``url_masked`` says which hook
+    this is, and the header *names* say what is configured; the values are
+    write-only — to change one, send it again.
+    """
     parsed = urlparse(hook["url"])
     tail = hook["url"][-4:] if len(hook["url"]) > 4 else ""
-    return {**hook, "url_masked": f"{parsed.scheme}://{parsed.hostname or '…'}/…{tail}"}
-
-
-def _jellyfin_connected() -> bool:
-    """Whether the library refresh has credentials to use.
-
-    Read from jf_setting rather than inferred from the auth mode: an
-    installation that skipped the login wizard and connected Jellyfin later has
-    both, and asking the auth status would report it as unconnected.
-    """
-    from app.auth import models as auth_models
-
-    return bool(
-        (auth_models.get_setting(auth_models.SETTING_JELLYFIN_URL) or "").strip()
-        and (auth_models.get_setting(auth_models.SETTING_JELLYFIN_API_KEY) or "").strip()
-    )
+    public = {key: value for key, value in hook.items() if key != "url"}
+    public["url_masked"] = f"{parsed.scheme}://{parsed.hostname or '…'}/…{tail}"
+    public["headers"] = {name: _REDACTED for name in (hook.get("headers") or {})}
+    return public
 
 
 @router.get("", dependencies=CAN_MANAGE)
 def list_hooks():
-    return {
-        "hooks": [_public(h) for h in downloads_hooks.list_hooks()],
-        "jellyfin_connected": _jellyfin_connected(),
-    }
+    return {"hooks": [_public(h) for h in downloads_hooks.list_hooks()]}
 
 
 @router.post("", dependencies=CAN_MANAGE)

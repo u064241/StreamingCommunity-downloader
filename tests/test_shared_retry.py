@@ -13,8 +13,14 @@ import requests
 from app.core import _shared
 
 
+# Sixteen bytes, because that is what an AES-128 key is and anything else is
+# now refused rather than taken for one.
+KEY = bytes(range(16))
+KEY_HEX = "000102030405060708090a0b0c0d0e0f"
+
+
 class _Response:
-    def __init__(self, status_code=200, content=b"\x00\x11\xff"):
+    def __init__(self, status_code=200, content=KEY):
         self.status_code = status_code
         self.content = content
 
@@ -59,22 +65,22 @@ def _fetch_key(monkeypatch, fake_get):
 
 # ── The bug ───────────────────────────────────────────────────────────────────
 
-def test_a_timeout_is_retried_rather_than_fatal(monkeypatch, no_sleep):
+def test_a_timeout_is_retried_rather_than_fatal(monkeypatch, no_sleep, public_dns):
     fake = _serving(requests.exceptions.Timeout(), requests.exceptions.Timeout(), _Response())
 
-    assert _fetch_key(monkeypatch, fake) == "0011ff"
+    assert _fetch_key(monkeypatch, fake) == KEY_HEX
     assert len(fake.calls) == 3
     assert no_sleep == [1, 2]
 
 
-def test_a_connection_error_is_retried(monkeypatch, no_sleep):
+def test_a_connection_error_is_retried(monkeypatch, no_sleep, public_dns):
     fake = _serving(requests.exceptions.ConnectionError(), _Response())
 
-    assert _fetch_key(monkeypatch, fake) == "0011ff"
+    assert _fetch_key(monkeypatch, fake) == KEY_HEX
     assert len(fake.calls) == 2
 
 
-def test_the_last_transport_error_reaches_the_caller(monkeypatch, no_sleep):
+def test_the_last_transport_error_reaches_the_caller(monkeypatch, no_sleep, public_dns):
     """Not swallowed into a generic message: the caller needs to know it timed out."""
     fake = _serving(*[requests.exceptions.Timeout()] * 4)
 
@@ -85,7 +91,7 @@ def test_the_last_transport_error_reaches_the_caller(monkeypatch, no_sleep):
 
 # ── Statuses ──────────────────────────────────────────────────────────────────
 
-def test_a_verdict_is_not_retried(monkeypatch, no_sleep):
+def test_a_verdict_is_not_retried(monkeypatch, no_sleep, public_dns):
     """A 4xx is an answer, not congestion. Repeating it only delays the same one."""
     fake = _serving(_Response(status_code=404))
 
@@ -95,7 +101,7 @@ def test_a_verdict_is_not_retried(monkeypatch, no_sleep):
     assert no_sleep == []
 
 
-def test_a_server_error_is_retried_and_then_gives_up(monkeypatch, no_sleep):
+def test_a_server_error_is_retried_and_then_gives_up(monkeypatch, no_sleep, public_dns):
     fake = _serving(*[_Response(status_code=503)] * 4)
 
     with pytest.raises(RuntimeError, match="503"):
@@ -104,11 +110,11 @@ def test_a_server_error_is_retried_and_then_gives_up(monkeypatch, no_sleep):
     assert no_sleep == [1, 2, 4], "four attempts, three waits: nothing sleeps after the last"
 
 
-def test_too_many_requests_is_retried(monkeypatch, no_sleep):
+def test_too_many_requests_is_retried(monkeypatch, no_sleep, public_dns):
     """429 is the source asking for room, which is exactly what a wait gives it."""
     fake = _serving(_Response(status_code=429), _Response())
 
-    assert _fetch_key(monkeypatch, fake) == "0011ff"
+    assert _fetch_key(monkeypatch, fake) == KEY_HEX
     assert len(fake.calls) == 2
 
 
@@ -121,7 +127,7 @@ _PLAYLIST = (
 )
 
 
-def test_the_playlist_key_path_retries_too(monkeypatch, no_sleep):
+def test_the_playlist_key_path_retries_too(monkeypatch, no_sleep, public_dns):
     """Covered rather than assumed: it was the duplicate of the loop above."""
     from app.core import m3u8
 
@@ -131,5 +137,18 @@ def test_the_playlist_key_path_retries_too(monkeypatch, no_sleep):
 
     key = _shared.fetch_key_from_playlist("https://vixcloud.co/playlist/1", "https://ref/")
 
-    assert key == "0011ff"
+    assert key == KEY_HEX
     assert len(fake.calls) == 2
+
+
+# ── A key that is not a key ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("body", [b"", b"\x00\x11\xff", b"x" * 17, b"<html>challenge</html>"])
+def test_a_body_that_is_not_sixteen_bytes_is_not_a_key(monkeypatch, no_sleep, public_dns, body):
+    """A 200 carrying an error page used to be hex-encoded and handed on as
+    the key; the download then fetched every segment before failing."""
+    fake = _serving(_Response(content=body))
+
+    with pytest.raises(RuntimeError, match="attesi 16 byte"):
+        _fetch_key(monkeypatch, fake)
+    assert len(fake.calls) == 1, "a wrong body is a verdict, not congestion"

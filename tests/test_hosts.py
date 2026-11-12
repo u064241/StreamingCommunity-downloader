@@ -9,7 +9,7 @@ import pytest
 from app import config
 from app.core import _shared, animeunity, hosts
 from app.auth.permissions import ALL_PERMISSIONS, Permission
-from tests.conftest import do_setup, make_user, session_for
+from tests.conftest import do_setup, make_user, restrict_local_user, session_for
 
 
 @pytest.fixture(autouse=True)
@@ -122,10 +122,9 @@ def test_an_invalid_host_is_refused_before_any_request(client, admin, verified):
     assert verified == []
 
 
-def test_changing_hosts_needs_manage_settings(client, admin_credentials):
+def test_changing_hosts_needs_manage_settings(client, admin_credentials, monkeypatch):
     do_setup(client, admin_credentials)
-    user = make_user("plain", "jf-plain-id", int(Permission.DOWNLOAD))
-    client.cookies.clear()
+    user = restrict_local_user(monkeypatch, Permission.DOWNLOAD)
     headers = {"X-CSRF-Token": session_for(client, user.id)}
     assert client.get("/api/domain/hosts").status_code == 403
     assert client.put("/api/domain/hosts", headers=headers,

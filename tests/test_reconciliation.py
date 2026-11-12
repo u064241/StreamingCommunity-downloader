@@ -155,7 +155,6 @@ def test_lifespan_calls_reconciliation_before_serving_requests(monkeypatch):
     )
     monkeypatch.setattr(main_module, "check_writable_paths", lambda: None)
     monkeypatch.setattr(main_module.db, "run_migrations", lambda: None)
-    monkeypatch.setattr(main_module.auth_session, "purge_expired", lambda: None)
     monkeypatch.setattr(main_module.requests_service, "register_job_listener", lambda: None)
     monkeypatch.setattr(main_module, "ScheduleStore", lambda path: type(
         "S", (), {"list_all": lambda self: []}
@@ -163,6 +162,9 @@ def test_lifespan_calls_reconciliation_before_serving_requests(monkeypatch):
     monkeypatch.setattr(main_module.job_manager, "set_schedule_store", lambda store: None)
     monkeypatch.setattr(main_module.job_manager, "load_scheduled_from_store", lambda: None)
     monkeypatch.setattr(main_module.job_manager, "set_loop", lambda loop: None)
+    # The process-wide manager outlives this test, and TMP_DIR is the real one.
+    monkeypatch.setattr(main_module.job_manager, "shutdown", lambda timeout=None: True)
+    monkeypatch.setattr(main_module.job_manager, "purge_stale_temp", lambda: 0)
 
     import asyncio
 

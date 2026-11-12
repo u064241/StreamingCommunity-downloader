@@ -48,6 +48,7 @@
 <!-- Shared primitives, and the fetch wrapper that adds the CSRF token.
      Must load before any page script: reversing this strips CSRF from
      every call, silently. -->
+<script>window.IMAGE_GEN="{{ image_generation() }}";</script>
 <script src="{{ asset('core.js') }}"></script>
 <script src="{{ asset('api.js') }}"></script>
 <script src="{{ asset('scroll-navigation.js') }}"></script>

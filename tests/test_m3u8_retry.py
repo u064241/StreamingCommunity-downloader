@@ -43,7 +43,8 @@ def no_sleep(monkeypatch):
 
 
 @pytest.fixture
-def responses(monkeypatch):
+def responses(monkeypatch, public_dns):
+    # public_dns: the SSRF check resolves cdn.example.test before the faked GET.
     """Queue a reply per URL; each call pops the next one for that URL."""
     queued: dict[str, list] = {}
     calls: list[str] = []

@@ -7,7 +7,7 @@ import pytest
 
 from app.auth.permissions import ALL_PERMISSIONS, Permission
 from app.requests import models, notify, resolver
-from tests.conftest import do_setup, make_user, session_for
+from tests.conftest import do_setup, make_user, restrict_local_user
 from tests.test_requests import EPISODE_BODY, FILM_BODY, _create, _login, _user
 
 
@@ -19,8 +19,9 @@ def _episode(client, csrf, tv_id="77", season=1, episode="2", slug="test-series"
 
 @pytest.fixture
 def approver(client, admin_credentials):
+    """The local user, who is also the approver."""
     do_setup(client, admin_credentials)
-    return make_user("boss", "jf-boss-id", int(ALL_PERMISSIONS))
+    return _user(client, "boss", ALL_PERMISSIONS)
 
 
 # ── Batch approve ────────────────────────────────────────────────────────────────
@@ -68,10 +69,11 @@ def test_approve_batch_reports_partial_failure_without_aborting(
     assert models.get(good).status == "downloading"
 
 
-def test_approve_batch_requires_manage_requests(client, approver, source, stub_jobs):
+def test_approve_batch_requires_manage_requests(client, approver, source, stub_jobs, monkeypatch):
     bob = _user(client, "bob", Permission.REQUEST)
     csrf = _login(client, bob)
     request_id = _episode(client, csrf)
+    restrict_local_user(monkeypatch, Permission.REQUEST)
 
     response = client.post(
         "/api/requests/approve-batch", json={"ids": [request_id]}, headers={"X-CSRF-Token": csrf}
@@ -107,9 +109,9 @@ def test_deny_batch_applies_the_same_reason_to_all(client, approver, source, stu
         request = models.get(request_id)
         assert request.status == "denied"
         assert request.denial_reason == "stagione già in libreria"
-    assert all(
-        "stagione già in libreria" in n["message"] for n in notify.list_for_user(bob.id)
-    )
+    denied = [n for n in notify.list_for_user(bob.id) if n["event"] == notify.REQUEST_DENIED]
+    assert len(denied) == 2
+    assert all("stagione già in libreria" in n["message"] for n in denied)
 
 
 def test_deny_batch_reason_is_optional(client, approver, source, stub_jobs):
@@ -142,13 +144,19 @@ def test_requester_can_batch_cancel_their_own_pending_requests(client, source):
     assert all(models.get(i).status == "cancelled" for i in ids)
 
 
-def test_batch_cancel_refuses_someone_elses_request(client, source):
-    bob = _user(client, "bob", Permission.REQUEST)
-    carol = _user(client, "carol", Permission.REQUEST)
-    csrf = _login(client, bob)
-    bobs_request = _episode(client, csrf, episode="1")
-
-    csrf = _login(client, carol)
+def test_batch_cancel_refuses_someone_elses_request(client, source, monkeypatch):
+    """The ownership check: a user without MANAGE_REQUESTS may only withdraw a
+    request they subscribe to. Proven with a legacy account row as the owner
+    and the local user stripped of MANAGE_REQUESTS."""
+    other = make_user("legacy", "jf-legacy-id", int(Permission.REQUEST))
+    bobs_request, _ = models.create(
+        source="streamingcommunity",
+        media_type="episode", external_id="77", title="Test Series",
+        audio_languages=["ita"], subtitle_languages=[], requested_by=other.id,
+        slug="test-series", season=1, episode_number="2",
+    )
+    bobs_request = bobs_request.id
+    csrf = _login(client, restrict_local_user(monkeypatch, Permission.REQUEST))
     response = client.post(
         "/api/requests/cancel-batch", json={"ids": [bobs_request]}, headers={"X-CSRF-Token": csrf}
     )
@@ -229,9 +237,8 @@ def test_counts_reflect_pending_and_needs_attention_only(client, approver, sourc
     assert counts["action_required"] == 2
 
 
-def test_counts_needs_manage_requests(client, source):
-    bob = _user(client, "bob", Permission.REQUEST)
-    _login(client, bob)
+def test_counts_needs_manage_requests(client, source, monkeypatch):
+    restrict_local_user(monkeypatch, Permission.REQUEST)
     assert client.get("/api/requests/counts").status_code == 403
 
 

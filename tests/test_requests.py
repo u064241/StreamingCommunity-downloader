@@ -6,7 +6,7 @@ import pytest
 
 from app.auth.permissions import ALL_PERMISSIONS, Permission
 from app.requests import models, notify, service
-from tests.conftest import do_setup, make_user, session_for
+from tests.conftest import do_setup, session_for
 
 
 FILM_BODY = {
@@ -35,23 +35,25 @@ EPISODE_BODY = {
 
 @pytest.fixture
 def panel(client, admin_credentials, source, stub_jobs):
-    """A configured panel with an approver session and a requester on hand."""
+    """A panel with its one local user, who both files and approves requests."""
     do_setup(client, admin_credentials)
-    approver = models  # placeholder to keep the tuple readable below
-    admin = _user(client, "boss", ALL_PERMISSIONS)
-    return admin
+    return _user(client, "boss", ALL_PERMISSIONS)
 
 
-def _user(client, username, permissions):
-    from app.auth import models as auth_models
-    user = auth_models.get_user_by_jellyfin_id(f"jf-{username}-id")
-    if user is None:
-        user = make_user(username, f"jf-{username}-id", int(permissions))
-    return user
+def _user(client, username=None, permissions=None):
+    """The local user, bound to its jf_user row (migration 12).
+
+    The panel is single-user: whatever name and permissions a test written for
+    accounts asks for, every request is this one user, who holds every
+    permission. The arguments are accepted and ignored so those tests read
+    as before.
+    """
+    from app.auth.deps import local_user
+    return local_user()
 
 
 def _login(client, user):
-    client.cookies.clear()
+    """No-op: there are no sessions. Returns the (empty) CSRF header value."""
     return session_for(client, user.id)
 
 
@@ -72,7 +74,7 @@ def test_requester_creates_a_pending_request(client, admin_credentials, source, 
     body = response.json()
     assert body["created"] is True
     assert body["request"]["status"] == models.PENDING
-    assert body["request"]["requested_by_username"] == "bob"
+    assert body["request"]["requested_by_username"] == "Pannello"
     assert body["request"]["audio_languages"] == ["ita"]
     assert stub_jobs == []  # nothing downloads before approval
 
@@ -442,7 +444,7 @@ def test_denial_reason_is_optional_and_reaches_the_requester_when_given(
 
     assert response.status_code == 200
     assert response.json()["denial_reason"] == "Già disponibile altrove"
-    assert response.json()["decided_by_username"] == "boss"
+    assert response.json()["decided_by_username"] == "Pannello"
     messages = [n["message"] for n in notify.list_for_user(bob.id)]
     assert any("Già disponibile altrove" in m for m in messages)
 

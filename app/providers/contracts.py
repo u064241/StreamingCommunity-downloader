@@ -84,6 +84,49 @@ class HomeResult:
     def to_legacy(self):
         return {"source": self.source, "shelves": deepcopy(self.shelves), "genres": deepcopy(self.genres)}
 
+#: Shown on a metadata-only card instead of the download/request button.
+NOT_DOWNLOADABLE_REASON = "Contenuto non scaricabile dal pannello"
+
+
+@dataclass(frozen=True)
+class TitleDetails:
+    """One title's card for a metadata-only provider (no stream, no download).
+
+    Only descriptive fields live here: there is deliberately no slot for a
+    stream, manifest or licence URL, so a provider cannot leak one by accident.
+    """
+    ref: ContentRef
+    title: str
+    description: str | None = None
+    year: str | None = None
+    genres: tuple[str, ...] = ()
+    duration: str | None = None
+    poster: str | None = None
+    backdrop: str | None = None
+    page_url: str | None = None
+    seasons: tuple[dict[str, Any], ...] = ()
+    extra: dict[str, Any] = field(default_factory=dict, compare=False)
+    downloadable: bool = False
+    download_disabled_reason: str | None = NOT_DOWNLOADABLE_REASON
+
+    def __post_init__(self):
+        if not isinstance(self.title, str) or not self.title.strip():
+            raise ValueError("Title details require a title")
+        if not self.downloadable and not self.download_disabled_reason:
+            raise ValueError("A non-downloadable title must say why")
+
+    def to_legacy(self):
+        return {
+            "id": self.ref.external_id, "source": self.ref.source, "type": self.ref.media_type,
+            "name": self.title, "description": self.description, "year": self.year,
+            "genres": list(self.genres), "duration": self.duration,
+            "poster": self.poster, "backdrop": self.backdrop, "page_url": self.page_url,
+            "seasons": deepcopy(list(self.seasons)), **deepcopy(self.extra),
+            "downloadable": self.downloadable,
+            "download_disabled_reason": None if self.downloadable else self.download_disabled_reason,
+        }
+
+
 @runtime_checkable
 class Provider(Protocol):
     source: str; capabilities: ProviderCapabilities

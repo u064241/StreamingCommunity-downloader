@@ -23,6 +23,14 @@ def _validate_events(events: list[str] | None) -> list[str] | None:
     """
     if events is None:
         return None
+    # Retired events (a removed feature's) are dropped, not refused: a channel
+    # saved before the removal must still be editable.
+    kept = [e for e in events if e not in notify.RETIRED_EVENTS]
+    if events and not kept:
+        # Dropping them all would leave [], which means "every event": a
+        # channel that only heard removed events must not start hearing all.
+        raise ValueError("Gli eventi scelti non esistono più: scegline almeno uno")
+    events = kept
     unknown = [e for e in events if e not in notify.ALL_EVENTS]
     if unknown:
         raise ValueError(f"Evento sconosciuto: {', '.join(sorted(set(unknown)))}")
@@ -55,7 +63,7 @@ class ChannelUpdate(BaseModel):
 
 @router.get("", dependencies=CAN_MANAGE)
 def list_channels():
-    return {"channels": apprise_channel.list_channels()}
+    return {"channels": [apprise_channel.public(c) for c in apprise_channel.list_channels()]}
 
 
 @router.post("", dependencies=CAN_MANAGE)
@@ -66,9 +74,9 @@ async def create_channel(body: ChannelCreate):
         raise HTTPException(status_code=400, detail="Nome e URL sono obbligatori")
     if not await asyncio.to_thread(apprise_channel.url_is_valid, url):
         raise HTTPException(status_code=400, detail="URL Apprise non riconosciuta")
-    return apprise_channel.create_channel(
+    return apprise_channel.public(apprise_channel.create_channel(
         name=name, apprise_url=url, events=body.events, enabled=body.enabled
-    )
+    ))
 
 
 @router.patch("/{channel_id}", dependencies=CAN_MANAGE)
@@ -78,13 +86,13 @@ async def update_channel(channel_id: int, body: ChannelUpdate):
     url = body.apprise_url.strip() if body.apprise_url is not None else None
     if url and not await asyncio.to_thread(apprise_channel.url_is_valid, url):
         raise HTTPException(status_code=400, detail="URL Apprise non riconosciuta")
-    return apprise_channel.update_channel(
+    return apprise_channel.public(apprise_channel.update_channel(
         channel_id,
         name=body.name.strip() if body.name is not None else None,
         apprise_url=url,
         events=body.events,
         enabled=body.enabled,
-    )
+    ))
 
 
 @router.delete("/{channel_id}", dependencies=CAN_MANAGE)

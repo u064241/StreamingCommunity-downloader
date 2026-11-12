@@ -38,10 +38,37 @@ if os.name == "nt" and getattr(sys, "frozen", False):
 import uvicorn
 from app.config import HOST, PORT
 
+
+def run_server(server) -> int:
+    """Run Uvicorn until it stops; Ctrl+C is a normal way to close the panel.
+
+    Uvicorn already turns the first Ctrl+C into its orderly shutdown (the
+    lifespan's ``finally`` runs, and with it JobManager.shutdown), then raises
+    the captured signal again once it is done. That KeyboardInterrupt - or one
+    from a second Ctrl+C - is what used to end the process with an asyncio
+    traceback. Here it ends it with a short message and exit code 0.
+    """
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        try:
+            print("Pannello chiuso", flush=True)
+        except (OSError, ValueError, AttributeError):
+            pass  # A windowed build may have no usable stdout.
+    return 0
+
 if __name__ == "__main__":
     from app.windows_registration import register_portable
     register_portable()
-    os.environ.setdefault("SC_PANEL_PORTAL_TOKEN", secrets.token_urlsafe(32))
+    # The "last tab closed" shutdown belongs to the local single-user panel
+    # (Windows source checkout or frozen build, loopback bind, not Docker).
+    # The lifecycle in app.main keys on this variable, so a server (Docker,
+    # LAN bind) must not carry it, not even inherited.
+    from app.distribution import desktop_lifecycle
+    if desktop_lifecycle(HOST):
+        os.environ.setdefault("SC_PANEL_PORTAL_TOKEN", secrets.token_urlsafe(32))
+    else:
+        os.environ.pop("SC_PANEL_PORTAL_TOKEN", None)
     from app.main import app
 
     server = uvicorn.Server(
@@ -67,4 +94,4 @@ if __name__ == "__main__":
     if (os.environ.get("SC_PANEL_OPEN_BROWSER", "1") != "0"
             and os.environ.get("SC_PANEL_RESTART") != "1"):
         threading.Thread(target=open_panel_when_ready, daemon=True).start()
-    server.run()
+    sys.exit(run_server(server))

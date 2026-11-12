@@ -1,0 +1,25 @@
+{
+  "agg": {
+    "totale": 4,
+    "video": {"totale": 0, "cards": []},
+    "titoli": {
+      "totale": 4,
+      "cards": [
+        {"id": "ContentItem-00000000-0000-0000-0000-0000000000a1",
+         "immagine": "/dl/img/2026/01/01/0000000000002_1536x2048_label.jpg",
+         "url": "/programmi/serieesempio", "titolo": "Serie Esempio", "tipo": "Programma",
+         "path_id": "/programmi/serieesempio.json",
+         "info_url": "/programmi/info/00000000-0000-0000-0000-0000000000a1.json",
+         "rights_management": {"rights": {"geoprotection": {"italy": true}}}},
+        {"id": "ContentItem-00000000-0000-0000-0000-0000000000c1",
+         "immagine": "/dl/img/2020/10/08/0000000000005_1536x2048%20logo.JPG",
+         "url": "/collezioni/raccoltaesempio", "titolo": " Raccolta  Esempio", "tipo": "Raccolta",
+         "path_id": "/collezioni/raccoltaesempio.json"},
+        {"id": "ContentItem-bad", "titolo": "Senza percorso", "tipo": "Programma"},
+        {"id": "ContentItem-video", "titolo": "Video singolo", "tipo": "Video",
+         "path_id": "/video/2026/01/Video-0000.json",
+         "video_url": "https://mediapolisvod.rai.it/relinker/relinkerServlet.htm?cont=FAKE4"}
+      ]
+    }
+  }
+}

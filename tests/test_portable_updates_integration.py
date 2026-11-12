@@ -25,6 +25,10 @@ def runtime(tmp_path, monkeypatch):
     helper.write_bytes(b"helper")
     monkeypatch.setattr(service, "_runtime", lambda: (exe, helper))
     monkeypatch.setattr(service, "_idle", lambda: None)
+    # The shipped constant is empty (signature check disabled, update refused):
+    # these tests exercise the flow of a build with a configured signer.
+    monkeypatch.setattr(service, "EXPECTED_SIGNER_THUMBPRINTS", ("AB" * 20,))
+    monkeypatch.setattr(service, "verify_authenticode", lambda path, signers: None)
     monkeypatch.setattr(service, "_prepared", None)
     monkeypatch.setattr(service, "_running", None)
     yield exe
@@ -133,12 +137,14 @@ def test_apply_waits_for_helper_ready_and_is_single_use(runtime, release, monkey
     def launch(args, **kwargs):
         assert kwargs["cwd"] == runtime.parent
         assert "shell" not in kwargs
-        assert args[0] == str(runtime.parent / service.HELPER)
+        # The helper from the verified package, not the one beside the EXE.
+        assert args[0] == str(service._prepared["helper"])
+        assert Path(args[0]).read_bytes() == b"new helper"
         Path(args[args.index("--ready-file") + 1]).write_text("ready")
         return SimpleNamespace(poll=lambda: None)
     monkeypatch.setattr(service.subprocess, "Popen", launch)
     result = service.apply(17, prepared["token"])
-    assert result["status"] == "waiting_for_exit"
+    assert result["status"] == "restarting"
     assert runtime.read_bytes() == b"old executable"
     with pytest.raises(UpdateDownloadError):
         service.apply(17, prepared["token"])
@@ -196,6 +202,7 @@ def local_api(monkeypatch):
         return await call_next(request)
     app.include_router(routes.router)
     monkeypatch.setattr(distribution, "mode", lambda: "portable")
+    monkeypatch.setattr(service, "EXPECTED_SIGNER_THUMBPRINTS", ("AB" * 20,))
     return TestClient(app, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50000)), user
 
 
@@ -214,7 +221,8 @@ def test_local_api_prepare_apply_confirmation_and_owner(local_api, monkeypatch):
     apply.assert_not_called()
     assert client.post("/api/updates/portable/apply", headers=headers,
                        json={"token": "a" * 32, "confirmed": True}).status_code == 200
-    apply.assert_called_once_with(17, "a" * 32)
+    # The route also hands over the app, so apply() can stop the server.
+    apply.assert_called_once_with(17, "a" * 32, client.app)
 
 
 @pytest.mark.parametrize("headers", [{}, {"Origin": "https://evil.test"},

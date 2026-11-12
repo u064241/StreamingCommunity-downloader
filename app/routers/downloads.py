@@ -9,10 +9,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app import downloads_notify
-from app.auth.deps import OPEN_MODE_USER, current_user, require
+from app.auth.deps import current_user, is_local_user, require
 from app.auth.permissions import Permission
 from app.config import configured_domain
 from app.jobs import job_manager
+from app.routers._providers import require_downloadable_source
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/download", tags=["downloads"])
@@ -23,7 +24,10 @@ MAX_BATCH_JOBS = 500
 
 # Starting a download directly is the privilege this whole feature exists to
 # gate: without it a user goes through the request queue instead.
-CAN_DOWNLOAD = [Depends(require(Permission.DOWNLOAD))]
+# Then the source gate: a ``source`` in the body that is not downloadable
+# (unknown, or a metadata-only catalogue such as RaiPlay) is refused with 422
+# before any job is created. Fail-closed; see _providers.require_downloadable_source.
+CAN_DOWNLOAD = [Depends(require(Permission.DOWNLOAD)), Depends(require_downloadable_source)]
 
 # Job control is also reachable by approvers, who must be able to stop a
 # download they approved without being allowed to start one themselves.
@@ -165,9 +169,10 @@ class AnimeScheduleRequest(AnimeDownloadRequest):
 # instead of guessing with a timer.
 
 def _acting_user_id(http_request: HttpRequest) -> int | None:
-    """The in-app recipient. None in open mode, which has no account to notify."""
+    """The in-app recipient. None for the local user: a direct download is the
+    panel's own, and its notifications go to the panel-wide bell."""
     user = current_user(http_request)
-    return None if user is OPEN_MODE_USER else user.id
+    return None if is_local_user(user) else user.id
 
 
 def _season_episodes(tv_id: int, slug: str, season: int, domain: str, version: str, token: str):
@@ -491,9 +496,6 @@ def cancel_batch(batch_id: str, request: HttpRequest, delete_files: bool = False
     cancelled, removed = job_manager.cancel_batch(batch_id, delete_files=delete_files)
     if not cancelled and not removed:
         raise HTTPException(status_code=404, detail="Nessun download da annullare in questo gruppo")
-    if removed:
-        from app.downloads_hooks import maybe_refresh_jellyfin
-        maybe_refresh_jellyfin()
     return {"batch_id": batch_id, "cancelled": cancelled, "removed": removed}
 
 

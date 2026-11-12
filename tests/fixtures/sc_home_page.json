@@ -1,0 +1,51 @@
+{
+  "component": "Home",
+  "url": "/it",
+  "version": "fixture-version-1",
+  "props": {
+    "errors": {},
+    "genres": [
+      {"id": 1, "name": "Genere A", "type": "all", "hidden": false},
+      {"id": 2, "name": "Genere B", "type": "tv", "hidden": false},
+      {"id": 3, "name": "Genere nascosto", "type": "all", "hidden": true}
+    ],
+    "sliders": [
+      {
+        "name": "trending",
+        "label": "Titoli del momento",
+        "titles": [
+          {
+            "id": 101, "slug": "titolo-uno", "name": "Titolo Uno", "type": "movie",
+            "score": "7.1", "release_date": "2020-01-01", "last_air_date": "2020-01-01",
+            "age": 12, "seasons_count": 0, "coming_soon": false, "upcoming_seasons": [],
+            "images": [
+              {"type": "poster", "filename": "poster-101.webp"},
+              {"type": "background", "filename": "bg-101.webp"}
+            ]
+          },
+          {
+            "id": 102, "slug": "titolo-due", "name": "Titolo Due", "type": "tv",
+            "score": "8.0", "last_air_date": "2021-05-05", "seasons_count": 2,
+            "images": [{"type": "poster", "filename": "poster-102.webp"}]
+          }
+        ]
+      },
+      {
+        "name": "top10",
+        "label": "Top 10 di oggi",
+        "titles": [
+          {
+            "id": 201, "slug": "classifica-uno", "name": "Classifica Uno", "type": "tv",
+            "score": "6.5", "seasons_count": 1,
+            "images": [{"type": "cover", "filename": "cover-201.webp"}]
+          },
+          {
+            "id": 202, "slug": "classifica-due", "name": "Classifica Due", "type": "movie",
+            "score": "5.9", "release_date": "2019-09-09",
+            "images": [{"type": "poster", "filename": "poster-202.webp"}]
+          }
+        ]
+      }
+    ]
+  }
+}

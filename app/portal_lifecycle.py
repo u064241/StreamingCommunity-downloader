@@ -9,6 +9,8 @@ _clients: dict[str, float] = {}
 _last_heartbeat = 0.0
 _last_close = 0.0
 _closed_clients: dict[str, float] = {}
+# Seconds with no open portal tab before the standalone server stops.
+CLOSE_GRACE_SECONDS = 3.0
 
 
 def heartbeat(client_id: str) -> None:
@@ -41,7 +43,10 @@ def should_stop_idle(timeout: float | None = None) -> bool:
         if not _last_heartbeat:
             return False
         if not _clients and _last_close:
-            return now - _last_close >= 8.0
+            # Long enough for a reload or a navigation inside the portal to
+            # send its first heartbeat; short enough that closing the window
+            # stops the server almost at once.
+            return now - _last_close >= CLOSE_GRACE_SECONDS
         return timeout is not None and now - _last_heartbeat >= timeout
 
 
@@ -49,7 +54,7 @@ async def stop_server_when_idle(app, timeout: float | None = None) -> None:
     import asyncio
     from app.jobs import job_manager
     while True:
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
         if not should_stop_idle(timeout):
             continue
         # A throttled or closed browser must not destroy a download's event loop.

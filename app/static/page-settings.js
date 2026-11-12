@@ -1,6 +1,6 @@
 /* StreamingCommunity Web Panel — page-settings.js */
 //
-// The settings page: source, libraries, naming, performance, access,
+// The settings page: source, libraries, naming, performance,
 // notification channels and post-download hooks. Each section saves itself
 // and reports into its own feedback line.
 
@@ -10,9 +10,9 @@
 // own feedback line rather than sharing one status area.
 const _SETTINGS_FEEDBACK_IDS = [
   'domain-feedback', 'libraries-feedback', 'perf-settings-feedback',
-  'jf-connect-feedback', 'jf-reconnect-feedback', 'notif-channels-feedback',
+  'notif-channels-feedback',
   'domain-recovery-feedback', 'hosts-feedback',
-  'jf-refresh-feedback', 'hooks-feedback', 'naming-feedback',
+  'hooks-feedback', 'naming-feedback',
   'output-feedback', 'mcp-feedback', 'video-settings-feedback', 'logs-feedback', 'download-directory-feedback',
 ];
 
@@ -75,12 +75,12 @@ async function loadSoftEtherStatus(openManager = false) {
   refresh.disabled = true;
   _feedback('softether-status', t('softether.checking'));
   let available = false;
-  let running = false;
+  let state = 'stopped';
   try {
     const status = await softetherApi.status();
     available = status.supported && status.installed;
-    running = Boolean(status.running);
-    if (close) close.disabled = !running;
+    state = status.manager_state || (status.running ? 'visible' : 'stopped');
+    if (close) close.disabled = state !== 'visible';
     if (install) install.hidden = available || !status.vpngate_available || (!_softetherBlockDetected && !_softetherTestMode);
     if (updateCheck) updateCheck.disabled = !available;
     const bundledHint = document.getElementById('softether-bundled-hint');
@@ -92,11 +92,22 @@ async function loadSoftEtherStatus(openManager = false) {
     if (openManager && available) {
       await softetherApi.openManager(status.token);
       _feedback('softether-status', t('softether.opened'), 'success');
+      // The window appears asynchronously: read the state again once it has.
+      window.setTimeout(() => loadSoftEtherStatus(), 800);
     }
   } catch (error) {
     _feedback('softether-status', _softetherError(error), 'danger');
   } finally {
-    open.disabled = !available || running;
+    // "Mostra" only when the manager sits in the tray; "Chiudi" only when its
+    // window is open, because only then is there something to close.
+    open.disabled = !available || state === 'visible';
+    open.textContent = t(state === 'tray' ? 'softether.showManager' : 'softether.openManager');
+    if (close) close.textContent = t('softether.closeManager');
+    const hide = document.getElementById('softether-hide');
+    if (hide) {
+      hide.disabled = !available || state !== 'visible';
+      hide.textContent = t('softether.hideManager');
+    }
     if (close && !available) close.disabled = true;
     refresh.disabled = false;
     _softetherBusy = false;
@@ -160,8 +171,12 @@ async function closeSoftEtherManager() {
   if (close) close.disabled = true;
   try {
     const status = await softetherApi.status();
-    await softetherApi.closeManager(status.token);
-    _feedback('softether-status', 'VPN chiusa.', 'success');
+    const result = await softetherApi.closeManager(status.token);
+    if (result && result.closed === false) {
+      _feedback('softether-status', 'Il gestore VPN non era aperto.', 'info');
+    } else {
+      _feedback('softether-status', 'Gestore VPN chiuso. Un’eventuale connessione attiva resta attiva.', 'success');
+    }
     await loadSoftEtherStatus();
   } catch (error) {
     _feedback('softether-status', _softetherError(error), 'danger');
@@ -184,11 +199,68 @@ window.addEventListener('softether:block-detected', async () => {
     install.hidden = false;
     if (bundledHint) bundledHint.hidden = false;
   }
-  _feedback('softether-status', t('softether.blockDetectedSettings'), 'warning');
 });
+
+// The visible "IP blocked" notice. core.js dispatches softether:block-notice at
+// most once per SOFTETHER_BLOCK_NOTICE_INTERVAL_MS, so a cascade of 403s does
+// not redraw it. Showing it reads nothing: no source, no IP service.
+function showSoftEtherBlockNotice() {
+  const box = document.getElementById('softether-block-notice');
+  if (!box) return;
+  box.hidden = false;
+  _feedback('softether-block-ip');
+}
+window.addEventListener('softether:block-notice', showSoftEtherBlockNotice);
+
+// One public-IP read per click (the local endpoint asks api.ipify.org, never
+// the source). Nothing calls this on its own.
+async function checkSoftEtherBlockIp() {
+  const button = document.getElementById('softether-block-ip-check');
+  if (button) button.disabled = true;
+  _feedback('softether-block-ip', t('softether.checkingPublicIp'));
+  try {
+    const ipInfo = await softetherApi.publicIp();
+    const status = ipInfo.changed
+      ? t('softether.ipChanged', {original: ipInfo.original}) : t('softether.ipUnchanged');
+    _feedback('softether-block-ip', `${t('softether.publicIp')}: ${ipInfo.current} · ${status}`, 'dark');
+  } catch (error) {
+    _feedback('softether-block-ip', _softetherError(error), 'danger');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
 
 async function openSoftEtherManager() {
   await loadSoftEtherStatus(true);
+}
+
+async function refreshPosters() {
+  const button = document.getElementById('images-refresh');
+  if (button) button.disabled = true;
+  try {
+    const result = await softetherApi.refreshImages();
+    window.IMAGE_GEN = String(result.generation);
+    _feedback('images-feedback', `Locandine svuotate dalla cache (${result.cleared}). Ricarico la pagina…`, 'success');
+    window.setTimeout(() => window.location.reload(), 800);
+  } catch (error) {
+    _feedback('images-feedback', _softetherError(error), 'danger');
+    if (button) button.disabled = false;
+  }
+}
+
+async function hideSoftEtherManager() {
+  const hide = document.getElementById('softether-hide');
+  if (hide) hide.disabled = true;
+  try {
+    const status = await softetherApi.status();
+    const result = await softetherApi.hideManager(status.token);
+    _feedback('softether-status',
+      result && result.hidden === false ? t('softether.notVisible') : t('softether.hidden'),
+      result && result.hidden === false ? 'info' : 'success');
+  } catch (error) {
+    _feedback('softether-status', _softetherError(error), 'danger');
+  }
+  window.setTimeout(() => loadSoftEtherStatus(), 500);
 }
 
 async function checkSoftEtherUpdates() {
@@ -248,12 +320,84 @@ function formatVpnGateNumber(value) {
   }
 }
 
-async function loadVpnGateServers() {
+// Real state of one registered profile, from the backend's AccountStatusGet:
+// true/false, or null when vpncmd could not tell.
+function vpnGateProfileState(detail) {
+  if (detail && detail.connected === true) return 'connected';
+  if (detail && detail.connected === false) return 'offline';
+  return 'unknown';
+}
+
+function renderVpnGateProfileBadge(detail) {
+  const state = vpnGateProfileState(detail);
+  const key = state === 'connected' ? 'softether.profileConnected'
+    : state === 'offline' ? 'softether.profileOffline' : 'softether.profileStateUnknown';
+  return `<span class="softether-vpngate-badge softether-vpngate-badge--${state}" data-vpngate-state="${state}">${escapeHtml(t(key))}</span>`;
+}
+
+// Connect only when not connected, disconnect only when connected, delete only
+// when certainly not connected (never the active profile). An unknown state
+// keeps connect/disconnect available but refuses the deletion.
+function renderVpnGateProfileActions(name, detail) {
+  const state = vpnGateProfileState(detail);
+  const safeName = escapeHtml(name);
+  const off = disabled => disabled ? ' disabled' : '';
+  return `<button type="button" class="btn btn-sm btn-primary" data-vpngate-connect="${safeName}"${off(state === 'connected')}>${escapeHtml(t('softether.profileConnect'))}</button> `
+    + `<button type="button" class="btn btn-sm btn-secondary" data-vpngate-disconnect="${safeName}"${off(state === 'offline')}>${escapeHtml(t('softether.profileDisconnect'))}</button> `
+    + `<button type="button" class="btn btn-sm btn-danger" data-vpngate-delete="${safeName}" title="${escapeHtml(t('softether.profileDeleteHint'))}"${off(state !== 'offline')}>${escapeHtml(t('softether.profileDelete'))}</button>`;
+}
+
+function renderVpnGateProfileRow(name, detail) {
+  const info = detail || {};
+  const country = info.country || info.countryCode || '';
+  const endpoint = info.host ? `${info.host}${info.port ? ':' + info.port : ''}` : t('softether.profileNoHost');
+  const ping = info.ping != null && Number.isFinite(Number(info.ping))
+    ? ` · ${escapeHtml(t('softether.profilePing', {ms: Number(info.ping)}))}` : '';
+  return `<div class="softether-vpngate-row softether-vpngate-profile" data-vpngate-profile="${escapeHtml(name)}">`
+    + `<span><strong>${escapeHtml(name)}</strong> ${renderVpnGateProfileBadge(info)}`
+    + `<small class="d-block text-muted">${country ? escapeHtml(country) + ' · ' : ''}${escapeHtml(endpoint)}${ping}</small></span>`
+    + `<span class="softether-vpngate-actions">${renderVpnGateProfileActions(name, info)}</span></div>`;
+}
+
+// A public server is tied to a profile only through the backend's
+// registered_profile (exact IP match), never by searching the profile name.
+function renderVpnGateServerRow(server, index, profileDetails, showActions) {
+  const s = server || {};
+  const profile = s.registered_profile || null;
+  const detail = profile ? ((profileDetails || {})[profile] || {name: profile}) : null;
+  const badge = profile
+    ? ` <span class="softether-vpngate-badge softether-vpngate-badge--registered" data-vpngate-registered="${escapeHtml(profile)}">${escapeHtml(t('softether.serverRegistered'))}</span>`
+    : '';
+  const actions = !showActions ? ''
+    : profile ? ` ${renderVpnGateProfileActions(profile, detail)}`
+    : ` <button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${Number(index)}">${escapeHtml(t('softether.vpngateCreate'))}</button>`;
+  const metrics = `${escapeHtml(t('softether.profilePing', {ms: Number(s.ping)}))} · ${(Number(s.speed || 0) / 1000000).toFixed(1)} Mbps`;
+  return `<div class="softether-vpngate-row" data-vpngate-server="${escapeHtml(s.host)}"><span><strong>${escapeHtml(s.country || s.countryCode)}</strong> · ${escapeHtml(s.host)}:${Number(s.port || 443)}${badge}`
+    + `<small class="d-block text-muted">${s.name ? escapeHtml(s.name) + ' · ' : ''}${escapeHtml(t('softether.reachablePort'))} · ${escapeHtml(t('softether.sessions', {count: formatVpnGateNumber(s.sessions)}))}</small></span>`
+    + `<span class="softether-vpngate-actions">${metrics}${actions}</span></div>`;
+}
+
+// Default "VPN Gate <CC>", but never a name already used by another profile:
+// a second server of the same country gets its IP appended.
+function vpnGateProfileNameFor(server, existingNames) {
+  const base = `VPN Gate ${server.countryCode || server.host}`;
+  const taken = new Set(existingNames || []);
+  return taken.has(base) && server.countryCode ? `${base} ${server.host}` : base;
+}
+
+function renderVpnGateIpBanner(ipInfo) {
+  const status = ipInfo.changed
+    ? t('softether.ipChanged', {original: ipInfo.original})
+    : t('softether.ipUnchanged');
+  return `<strong>${escapeHtml(t('softether.publicIp'))}</strong>: ${escapeHtml(ipInfo.current)} · ${escapeHtml(status)}`;
+}
+
+async function loadVpnGateServers(options) {
+  const keepFeedback = !!(options && options.keepFeedback === true);
   const target = document.getElementById('softether-vpngate-list');
   const hide = document.getElementById('softether-vpngate-hide');
-  const feedback = document.getElementById('softether-vpngate-feedback');
   if (!target) return;
-  _feedback('softether-vpngate-feedback');
+  if (!keepFeedback) _feedback('softether-vpngate-feedback');
   _settingsText(target, t('softether.vpngateChecking'));
   try {
     _softetherWizard('profile');
@@ -261,26 +405,28 @@ async function loadVpnGateServers() {
     const servers = result.servers || [];
     let ipInfo = null;
     try { ipInfo = await softetherApi.publicIp(); } catch (_) { /* IP service unavailable */ }
-    let profilesRaw = '';
     let localProfiles = [];
     let profileDetails = {};
     try {
       const profileData = await softetherApi.vpngateProfiles();
-      profilesRaw = profileData.raw || '';
       localProfiles = profileData.profiles || [];
       profileDetails = profileData.details || {};
     } catch (_) { /* service may be stopped */ }
     if (!servers.length && !localProfiles.length) { _settingsText(target, t('softether.vpngateEmpty')); return; }
     target.hidden = false;
-    _feedback('softether-vpngate-feedback');
-    const ipBanner = ipInfo ? `<div id="softether-vpngate-ip" class="softether-vpngate-ip mb-2"><strong>IP pubblico</strong>: ${escapeHtml(ipInfo.current)}${ipInfo.changed ? ` · originale: ${escapeHtml(ipInfo.original)} · uscita VPN rilevata` : ' · nessuna variazione rilevata'}</div>` : '';
-    const listedNames = new Set(servers.map(s => `VPN Gate ${s.countryCode || s.host}`));
-    const orphanProfiles = localProfiles.filter(name => !listedNames.has(name));
-    const profileActions = name => `<button type="button" class="btn btn-sm btn-primary" data-vpngate-connect="${escapeHtml(name)}">Connetti</button> <button type="button" class="btn btn-sm btn-secondary" data-vpngate-disconnect="${escapeHtml(name)}">Disconnetti</button> <button type="button" class="btn btn-sm btn-danger" data-vpngate-delete="${escapeHtml(name)}">Elimina</button>`;
-    const orphanHtml = orphanProfiles.map(name => { const detail = profileDetails[name] || {}; const live = detail.country ? `${escapeHtml(detail.country)} · ` : ''; const metrics = detail.ping != null ? `${detail.ping} ms · ${(Number(detail.speed || 0) / 1000000).toFixed(1)} Mbps · ${formatVpnGateNumber(detail.sessions)} sessioni` : `Profilo locale non presente nell’elenco VPN Gate attuale${detail.status ? ' · ' + escapeHtml(detail.status) : ''}`; return `<div class="softether-vpngate-row"><span><strong>${live}${escapeHtml(detail.host || 'server locale')}${detail.port ? ':' + detail.port : ''}</strong><small class="d-block text-muted">${detail.name ? escapeHtml(detail.name) + ' · ' : ''}${metrics}</small></span><span>${profileActions(name)}</span></div>`; }).join('');
-    target.innerHTML = ipBanner + `<div class="softether-vpngate-list">${orphanHtml}${servers.slice(0, 15).map((s, i) =>
-      `<div class="softether-vpngate-row"><span><strong>${escapeHtml(s.country || s.countryCode)}</strong> · ${escapeHtml(s.host)}:${s.port || 443}<small class="d-block text-muted">${s.name ? escapeHtml(s.name) + ' · ' : ''}Raggiungibile · ${formatVpnGateNumber(s.sessions)} sessioni</small></span><span>${s.ping} ms · ${(s.speed / 1000000).toFixed(1)} Mbps${(_softetherBlockDetected || _softetherTestMode) ? ` ${profilesRaw.includes(`VPN Gate ${s.countryCode || s.host}`) ? profileActions(`VPN Gate ${s.countryCode || s.host}`) : `<button type="button" class="btn btn-sm btn-outline-secondary" data-vpngate-index="${i}">${escapeHtml(t('softether.vpngateCreate'))}</button>`}` : ''}</span></div>`
-    ).join('')}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
+    if (!keepFeedback) _feedback('softether-vpngate-feedback');
+    const ipBanner = ipInfo ? `<div id="softether-vpngate-ip" class="softether-vpngate-ip mb-2">${renderVpnGateIpBanner(ipInfo)}</div>` : '';
+    const showServerActions = !!(_softetherBlockDetected || _softetherTestMode);
+    const profilesHtml = localProfiles.length
+      ? `<div class="softether-vpngate-section">${escapeHtml(t('softether.profilesTitle'))}</div>`
+        + localProfiles.map(name => renderVpnGateProfileRow(name, profileDetails[name])).join('')
+      : '';
+    const visibleServers = servers.slice(0, 15);
+    const serversHtml = visibleServers.length
+      ? `<div class="softether-vpngate-section">${escapeHtml(t('softether.serversTitle'))}</div>`
+        + visibleServers.map((s, i) => renderVpnGateServerRow(s, i, profileDetails, showServerActions)).join('')
+      : '';
+    target.innerHTML = ipBanner + `<div class="softether-vpngate-list">${profilesHtml}${serversHtml}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
     if (hide) hide.hidden = false;
     if (!window._softEtherRefreshTimer) {
       window._softEtherRefreshTimer = setInterval(() => {
@@ -291,24 +437,38 @@ async function loadVpnGateServers() {
       _softetherIpRefreshTimer = setInterval(refreshVpnGateIp, 15000);
     }
     target.querySelectorAll('[data-vpngate-index]').forEach(button => button.addEventListener('click', async () => {
-      const server = servers[Number(button.dataset.vpngateIndex)];
+      const server = visibleServers[Number(button.dataset.vpngateIndex)];
+      if (!server) return;
       button.disabled = true;
       try {
         const status = await softetherApi.status();
-        await softetherApi.createVpnGateProfile({host: server.host, port: server.port || 443,
-          name: `VPN Gate ${server.countryCode || server.host}`}, status.token);
-        _feedback('softether-vpngate-feedback');
-        _feedback('softether-vpngate-feedback', t('softether.vpngateCreated'), 'success');
-        await loadVpnGateServers();
+        const created = await softetherApi.createVpnGateProfile({host: server.host, port: server.port || 443,
+          name: vpnGateProfileNameFor(server, localProfiles)}, status.token);
+        if (created && created.success === true) {
+          _feedback('softether-vpngate-feedback', t('softether.vpngateCreated'), 'success');
+        } else {
+          // Created, but not (yet) connected: never reported as a success.
+          _feedback('softether-vpngate-feedback', t('softether.createdNotConnected', {name: created?.name || ''}), 'warning');
+        }
+        await loadVpnGateServers({keepFeedback: true});
       } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
       finally { button.disabled = false; }
     }));
     target.querySelectorAll('[data-vpngate-delete]').forEach(button => button.addEventListener('click', async () => {
+      const name = button.dataset.vpngateDelete;
+      // Two-step deletion: the first click only asks for confirmation.
+      if (button.dataset.confirming !== '1') {
+        button.dataset.confirming = '1';
+        button.textContent = t('softether.profileDeleteConfirm');
+        _feedback('softether-vpngate-feedback', t('softether.profileDeleteAsk', {name}), 'warning');
+        return;
+      }
       button.disabled = true;
       try {
         const status = await softetherApi.status();
-        await softetherApi.deleteVpnGateProfile({name: button.dataset.vpngateDelete}, status.token);
-        _feedback('softether-vpngate-feedback', 'Profilo eliminato', 'success'); await loadVpnGateServers();
+        await softetherApi.deleteVpnGateProfile({name}, status.token);
+        _feedback('softether-vpngate-feedback', t('softether.profileDeleted', {name}), 'success');
+        await loadVpnGateServers({keepFeedback: true});
       } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
       finally { button.disabled = false; }
     }));
@@ -316,15 +476,19 @@ async function loadVpnGateServers() {
       const connect = button.dataset.vpngateConnect !== undefined;
       const name = connect ? button.dataset.vpngateConnect : button.dataset.vpngateDisconnect;
       button.disabled = true;
-      _feedback('softether-vpngate-feedback', connect ? 'Connessione in corso…' : 'Disconnessione in corso…', 'warning');
+      _feedback('softether-vpngate-feedback', t(connect ? 'softether.profileConnecting' : 'softether.profileDisconnecting'), 'warning');
       try {
         const status = await softetherApi.status();
         const result = connect
           ? await softetherApi.connectVpnGateProfile({name}, status.token)
           : await softetherApi.disconnectVpnGateProfile({name}, status.token);
-        _feedback('softether-vpngate-feedback', connect && result.connected ? 'Connesso. Aggiornamento IP in corso…' : connect ? 'Connessione non confermata.' : 'Disconnesso.', connect && !result.connected ? 'danger' : 'success');
+        const key = connect && result.connected ? 'softether.profileConnectedIp'
+          : connect ? 'softether.profileConnectUnconfirmed' : 'softether.profileDisconnected';
+        _feedback('softether-vpngate-feedback', t(key), connect && !result.connected ? 'danger' : 'success');
         if (connect && result.connected) _softetherWizard('connected');
         await refreshVpnGateIp();
+        // Redraw so the buttons follow the new real state.
+        await loadVpnGateServers({keepFeedback: true});
       } catch (error) { _feedback('softether-vpngate-feedback', _softetherError(error), 'danger'); }
       finally { button.disabled = false; }
     }));
@@ -337,7 +501,7 @@ async function refreshVpnGateIp() {
   if (!target || target.hidden || !banner) return;
   try {
     const ipInfo = await softetherApi.publicIp();
-    banner.innerHTML = `<strong>IP pubblico</strong>: ${escapeHtml(ipInfo.current)}${ipInfo.changed ? ` · originale: ${escapeHtml(ipInfo.original)} · uscita VPN rilevata` : ' · nessuna variazione rilevata'}`;
+    banner.innerHTML = renderVpnGateIpBanner(ipInfo);
   } catch (_) {
     // The server list remains usable if the external public-IP service is
     // temporarily unavailable.
@@ -370,10 +534,9 @@ const _SETTINGS_TAB_LOADERS = {
   nomi: () => loadNamingTemplates(),
   // Both read the same endpoint, and _loadAppSettings() shares the promise, so
   // this is still one fetch.
-  download: () => Promise.all([loadPerfSettings(), loadOutputSettings(), loadVideoSettings()]),
-  accesso: () => loadJellyfinSettings(),
+  download: () => Promise.all([loadPerfSettings(), loadOutputSettings(), loadVideoSettings(), loadSourceProtection()]),
   notifiche: () => loadNotificationChannels(),
-  hook: () => Promise.all([loadJellyfinRefresh(), loadHooks()]),
+  hook: () => loadHooks(),
   mcp: () => loadMcpSettings(),
 };
 
@@ -739,65 +902,11 @@ async function testNotificationChannel(id) {
   }
 }
 
-// ── Jellyfin connection ──────────────────────────────────────────────────────
-
-async function loadJellyfinSettings() {
-  try {
-    const data = await api.get('/api/auth/status');
-    const connected = !!data.jellyfin_url;
-    document.getElementById('jf-not-connected').style.display = connected ? 'none' : '';
-    document.getElementById('jf-connected').style.display = connected ? '' : 'none';
-    if (connected) {
-      document.getElementById('jf-connected-url').textContent = data.jellyfin_url;
-      document.getElementById('jf-reconfigure-wrap').style.display = can('MANAGE_USERS') ? '' : 'none';
-    }
-  } catch (e) { console.error('loadJellyfinSettings:', e); }
-}
-
-function toggleJellyfinReconfigure() {
-  const form = document.getElementById('jf-reconfigure-form');
-  form.style.display = form.style.display === 'none' ? '' : 'none';
-}
-
-async function connectJellyfin(reconfigure) {
-  const prefix = reconfigure ? 'jf-reconf-' : 'jf-';
-  const btn = document.getElementById(reconfigure ? 'jf-reconnect-btn' : 'jf-connect-btn');
-  const fbId = reconfigure ? 'jf-reconnect-feedback' : 'jf-connect-feedback';
-  const url = document.getElementById(prefix + 'url').value.trim();
-  const username = document.getElementById(prefix + 'username').value.trim();
-  const password = document.getElementById(prefix + 'password').value;
-  if (!url || !username) {
-    _feedback(fbId, t('settings.enter.the.url.and.administrator.username'), 'danger');
-    return;
-  }
-
-  btn.disabled = true;
-  _feedback(fbId, t('login.connecting'));
-  try {
-    try {
-      await api.post('/api/auth/jellyfin-connect', { url, username, password });
-    } catch (e) {
-      _feedback(fbId, _settingsError(e, t('settings.connection.failed')), 'danger');
-      btn.disabled = false;
-      return;
-    }
-    // A full reload re-runs initAuth() against the now-real permission set,
-    // which is simpler than patching _me and the nav in place.
-    _feedback(fbId, t('settings.connected.reloading'), 'success');
-    window.location.reload();
-  } catch (e) {
-    _feedback(fbId, t('settings.network.error'), 'danger');
-    btn.disabled = false;
-  }
-}
-
 async function loadPerfSettings() {
   const data = await _loadAppSettings();
   if (!data) return;
   document.getElementById('setting-max-concurrent').value = data.max_concurrent_downloads ?? 3;
   document.getElementById('setting-max-workers').value = data.max_segment_workers ?? 16;
-  document.getElementById('setting-watch-interval').value =
-    data.series_watch_interval_minutes ?? 240;
 }
 
 // ── Output format ─────────────────────────────────────────────
@@ -972,8 +1081,9 @@ async function resetNamingTemplates() {
 
 // ── Post-download hooks ────────────────────────────────────────────────────────
 //
-// Webhooks only: open mode grants MANAGE_SETTINGS to every anonymous visitor, so
-// a shell hook would be remote code execution for whoever can reach the panel.
+// Webhooks only: the panel has no login and the local user holds
+// MANAGE_SETTINGS, so a shell hook would be code execution for anything that
+// reaches the panel.
 // See app/downloads_hooks.py.
 
 let _hooks = [];
@@ -984,46 +1094,10 @@ const HOOK_EVENT_LABELS = {
   get cancelled() { return t('settings.cancelled'); },
 };
 
-async function loadJellyfinRefresh() {
-  const data = await _loadAppSettings();
-  if (!data) return;
-  document.getElementById('jf-refresh-on-download').checked =
-    !!data.jellyfin_refresh_on_download;
-
-}
-
-// Set from the hooks payload, which reports whether the refresh has credentials
-// to use. Inferring it from the auth status would report an installation that
-// skipped the wizard and connected Jellyfin later as unconnected.
-function renderJellyfinRefreshAvailability(connected) {
-  const toggle = document.getElementById('jf-refresh-on-download');
-  if (!toggle) return;
-  toggle.disabled = !connected;
-  _settingsText(document.getElementById('jf-refresh-status'), connected
-    ? ''
-    : t('settings.jellyfin.is.not.connected.connect.it.in.access'));
-}
-
-async function saveJellyfinRefresh() {
-  const btn = document.getElementById('save-jf-refresh-btn');
-  btn.disabled = true;
-  _feedback('jf-refresh-feedback', t('settings.saving'));
-  try {
-    await api.put('/api/domain/settings', {
-      jellyfin_refresh_on_download:
-        document.getElementById('jf-refresh-on-download').checked,
-    });
-    _feedback('jf-refresh-feedback', t('settings.saved'), 'success');
-    showToast(t('settings.setting.saved'), 'success');
-  } catch (e) { _feedback('jf-refresh-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
-  finally { btn.disabled = false; }
-}
-
 async function loadHooks() {
   try {
     const data = await api.get('/api/download-hooks');
     _hooks = data.hooks || [];
-    renderJellyfinRefreshAvailability(!!data.jellyfin_connected);
     renderHooksList();
   } catch (e) { /* the list simply stays as it was */ }
 }
@@ -1191,8 +1265,7 @@ async function savePerfSettings() {
   const btn = document.getElementById('save-perf-btn');
   const concurrent = parseInt(document.getElementById('setting-max-concurrent').value, 10);
   const workers = parseInt(document.getElementById('setting-max-workers').value, 10);
-  const watchInterval = parseInt(document.getElementById('setting-watch-interval').value, 10);
-  if (!concurrent || !workers || !watchInterval) {
+  if (!concurrent || !workers) {
     _feedback('perf-settings-feedback', t('settings.invalid.values'), 'danger'); return;
   }
   btn.disabled = true;
@@ -1201,7 +1274,6 @@ async function savePerfSettings() {
     await api.put('/api/domain/settings', {
       max_concurrent_downloads: concurrent,
       max_segment_workers: workers,
-      series_watch_interval_minutes: watchInterval,
     });
     _feedback('perf-settings-feedback', t('settings.saved'), 'success');
     showToast(t('settings.performance.settings.saved'), 'success');
@@ -1322,7 +1394,7 @@ async function loadMcpSettings() {
     if (!status.has_token) {
       _settingsText(tokenStatus, t('settings.no.token.generate.one.to.allow.an.agent'));
     } else if (!status.owner) {
-      // Owner disabled or removed, or minted before Jellyfin was connected.
+      // Defensive: the token always acts as the local user, so this should not happen.
       _settingsText(tokenStatus, t('settings.the.token.is.no.longer.valid.its.owner'));
     } else {
       _settingsText(tokenStatus, t('settings.active.token.generated.by.the.agent.uses.their', {owner: status.owner}));
@@ -1410,9 +1482,13 @@ async function _copyWithToast(text, what) {
 
 registerActions({
   'cfg:probeHardware': () => probeHardware(),
+  'cfg:resetConservative': () => resetConservativePreset(),
   'cfg:softetherStatus': () => loadSoftEtherStatus(),
   'cfg:softetherOpen': () => openSoftEtherManager(),
   'cfg:softetherClose': () => closeSoftEtherManager(),
+  'cfg:softetherHide': () => hideSoftEtherManager(),
+  'cfg:softetherBlockIp': () => checkSoftEtherBlockIp(),
+  'cfg:imagesRefresh': () => refreshPosters(),
   'cfg:softetherInstall': () => installSoftEther(),
   'cfg:saveGeneral': () => saveGeneralSettings(),
   'cfg:runDiagnostics': () => runDiagnostics(),
@@ -1439,9 +1515,6 @@ registerActions({
   'cfg:saveVideo': () => saveVideoSettings(),
   'cfg:refreshVideoEncoders': () => loadVideoEncoders(true),
   'cfg:saveOutput':       () => saveOutputSettings(),
-  'cfg:jfConnect':        d => connectJellyfin(d.reconfigure === '1'),
-  'cfg:jfReconfigure':    () => toggleJellyfinReconfigure(),
-  'cfg:saveJfRefresh':    () => saveJellyfinRefresh(),
   'cfg:saveChannel':      () => saveNotificationChannel(),
   'cfg:toggleChannelForm': () => toggleNotificationChannelForm(),
   'cfg:channelPicker':    d => toggleChannelEvents(Number(d.id)),
@@ -1512,6 +1585,11 @@ setInterval(() => {
   if (!document.hidden && _settingsTab === 'log' &&
       document.getElementById('page-settings')?.style.display !== 'none') loadApplicationLogs();
 }, 3000);
+// The source-pause notice, kept current while the download tab is open.
+setInterval(() => {
+  if (!document.hidden && _settingsTab === 'download' &&
+      document.getElementById('page-settings')?.style.display !== 'none') loadSourceProtection();
+}, 15000);
 
 
 async function browseDownloadDirectory() {
@@ -1555,16 +1633,41 @@ function renderHardwareResults(data) {
     if (!data.gpus.length) line('settings.hardware.noGpu');
     for (const gpu of data.gpus) line('settings.hardware.gpu', {name: gpu.name, vram: gib(gpu.vram_bytes)});
     line('settings.hardware.encoders', {encoders: data.encoders.filter(row => row.available).map(row => row.encoder).join(', ') || unknown});
+    if ('ffmpeg_available' in data) line(data.ffmpeg_available ? 'settings.hardware.ffmpegOk' : 'settings.hardware.ffmpegMissing');
+    if (data.source) {
+      line('settings.hardware.source', {pushbacks: data.source.pushbacks_last_72h ?? 0,
+        week: data.source.pushbacks_last_7d ?? 0,
+        hours: data.source.history_hours == null ? unknown : Math.round(data.source.history_hours),
+        requests: data.source.requests_last_hour ?? 0, limit: data.source.limit_per_hour ?? unknown});
+      if (data.source.backoff_active) line('settings.hardware.sourcePaused');
+      if (data.source.limit_from_env) line('settings.hardware.budgetFromEnv', {limit: data.source.limit_per_hour ?? unknown});
+    }
+    const applied = data.applied;
+    if (applied && applied.source_cap_from_env) {
+      line('settings.hardware.capFromEnv', {cap: applied.effective_source_max_connections ?? unknown});
+    }
     const r = data.recommendations;
     if (r.video_encoder) {
       line('settings.hardware.conversion', {encoder: r.video_encoder,
         codec: r.video_codec, count: r.max_parallel_conversions});
     } else line('settings.hardware.noEncoder');
-    line('settings.hardware.downloads', {count: r.max_concurrent_downloads, workers: r.max_segment_workers});
+    line('settings.hardware.downloads', {count: r.max_concurrent_downloads, workers: r.max_segment_workers,
+      connections: r.source_max_connections ?? unknown, requests: r.source_requests_per_hour ?? unknown});
     line('settings.hardware.advice');
     if (data.warnings.length) line('settings.hardware.partial');
 }
 
+// The values of the preset now in force, in the performance form below.
+function _showPerformanceValues(values) {
+  if (!values) return;
+  const concurrent = document.getElementById('setting-max-concurrent');
+  const workers = document.getElementById('setting-max-workers');
+  if (concurrent && values.max_concurrent_downloads != null) concurrent.value = values.max_concurrent_downloads;
+  if (workers && values.max_segment_workers != null) workers.value = values.max_segment_workers;
+}
+
+// The diagnosis applies its preset on the server (download limits only; the
+// video encoder is suggested, never written) and says what and why.
 async function probeHardware() {
   const button = document.getElementById('probe-hardware');
   const target = document.getElementById('hardware-results');
@@ -1572,23 +1675,64 @@ async function probeHardware() {
   _hardwareData = null;
   _settingsText(target, t('settings.hardware.scanning'));
   try {
-    _hardwareData = await api.get('/api/domain/hardware');
-    const recommendations = _hardwareData.recommendations || {};
-    if (recommendations.max_concurrent_downloads && recommendations.max_segment_workers) {
-      await api.put('/api/domain/settings', {
-        max_concurrent_downloads: recommendations.max_concurrent_downloads,
-        max_segment_workers: recommendations.max_segment_workers,
-      });
-      document.getElementById('setting-max-concurrent').value = recommendations.max_concurrent_downloads;
-      document.getElementById('setting-max-workers').value = recommendations.max_segment_workers;
-      _feedback('perf-settings-feedback', t('settings.hardware.applied', {
-        count: recommendations.max_concurrent_downloads,
-        workers: recommendations.max_segment_workers,
+    _hardwareData = await api.post('/api/domain/hardware/diagnose', {});
+    const applied = _hardwareData.applied;
+    if (applied) {
+      _showPerformanceValues(_hardwareData.settings || applied.values);
+      _feedback('hardware-preset-feedback', t('settings.hardware.presetApplied', {
+        preset: applied.label,
+        count: applied.values.max_concurrent_downloads,
+        workers: applied.values.max_segment_workers,
+        connections: applied.values.source_max_connections,
+        requests: applied.values.source_requests_per_hour,
+        reason: (applied.reasons || []).join(' '),
       }), 'success');
+      const reset = document.getElementById('reset-conservative');
+      if (reset) reset.hidden = false;
     }
     renderHardwareResults(_hardwareData);
   } catch (e) { _settingsText(target, t('settings.hardware.failed')); }
   finally { button.disabled = false; }
+}
+
+async function resetConservativePreset() {
+  const button = document.getElementById('reset-conservative');
+  if (button) button.disabled = true;
+  try {
+    const result = await api.post('/api/domain/performance-preset', {preset: 'conservative'});
+    _showPerformanceValues(result.settings);
+    _feedback('hardware-preset-feedback', t('settings.hardware.conservativeRestored', {
+      count: result.settings.max_concurrent_downloads,
+      workers: result.settings.max_segment_workers,
+      connections: result.settings.source_max_connections,
+      requests: result.settings.source_requests_per_hour,
+    }), 'success');
+  } catch (e) { _feedback('hardware-preset-feedback', t('settings.hardware.failed'), 'danger'); }
+  finally { if (button) button.disabled = false; }
+}
+
+// "Sorgente in pausa fino alle HH:MM": shown while the source is in backoff and
+// the download queue is held; it resumes on its own.
+function renderSourceProtection(status) {
+  const box = document.getElementById('source-protection-status');
+  if (!box) return;
+  const lines = [];
+  if (status && status.paused) lines.push(t('settings.hardware.queuePaused', {time: status.until_hhmm}));
+  if (status && status.downgraded_at) lines.push(t('settings.hardware.downgraded'));
+  if (status && status.source_cap_from_env) {
+    lines.push(t('settings.hardware.capFromEnv', {cap: status.effective_source_max_connections}));
+  }
+  if (status && status.budget_from_env) {
+    lines.push(t('settings.hardware.budgetFromEnv', {limit: status.effective_requests_per_hour}));
+  }
+  if (!lines.length) { box.hidden = true; _settingsText(box, ''); return; }
+  _settingsText(box, lines.join(' '));
+  box.hidden = false;
+}
+
+async function loadSourceProtection() {
+  try { renderSourceProtection(await api.get('/api/domain/source-protection')); }
+  catch (e) { /* Informational only: a failed poll leaves the last state. */ }
 }
 
 async function loadVideoSettings() {

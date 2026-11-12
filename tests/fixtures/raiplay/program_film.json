@@ -1,0 +1,29 @@
+{
+  "name": "Film Esempio",
+  "id": "Page-00000000-0000-0000-0000-0000000000b2",
+  "path_id": "/programmi/filmesempio.json",
+  "first_item_path": "/video/2026/10/Film-Esempio-0000.json",
+  "first_item_duration": "01:33:45",
+  "trailer": {"content_url": "https://mediapolisvod.rai.it/relinker/relinkerServlet.htm?cont=FAKE6"},
+  "program_info": {
+    "id": "ContentItem-00000000-0000-0000-0000-0000000000b1",
+    "name": "Film Esempio",
+    "type": "RaiPlay Programma Item",
+    "layout": "single",
+    "year": "2025",
+    "country": "Francia",
+    "direction": "Regista Tre",
+    "actors": "Attore Quattro",
+    "description": "Un giovane immaginario attraversa una città di esempio.",
+    "vanity": "Un film di esempio",
+    "typology": "Film",
+    "genres": [{"principal": true, "name": "Drammatico", "id": "Category-1"}],
+    "images": {"landscape": "/dl/img/2026/02/02/0000000000003_2048x1152.jpg",
+               "portrait43": "/dl/img/2026/02/02/0000000000004_1536x2048.jpg"},
+    "rights_management": {"rights": {"drm": {"Diretta": true, "VOD": true}}}
+  },
+  "blocks": [
+    {"name": "Film Esempio Block", "type": "RaiPlay Multimedia Block",
+     "sets": [{"name": "Film Esempio Set", "episode_size": {"label": "1 video", "number": 1}}]}
+  ]
+}

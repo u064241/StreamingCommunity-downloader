@@ -62,6 +62,10 @@
               <button class="source-btn" id="src-au" data-action="search:source" data-source="animeunity">
                 <i class="ti ti-sword"></i>AnimeUnity
               </button>
+              <button class="source-btn" id="src-rai" data-action="search:source" data-source="raiplay"
+                      title="Solo catalogo: i contenuti RaiPlay non sono scaricabili dal pannello">
+                <i class="ti ti-broadcast"></i>RaiPlay
+              </button>
             </div>
             <div class="sc-searchbar">
               <input type="text" id="search-input"
@@ -81,6 +85,41 @@
           <div id="search-results" class="row g-3"></div>
           <div id="search-more" class="text-center mt-4" style="display:none">
             <button class="source-btn" id="search-more-btn" data-action="search:more">
+              <i class="ti ti-plus"></i><span data-i18n="catalog.more">Carica altri</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Archive (StreamingCommunity /archive) ───────────── -->
+        <!-- One source page per user action (open, filter, load more):
+             page-archive.js never fetches on its own. -->
+        <div id="page-archive" style="display:none">
+          <div class="pg-head">
+            <div class="pg-head-main">
+              <h1 class="pg-h1" data-i18n="archive.title">Archivio</h1>
+              <p class="pg-sub" data-i18n="archive.subtitle">Tutto il catalogo StreamingCommunity, 60 titoli alla volta.</p>
+            </div>
+            <div class="pg-stats" id="archive-count"></div>
+          </div>
+          <div class="search-filters" id="archive-kinds">
+            <button class="source-btn active" data-action="archive:kind" data-kind="" data-i18n="catalog.all">Tutti</button>
+            <button class="source-btn" data-action="archive:kind" data-kind="movie" data-i18n="catalog.movie">Film</button>
+            <button class="source-btn" data-action="archive:kind" data-kind="tv" data-i18n="catalog.tv">Serie TV</button>
+          </div>
+          <div class="lib-toolbar mb-3">
+            <select class="form-select form-select-sm" id="archive-genre" data-change="archive:filter"
+                    data-i18n-aria-label="archive.genre" aria-label="Genere" disabled>
+              <option value="" data-i18n="archive.anyGenre">Tutti i generi</option>
+            </select>
+            <select class="form-select form-select-sm" id="archive-country" data-change="archive:filter"
+                    data-i18n-aria-label="archive.country" aria-label="Paese" disabled>
+              <option value="" data-i18n="archive.anyCountry">Tutti i paesi</option>
+            </select>
+          </div>
+          <div id="archive-stamp"></div>
+          <div id="archive-results" class="row g-3"></div>
+          <div id="archive-more" class="text-center mt-4" hidden>
+            <button class="source-btn" id="archive-more-btn" data-action="archive:more">
               <i class="ti ti-plus"></i><span data-i18n="catalog.more">Carica altri</span>
             </button>
           </div>
@@ -117,6 +156,8 @@
               </button>
             </div>
           </div>
+          <!-- Source backoff: filled by page-downloads.js (renderSourcePause). -->
+          <div id="dl-source-pause" class="alert alert-warning py-2 mb-2" role="status" hidden></div>
           <div class="pg-bar" id="dl-filters">
             <button class="queue-filter active" data-action="jobs:filter" data-filter="all" data-i18n="downloads.all">Tutti</button>
             <button class="queue-filter" data-action="jobs:filter" data-filter="running" data-i18n="downloads.running">In corso</button>
@@ -277,68 +318,6 @@
           <div id="my-requests-list"></div>
         </div>
 
-        <!-- ── Followed series ─────────────────────────────────── -->
-        <div id="page-watches" style="display:none">
-          <div class="pg-head">
-            <div class="pg-head-main">
-              <h1 class="pg-h1">Serie seguite</h1>
-              <p class="pg-sub">
-                I nuovi episodi vengono cercati da soli. Una serie seguita non
-                scarica mai da sé: apre una richiesta, che passa dalla coda o
-                viene approvata subito, secondo i permessi di chi la segue.
-              </p>
-            </div>
-            <div class="pg-stats" id="watches-stats"></div>
-            <div class="pg-actions">
-              <button class="btn btn-sm btn-outline-secondary" data-action="watch:reload" title="Aggiorna">
-                <i class="ti ti-refresh me-1"></i>Aggiorna
-              </button>
-            </div>
-          </div>
-          <div id="watches-list"></div>
-        </div>
-
-        <!-- ── Users ───────────────────────────────────────────── -->
-        <div id="page-users" style="display:none">
-          <div class="pg-head">
-            <div class="pg-head-main">
-              <h1 class="pg-h1">Utenti</h1>
-              <p class="pg-sub">
-                Gli account arrivano da Jellyfin; il pannello decide solo cosa
-                ciascuno può fare. I permessi sono indipendenti fra loro — non
-                esiste un permesso di amministratore che implichi gli altri.
-              </p>
-            </div>
-            <div class="pg-stats" id="users-stats"></div>
-            <div class="pg-actions">
-              <button class="btn btn-sm btn-outline-secondary" data-action="users:reload" title="Aggiorna">
-                <i class="ti ti-refresh me-1"></i>Aggiorna
-              </button>
-            </div>
-          </div>
-
-          <label class="sc-switch mb-3" for="open-signin">
-            <input class="sc-switch-input" type="checkbox" id="open-signin" data-change="users:openSignin">
-            <span class="sc-switch-track"><span class="sc-switch-thumb"></span></span>
-            <span class="sc-switch-text">
-              Consenti l'accesso a qualsiasi account Jellyfin
-              <span>Disattivato: gli utenti vanno importati esplicitamente qui sotto.</span>
-            </span>
-          </label>
-
-          <div class="pg-bar" id="users-filters">
-            <button class="queue-filter active" data-action="users:filter" data-filter="all">Tutti</button>
-            <button class="queue-filter" data-action="users:filter" data-filter="imported">Importati</button>
-            <button class="queue-filter" data-action="users:filter" data-filter="new">Non importati</button>
-            <div class="pg-bar-end">
-              <input type="text" id="users-search" class="form-control form-control-sm"
-                     style="width:190px" placeholder="Cerca utente..." autocomplete="off"
-                     data-input="users:search">
-            </div>
-          </div>
-          <div id="users-list"></div>
-        </div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -352,11 +331,10 @@
      app.js — the entry point, which owns the boot listener — is last. -->
 <script src="{{ asset('router.js') }}"></script>
 <script src="{{ asset('page-search.js') }}"></script>
+<script src="{{ asset('page-archive.js') }}"></script>
 <script src="{{ asset('page-title.js') }}"></script>
 <script src="{{ asset('page-downloads.js') }}"></script>
 <script src="{{ asset('page-requests.js') }}"></script>
-<script src="{{ asset('page-watches.js') }}"></script>
-<script src="{{ asset('page-users.js') }}"></script>
 <script src="{{ asset('page-files.js') }}"></script>
 <script src="{{ asset('page-settings.js') }}"></script>
 <script src="{{ asset('library.js') }}"></script>

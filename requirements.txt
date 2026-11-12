@@ -1,5 +1,5 @@
-requests
-bs4
+requests>=2.32,<3
+beautifulsoup4>=4.12,<5
 lxml
 tqdm
 rich
@@ -7,12 +7,14 @@ random-user-agent
 ffmpeg-python
 # Bundles FFmpeg 7.1: NVENC compatible with Pascal GPUs on NVIDIA R580 drivers.
 imageio-ffmpeg==0.6.0
-cryptography==3.4.8  # Pinned: newer versions (40+) removed default_backend(), requires API change in m3u8.py
+# 3.4.8 (2021) carried known CVEs. The backend argument m3u8.py still passes is
+# accepted and ignored by current releases.
+cryptography>=44
 filelock>=3.12.0
 m3u8
-fastapi
-uvicorn[standard]
+fastapi<1
+uvicorn[standard]<1
 jinja2
-cloudscraper
-apprise
+cloudscraper<2
+apprise<3
 mcp>=2.3,<3

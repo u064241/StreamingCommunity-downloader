@@ -25,6 +25,30 @@ def _row_to_channel(row) -> dict:
     return channel
 
 
+def mask_url(apprise_url: str) -> str:
+    """``scheme://…last4``: enough to tell two channels apart, not to use one.
+
+    An Apprise URL *is* the credential — the webhook id and token, the bot
+    token, the SMTP password are all in it.
+    """
+    scheme, separator, rest = (apprise_url or "").partition("://")
+    if not separator:
+        return "…"
+    return f"{scheme}://…{rest[-4:] if len(rest) > 8 else ''}"
+
+
+def public(channel: dict | None) -> dict | None:
+    """A channel as an API response may carry it: the URL masked.
+
+    ``apprise_url`` keeps its name — the settings page reads that key — but
+    holds the masked form. The real value never leaves the server again once
+    saved; to change it, send a new one.
+    """
+    if channel is None:
+        return None
+    return {**channel, "apprise_url": mask_url(channel["apprise_url"])}
+
+
 def list_channels() -> list[dict]:
     rows = db.query("SELECT * FROM jf_notification_channel ORDER BY id")
     return [_row_to_channel(r) for r in rows]

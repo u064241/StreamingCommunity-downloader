@@ -240,15 +240,31 @@ def test_rejected_candidates_are_reported(monkeypatch, broken_source):
 
 
 def test_telegram_candidate_wins_over_working_domain(monkeypatch, _configured_domain, page, public_dns):
+    # With domain_auto_apply on, the Telegram candidate is adopted automatically,
+    # even though the configured domain still answers.
     monkeypatch.setattr(domain_recovery, "get_domain_version", lambda host: "v1")
     monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates", lambda: ["streamingcommunityz.rodeo"])
     monkeypatch.setattr(domain_recovery, "fetch_candidates", lambda: [])
+    monkeypatch.setattr(domain_recovery, "_settings", lambda: {"domain_auto_apply": True})
 
     result = domain_recovery.run_check()
 
     assert result["current_ok"] is True
     assert result["candidate"] == "streamingcommunityz.rodeo"
     assert result["applied"] is True
+
+
+def test_telegram_candidate_is_only_proposed_without_auto_apply(monkeypatch, _configured_domain, page, public_dns):
+    monkeypatch.setattr(domain_recovery, "get_domain_version", lambda host: "v1")
+    monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates", lambda: ["streamingcommunityz.rodeo"])
+    monkeypatch.setattr(domain_recovery, "fetch_candidates", lambda: [])
+    monkeypatch.setattr(domain_recovery, "_settings", lambda: {"domain_auto_apply": False})
+
+    result = domain_recovery.run_check()
+
+    assert result["candidate"] == "streamingcommunityz.rodeo"
+    assert result["applied"] is False
+    assert domain_recovery.pending()["host"] == "streamingcommunityz.rodeo"
 
 
 def test_forcing_looks_even_when_the_domain_works(monkeypatch, _configured_domain, page, public_dns):
@@ -437,7 +453,8 @@ def test_the_recovery_settings_survive_a_settings_save(client, admin):
     assert res.status_code == 200
     stored = config.get_settings()
     assert stored["domain_auto_apply"] is True
-    assert stored["series_watch_interval_minutes"] == 240
+    # Retired with the followed-series feature: never re-added by a save.
+    assert "series_watch_interval_minutes" not in stored
     assert stored["max_concurrent_downloads"] == 4
 
 

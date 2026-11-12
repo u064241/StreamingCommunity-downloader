@@ -95,6 +95,22 @@ async function loadTitlePage(route) {
     _tp.name = slug ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Anime';
   }
 
+  // A metadata-only catalogue (RaiPlay): the card comes from
+  // /api/titles/{source}/{id}, read-only. No languages, tracks, episodes or
+  // library lookups are asked for, and the download button stays disabled.
+  if (_tpIsMetadataOnly(source, seed)) {
+    _tp.metadataOnly = true;
+    _tp.downloadDisabledReason = seed?.download_disabled_reason || TP_NOT_DOWNLOADABLE;
+    _tp.tracksLoaded = true;
+    _libTitleKey = null;
+    const libCard = document.getElementById('th-library-card');
+    if (libCard) libCard.hidden = true;
+    showPage('detail');
+    _tpRender();
+    await _tpLoadMetadataOnly(token);
+    return;
+  }
+
   showPage('detail');
   _tpRender();
   // Which library folder holds this title - for whoever manages the library.
@@ -149,6 +165,36 @@ async function loadTitlePage(route) {
     await tpLoadSeason(seasons.includes(route.season) ? route.season : (seasons[0] || 1), token);
   }
   else if (route.type === 'anime') await _tpLoadAnime(token);
+}
+
+// Only these sources have a download engine. Anything else - RaiPlay, an
+// unknown source, a card that says downloadable:false - is metadata only.
+const TP_DOWNLOAD_SOURCES = ['streamingcommunity', 'animeunity'];
+const TP_NOT_DOWNLOADABLE = 'Contenuto non scaricabile dal pannello';
+
+function _tpIsMetadataOnly(source, seed) {
+  return !TP_DOWNLOAD_SOURCES.includes(source) || seed?.downloadable === false;
+}
+
+async function _tpLoadMetadataOnly(token) {
+  try {
+    const card = await api.get(
+      `/api/titles/${encodeURIComponent(_tp.source)}/${encodeURIComponent(String(_tp.id))}`);
+    if (token !== _tpToken || !card) return;
+    _tp.name = card.name || _tp.name;
+    _tp.plot = card.description || _tp.plot;
+    _tp.genres = Array.isArray(card.genres) && card.genres.length ? card.genres : _tp.genres;
+    _tp.poster = card.poster || _tp.poster;
+    _tp.year = card.year || _tp.year;
+    _tp.pageUrl = card.page_url || null;
+    _tp.meta = {backdrop: card.backdrop || null, cast: [], directors: []};
+    // Never re-enabled from here: the card can only make the reason more precise.
+    _tp.downloadDisabledReason = card.download_disabled_reason || _tp.downloadDisabledReason;
+  } catch (e) {
+    if (token !== _tpToken) return;
+    _tp.metadataError = e.message || t('title.sourceUnavailable');
+  }
+  _tpRender();
 }
 
 function _tpApplyMeta(meta) {
@@ -281,6 +327,7 @@ function tpSelectTracks(which, enabled) {
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 function _tpTabs() {
+  if (_tp.metadataOnly) return [['about', t('title.about')]];
   const tabs = [];
   if (_tp.type !== 'movie') tabs.push(['episodes', t('title.episodes')]);
   tabs.push(['about', t('title.about')]);
@@ -402,6 +449,19 @@ function _tpRenderHero() {
 }
 
 function _tpRenderCta() {
+  if (_tp.metadataOnly) {
+    const reason = _tp.downloadDisabledReason || TP_NOT_DOWNLOADABLE;
+    const link = typeof _tp.pageUrl === 'string' && _tp.pageUrl.startsWith('https://www.raiplay.it/')
+      ? `<a class="btn btn-outline-secondary" href="${escapeHtml(_tp.pageUrl)}" target="_blank" rel="noopener noreferrer">
+           <i class="ti ti-external-link me-1"></i>RaiPlay</a>` : '';
+    document.getElementById('th-cta').innerHTML = `
+      <button class="btn btn-primary" type="button" disabled aria-disabled="true" title="${escapeHtml(reason)}">
+        <i class="ti ti-download-off me-1"></i>${escapeHtml(t('title.download'))}
+      </button>
+      <span class="small text-muted ms-2">${escapeHtml(reason)}</span>
+      ${link}`;
+    return;
+  }
   if (_tp.comingSoon) {
     document.getElementById('th-cta').innerHTML = `<span class="badge bg-orange-lt">${t('title.unavailable')}</span>`;
     return;
@@ -419,9 +479,6 @@ function _tpRenderCta() {
     : (!wants && _tp.seasonsCount > 1 ? t('title.scopeSeries') : t('title.scopeSeason')));
   const label = `${verb}${scope}`;
   const icon = wants ? 'ti-send' : (_tp.seasonsCount > 1 && _tp.type === 'tv' ? 'ti-stack-2' : 'ti-download');
-  // An anime film is _tp.type 'anime'; only the source's own kind says it is a film.
-  const followable = _tp.type !== 'movie' && !(_tp.type === 'anime' && isAnimeFilm(_tp.animeType));
-
   // Scheduling is part of the download privilege: a requester picks tracks and
   // an approver decides when it runs.
   const sched = can('DOWNLOAD') ? `
@@ -441,13 +498,9 @@ function _tpRenderCta() {
   document.getElementById('th-cta').innerHTML = `
     ${sched}
     ${primary}
-    <!-- Left bare: _renderFollowButton owns this button's class and label,
-         and rewriting them here would fight it. -->
-    ${followable ? `<button id="th-follow-btn" data-action="tp:follow"></button>` : ''}
     <button class="th-icon-btn" data-action="tp:tab" data-tab="tracks" title="${escapeHtml(t('title.tracksHint'))}">
       <i class="ti ti-adjustments"></i>
     </button>`;
-  if (followable && !_tpLanguageRender) tpRefreshFollow();
 }
 
 function _tpRenderTabsBar() {
@@ -459,6 +512,10 @@ function _tpRenderTabsBar() {
 
 function _tpRenderAbout() {
   const el = document.getElementById('th-pane-about');
+  if (_tp.metadataOnly && _tp.metadataError && !_tp.plot) {
+    el.innerHTML = `<div class="alert alert-warning">${escapeHtml(_tp.metadataError)}</div>`;
+    return;
+  }
   el.innerHTML = _tp.plot
     ? `<p style="color:var(--text-sub);font-size:13.5px;line-height:1.7;max-width:70ch">${escapeHtml(_tp.plot)}</p>`
     : `<div class="th-empty">${t('title.noPlot')}</div>`;
@@ -483,7 +540,7 @@ function _tpRenderCast() {
 
 function _tpRenderTracks() {
   const el = document.getElementById('th-pane-tracks');
-  if (_tp.type === 'anime') { el.innerHTML = ''; return; }
+  if (_tp.type === 'anime' || _tp.metadataOnly) { el.innerHTML = ''; return; }
   if (!_tp.tracksLoaded) {
     el.innerHTML = `<div class="th-empty"><span class="spinner-border spinner-border-sm me-2"></span>${t('title.readingTracks')}</div>`;
     return;
@@ -565,7 +622,7 @@ function tpPlayTrailer() {
 
 function _tpRenderEpisodes() {
   const el = document.getElementById('th-pane-episodes');
-  if (!el || _tp.type === 'movie') { if (el) el.innerHTML = ''; return; }
+  if (!el || _tp.type === 'movie' || _tp.metadataOnly) { if (el) el.innerHTML = ''; return; }
   if (_tp.comingSoon) { el.textContent = t('title.episodesUnavailable'); return; }
 
   const pills = _tp.type === 'tv' && _tp.seasonsCount > 1
@@ -654,7 +711,9 @@ function _tpRenderEpisodes() {
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 function tpPrimary() {
-  if (_tp.comingSoon) return;
+  // Fail-closed: a metadata-only title has no download path (the server
+  // refuses it with 422 as well).
+  if (!_tp || _tp.comingSoon || _tp.metadataOnly) return;
   // Without DOWNLOAD a season becomes a season's worth of requests, made
   // server-side so dedup and the library check apply to each of them.
   if (!can('DOWNLOAD') && _tp.type === 'tv') { tpRequestSeason(); return; }
@@ -669,8 +728,6 @@ function tpPrimary() {
   }
 }
 
-async function tpToggleFollow() { await toggleFollowSeries('page'); _tpLocalizeFollow(); }
-async function tpRefreshFollow() { await checkWatchStatus('page'); _tpLocalizeFollow(); }
 
 // Back to wherever the visitor came from, and to the search page when they
 // arrived by pasted link and there is no history to go back to.
@@ -973,7 +1030,6 @@ registerActions({
     });
   },
   'tp:primary':       () => tpPrimary(),
-  'tp:follow':        () => tpToggleFollow(),
   'tp:tab':           d => tpSetTab(d.tab),
   'tp:tracks-all': d => tpSelectTracks(d.which, true),
   'tp:tracks-none': d => tpSelectTracks(d.which, false),
@@ -1017,24 +1073,14 @@ function _tpLangName(code) {
   catch (_) { name = clean; }
   return name + (forced ? ' ' + t('title.forced') : '');
 }
-function _tpLocalizeFollow() {
-  const button = document.getElementById('th-follow-btn');
-  if (!button) return;
-  const following = button.dataset.following === '1';
-  button.innerHTML = `<i class="ti ${following ? 'ti-bell-check' : 'ti-bell-plus'} me-1"></i>${t(following ? 'title.following' : 'title.follow')}`;
-  button.title = t(following ? 'title.followingHint' : 'title.followHint');
-}
 window.addEventListener('sc:language-changed', () => {
   if (!_tp) return;
-  const button = document.getElementById('th-follow-btn');
   const focus = document.activeElement;
   const schedule = document.getElementById('th-sched-at');
   if (schedule && schedule.value !== _tp.scheduledRaw) tpSetSchedule(schedule.value);
   _tpLanguageRender = true;
   try {
     _tpRender();
-    if (button) document.getElementById('th-follow-btn')?.replaceWith(button);
-    _tpLocalizeFollow();
     if (focus?.id === 'th-sched-at') document.getElementById(focus.id)?.focus();
   } finally { _tpLanguageRender = false; }
 });

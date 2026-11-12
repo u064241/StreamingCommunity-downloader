@@ -17,11 +17,15 @@ from pydantic import BaseModel, Field, field_validator
 from app.auth.deps import current_user, require
 from app.auth.permissions import Permission
 from app.requests import models, notify, resolver, service
+from app.routers._providers import ensure_downloadable, require_downloadable_source
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
 CAN_REQUEST = [Depends(require(Permission.REQUEST))]
+# Creating a request: the permission, then the source gate (fail-closed, 422
+# for a source that cannot be downloaded, e.g. RaiPlay, before anything else).
+CAN_CREATE_REQUEST = [*CAN_REQUEST, Depends(require_downloadable_source)]
 CAN_MANAGE = [Depends(require(Permission.MANAGE_REQUESTS))]
 # Seeing your own requests only needs the ability to have made one.
 CAN_SEE_OWN = [Depends(require(Permission.REQUEST, Permission.DOWNLOAD, mode="or"))]
@@ -118,12 +122,7 @@ class BatchIdsRequest(BaseModel):
 
 
 class ApproveBatchRequest(BatchIdsRequest):
-    # Ids among `ids` whose followed series should stop asking from now on.
-    auto_approve_watch_ids: list[int] = Field(default_factory=list, max_length=MAX_BATCH)
-
-
-class ApproveRequestOptions(BaseModel):
-    auto_approve_watch: bool = False
+    pass
 
 
 class BatchDenyRequest(BaseModel):
@@ -146,8 +145,11 @@ def _public(request: models.Request) -> dict:
 
 # ── Creating ───────────────────────────────────────────────────────────────────
 
-@router.post("", status_code=201, dependencies=CAN_REQUEST)
+@router.post("", status_code=201, dependencies=CAN_CREATE_REQUEST)
 async def create_request(body: CreateRequest, http_request: HttpRequest):
+    # Again here, for callers that reach the handler without the HTTP
+    # dependencies (the MCP tools call it directly).
+    ensure_downloadable(body.source)
     user = current_user(http_request)
 
     if body.media_type == "episode" and (body.season is None or body.episode_number is None):
@@ -249,7 +251,7 @@ def _enumerate_season(external_id: str, slug: str, season: int):
     return get_info_season(int(external_id), slug, domain, version, token, season) or []
 
 
-@router.post("/season", status_code=201, dependencies=CAN_REQUEST)
+@router.post("/season", status_code=201, dependencies=CAN_CREATE_REQUEST)
 async def create_season_requests(body: CreateSeasonRequests, http_request: HttpRequest):
     """Request every episode of a season.
 
@@ -262,6 +264,7 @@ async def create_season_requests(body: CreateSeasonRequests, http_request: HttpR
     notifications behave exactly as they do for a single one - an episode
     somebody already asked for is joined, not duplicated.
     """
+    ensure_downloadable(body.source)
     user = current_user(http_request)
 
     try:
@@ -497,10 +500,10 @@ def get_request(request_id: int, http_request: HttpRequest):
 # result per id and keep going after a failure).
 
 def _approve_one(
-    request_id: int, user_id: int, auto_approve_watch: bool = False
+    request_id: int, user_id: int
 ) -> tuple[bool, models.Request | None, str | None, int]:
     try:
-        return True, service.approve(request_id, user_id, auto_approve_watch), None, 202
+        return True, service.approve(request_id, user_id), None, 202
     except LookupError:
         return False, None, "Richiesta non trovata", 404
     except models.InvalidTransition as exc:
@@ -553,13 +556,10 @@ def _batch_row(request_id: int, ok: bool, request: models.Request | None, error:
 
 
 @router.post("/{request_id}/approve", status_code=202, dependencies=CAN_MANAGE)
-def approve_request(
-    request_id: int, http_request: HttpRequest,
-    body: ApproveRequestOptions = ApproveRequestOptions(),
-):
+def approve_request(request_id: int, http_request: HttpRequest):
     """Approve and return at once — resolution and download run in the background."""
     user = current_user(http_request)
-    ok, request, error, status_code = _approve_one(request_id, user.id, body.auto_approve_watch)
+    ok, request, error, status_code = _approve_one(request_id, user.id)
     if not ok:
         raise HTTPException(status_code=status_code, detail=error)
     return _public(request)
@@ -585,10 +585,9 @@ def deny_request(request_id: int, body: DenyRequest, http_request: HttpRequest):
 @router.post("/approve-batch", status_code=202, dependencies=CAN_MANAGE)
 def approve_batch(body: ApproveBatchRequest, http_request: HttpRequest):
     user = current_user(http_request)
-    auto_ids = set(body.auto_approve_watch_ids)
     results = []
     for request_id in body.ids:
-        ok, request, error, _ = _approve_one(request_id, user.id, request_id in auto_ids)
+        ok, request, error, _ = _approve_one(request_id, user.id)
         results.append(_batch_row(request_id, ok, request, error))
     return {"results": results}
 
@@ -662,12 +661,9 @@ notifications_router = APIRouter(prefix="/api/notifications", tags=["notificatio
 
 
 def _bell_owner(http_request: HttpRequest) -> int | None:
-    """Whose bell this is. None without accounts: the notifications belong to
-    the panel, and the implicit user has no row to own them."""
-    from app.auth.deps import OPEN_MODE_USER
-
-    user = current_user(http_request)
-    return None if user is OPEN_MODE_USER else user.id
+    """Whose bell this is: the local user's row. The bell also shows the
+    panel-wide notifications (user_id NULL, see ``notify._owner_clause``)."""
+    return current_user(http_request).id or None
 
 
 @notifications_router.get("", dependencies=CAN_SEE_OWN)

@@ -7,6 +7,7 @@ exposing its InstallationPath override or invoking PowerShell from HTTP.
 import ipaddress
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -34,7 +35,11 @@ from pydantic import BaseModel, Field
 from app.auth.deps import require
 from app.auth.permissions import Permission
 from app.core.softether_releases import REPOSITORY, select_windows_client
+from app import softether_trust
+from app.update_download import SignatureError, system32_tool, verify_authenticode
 
+logger = logging.getLogger(__name__)
+_UNVERIFIED = "Installer non verificato (firma o integrità): installazione annullata."
 _TOKEN = secrets.token_urlsafe(32)
 _MANAGERS = ("vpncmgr_x64.exe", "vpncmgr.exe")
 _VPNCMDS = ("vpncmd_x64.exe", "vpncmd.exe")
@@ -121,17 +126,65 @@ def _find_manager():
 
 
 def _manager_running(manager):
+    return _manager_state(manager) != "stopped"
+
+
+def _manager_state(manager):
+    """"stopped", "tray" (running, no window) or "visible" (window open).
+
+    tasklist /V prints the window title as the last CSV column; a process with
+    no window reports "N/A" there. That is how a gestore that lives only in the
+    notification area is told apart from one the user can interact with.
+    """
     if os.name != "nt" or manager is None:
-        return False
+        return "stopped"
     try:
         result = subprocess.run(
             ["tasklist.exe", "/FI", f"IMAGENAME eq {manager.name}", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, encoding="mbcs", errors="replace",
             timeout=5, check=False,
         )
-        return manager.name.lower() in (result.stdout or "").lower()
     except (OSError, subprocess.SubprocessError, TypeError):
-        return False
+        return "stopped"
+    pids = set()
+    for row in csv.reader((result.stdout or "").splitlines()):
+        # Image Name, PID, ... : localised output, but the layout is fixed.
+        if len(row) >= 2 and row[0].lower() == manager.name.lower():
+            try:
+                pids.add(int(row[1]))
+            except ValueError:
+                continue
+    if not pids:
+        return "stopped"
+    # A window title does not tell the two apart: a hidden Manager keeps its
+    # title. What matters is whether one of its top-level windows is visible.
+    if pids & _visible_window_pids():
+        return "visible"
+    return "tray"
+
+
+def _visible_window_pids() -> set[int]:
+    """Process ids that own at least one visible top-level window (Windows only)."""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.EnumWindows.argtypes = [ctypes.c_void_p, wintypes.LPARAM]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    visible: set[int] = set()
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def on_window(hwnd, _lparam):
+        if user32.IsWindowVisible(hwnd):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            visible.add(pid.value)
+        return True
+
+    # Keep a reference for the whole call: ctypes callbacks must not be collected.
+    callback = callback_type(on_window)
+    user32.EnumWindows(callback, 0)
+    return visible
 
 
 def _ensure_client_service():
@@ -235,13 +288,87 @@ def _bundled_installer():
     return None
 
 
+def _trusted_vpngate_url(url):
+    """HTTPS on an allowlisted VPN Gate host, default port, no credentials."""
+    try:
+        parts = urlsplit(url)
+        return (parts.scheme == "https"
+                and parts.hostname in softether_trust.VPNGATE_DOWNLOAD_HOSTS
+                and not parts.username and not parts.password
+                and parts.port in (None, 443))
+    except ValueError:
+        return False
+
+
 def _vpngate_download_url():
     response = requests.get(_VPNGATE_DOWNLOAD_PAGE, timeout=(4, 12))
     response.raise_for_status()
     matches = re.findall(r'https?://[^"\'\s>]+vpngate-client-[^"\'\s>]+\.zip', response.text, re.I)
-    if not matches:
-        raise RuntimeError('VPN Gate download URL not found')
-    return matches[0]
+    for url in matches:
+        if _trusted_vpngate_url(url):
+            return url
+    # Plain HTTP or a foreign host is never an acceptable source.
+    raise RuntimeError('VPN Gate download URL not found or not trusted')
+
+
+def _curl():
+    """System32 curl.exe only: a curl found through PATH is never run."""
+    return system32_tool("curl.exe")
+
+
+def _job_cancelled(job_id):
+    with _vpngate_jobs_lock:
+        return bool(_vpngate_jobs.get(job_id, {}).get("cancel_requested"))
+
+
+def _download_with_requests(job_id, url, archive):
+    # Redirects are refused: the allowlisted HTTPS URL must answer directly.
+    response = requests.get(url, timeout=(20, 900), stream=True, allow_redirects=False)
+    try:
+        response.raise_for_status()
+        if response.status_code != 200:
+            raise RuntimeError('unexpected VPN Gate redirect')
+        total = int(response.headers.get('content-length', '0') or 0)
+        downloaded = 0
+        with archive.open('wb') as handle:
+            for chunk in response.iter_content(1024 * 1024):
+                if _job_cancelled(job_id):
+                    raise RuntimeError('install cancelled')
+                if chunk:
+                    handle.write(chunk)
+                    downloaded += len(chunk)
+                    if downloaded > 256 * 1024 * 1024:
+                        raise RuntimeError('invalid VPN Gate archive')
+                    _set_vpngate_job(job_id, downloaded=downloaded, total=total,
+                                     percent=round(downloaded * 100 / total, 1) if total else None)
+    finally:
+        response.close()
+
+
+def _extract_verified_vpngate(archive, extracted):
+    """Extract only an archive whose every entry is expected, then verify the
+    installer's Authenticode signer and the pinned plug-in hashes."""
+    with zipfile.ZipFile(archive) as zf:
+        entries = zf.infolist()
+        names = [item.filename for item in entries]
+        installers = [name for name in names
+                      if re.fullmatch(r'vpngate-client-[A-Za-z0-9._-]+\.exe', name)]
+        allowed = (set(installers[:1]) | set(softether_trust.VPNGATE_PLUGIN_SHA256)
+                   | softether_trust.VPNGATE_DATA_FILES)
+        if (len(installers) != 1 or len(set(names)) != len(names) or set(names) - allowed
+                or sum(item.file_size for item in entries) > 512 * 1024 * 1024):
+            raise SignatureError('unexpected VPN Gate archive content')
+        zf.extractall(extracted)
+    for name in names:
+        pins = softether_trust.VPNGATE_PLUGIN_SHA256.get(name)
+        if pins is None:
+            continue
+        with (extracted / name).open('rb') as stream:
+            if hashlib.file_digest(stream, 'sha256').hexdigest() not in pins:
+                raise SignatureError(f'no SHA-256 pin matches {name}')
+    installer = extracted / installers[0]
+    verify_authenticode(installer, softether_trust.SOFTETHER_SIGNER_THUMBPRINTS)
+    return installer
 
 
 def _set_vpngate_job(job_id, **updates):
@@ -257,30 +384,30 @@ def _download_vpngate_installer(job_id):
     archive = temp_root / 'vpngate-client.zip'
     extracted = temp_root / 'extracted'
     try:
-        _set_vpngate_job(job_id, state='downloading', url=url, archive=str(archive))
-        curl = shutil.which('curl.exe') or shutil.which('curl')
+        _set_vpngate_job(job_id, state='downloading', archive=str(archive))
+        curl = _curl()
         if curl:
             # curl's silent mode does not expose progress to the panel. Read
             # the archive size first, then report the file growing while curl
             # downloads it (some VPN Gate mirrors omit this header).
             try:
-                total = int(requests.head(url, allow_redirects=True,
+                total = int(requests.head(url, allow_redirects=False,
                                           timeout=(4, 12)).headers.get('content-length', '0') or 0)
-            except requests.RequestException:
+            except (requests.RequestException, ValueError):
                 total = 0
             completed = subprocess.Popen(
-                [curl, '--fail', '--location', '--silent', '--show-error',
+                [str(curl), '--fail', '--location', '--silent', '--show-error',
+                 '--proto', '=https', '--proto-redir', '=https',
                  '--connect-timeout', '20', '--max-time', '900',
                  '--retry', '5', '--retry-delay', '3', '--retry-all-errors',
                  '--output', str(archive), url],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             _set_vpngate_job(job_id, process=completed)
             while completed.poll() is None:
-                with _vpngate_jobs_lock:
-                    if _vpngate_jobs.get(job_id, {}).get("cancel_requested"):
-                        completed.kill()
-                        raise RuntimeError("install cancelled")
+                if _job_cancelled(job_id):
+                    completed.kill()
+                    raise RuntimeError("install cancelled")
                 size = archive.stat().st_size if archive.exists() else 0
                 _set_vpngate_job(job_id, downloaded=size,
                                  total=total,
@@ -290,48 +417,18 @@ def _download_vpngate_installer(job_id):
                 # VPN Gate mirrors occasionally close a curl transfer. Retry
                 # through requests before declaring the installation failed.
                 archive.unlink(missing_ok=True)
-                response = requests.get(url, timeout=(20, 900), stream=True)
-                response.raise_for_status()
-                total = int(response.headers.get('content-length', '0') or 0)
-                downloaded = 0
-                with archive.open('wb') as handle:
-                    for chunk in response.iter_content(1024 * 1024):
-                        with _vpngate_jobs_lock:
-                            if _vpngate_jobs.get(job_id, {}).get('cancel_requested'):
-                                raise RuntimeError('install cancelled')
-                        if chunk:
-                            handle.write(chunk)
-                            downloaded += len(chunk)
-                            _set_vpngate_job(job_id, downloaded=downloaded, total=total,
-                                             percent=round(downloaded * 100 / total, 1) if total else None)
+                _download_with_requests(job_id, url, archive)
         else:
-            response = requests.get(url, timeout=(5, 120), stream=True)
-            response.raise_for_status()
-            total = int(response.headers.get('content-length', '0') or 0)
-            downloaded = 0
-            with archive.open('wb') as handle:
-                for chunk in response.iter_content(1024 * 1024):
-                    if chunk:
-                        handle.write(chunk)
-                        downloaded += len(chunk)
-                        _set_vpngate_job(
-                            job_id, downloaded=downloaded, total=total,
-                            percent=round(downloaded * 100 / total, 1) if total else None,
-                        )
+            _download_with_requests(job_id, url, archive)
         size = archive.stat().st_size if archive.exists() else 0
         _set_vpngate_job(job_id, downloaded=size, total=size, percent=100)
         if not archive.is_file() or archive.stat().st_size > 256 * 1024 * 1024:
             raise RuntimeError('invalid VPN Gate archive')
         _set_vpngate_job(job_id, state='extracting', percent=100)
         extracted.mkdir()
-        with zipfile.ZipFile(archive) as zf:
-            if any(Path(item.filename).is_absolute() or '..' in Path(item.filename).parts for item in zf.infolist()):
-                raise RuntimeError('unsafe VPN Gate archive')
-            zf.extractall(extracted)
-        installers = sorted(extracted.rglob('vpngate-client-*.exe'))
-        if not installers:
-            raise RuntimeError('VPN Gate installer not found')
-        return temp_root, installers[0]
+        # Raises, and the handler below deletes everything, unless the installer
+        # is signed by the expected publisher and its plug-ins match their pins.
+        return temp_root, _extract_verified_vpngate(archive, extracted)
     except Exception:
         shutil.rmtree(temp_root, ignore_errors=True)
         raise
@@ -357,6 +454,14 @@ def _watch_vpngate_installer(job_id, process, temp_root):
         shutil.rmtree(temp_root, ignore_errors=True)
 
 
+def _remove_after_exit(process, temp_root):
+    try:
+        process.wait(timeout=30 * 60)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    shutil.rmtree(temp_root, ignore_errors=True)
+
+
 def _run_vpngate_install(job_id):
     temp_root = None
     try:
@@ -368,12 +473,17 @@ def _run_vpngate_install(job_id):
         _set_vpngate_job(job_id, state='installing', percent=100)
         threading.Thread(target=_watch_vpngate_installer,
                          args=(job_id, process, temp_root), daemon=True).start()
-    except (OSError, requests.RequestException, RuntimeError, zipfile.BadZipFile) as exc:
+    except (OSError, requests.RequestException, RuntimeError, subprocess.SubprocessError,
+            zipfile.BadZipFile) as exc:
         if temp_root:
             shutil.rmtree(temp_root, ignore_errors=True)
-        with _vpngate_jobs_lock:
-            cancelled = _vpngate_jobs.get(job_id, {}).get("cancel_requested")
-        _set_vpngate_job(job_id, state='cancelled' if cancelled else 'error', error=None if cancelled else 'softether.installFailed')
+        cancelled = _job_cancelled(job_id)
+        if not cancelled:
+            # The detail stays in the server log; the panel gets a fixed message.
+            logger.warning("VPN Gate installation failed: %r", exc)
+        error = _UNVERIFIED if isinstance(exc, SignatureError) else 'softether.installFailed'
+        _set_vpngate_job(job_id, state='cancelled' if cancelled else 'error',
+                         error=None if cancelled else error)
 
 
 def _detect():
@@ -487,6 +597,7 @@ def status():
     return JSONResponse({
         "supported": os.name == "nt", "installed": manager is not None,
         "running": _manager_running(manager),
+        "manager_state": _manager_state(manager),
         "bundled_installer": _bundled_installer() is not None,
         "vpngate_available": os.name == "nt",
         "token": _TOKEN,
@@ -500,7 +611,14 @@ def updates():
 
 @router.get("/vpngate")
 def vpngate():
-    return JSONResponse({"servers": _vpngate_servers(), "source": _VPNGATE_URL},
+    servers = _vpngate_servers()
+    try:
+        _, _, details = _read_vpngate_profiles()
+    except HTTPException:
+        # Client missing or service stopped: the public list stays usable,
+        # simply without any server marked as registered.
+        details = {}
+    return JSONResponse({"servers": _annotate_registered(servers, details), "source": _VPNGATE_URL},
                         headers={"Cache-Control": "no-store"})
 
 
@@ -569,28 +687,36 @@ async def download_update(request: Request):
     if os.name != "nt":
         raise HTTPException(409, "softether.unsupported")
     release = _release_status()
-    if release.get("status") != "available":
+    # _release_status() reports "update_available", "up_to_date" or
+    # "unavailable"; only the first one names an asset worth downloading.
+    if release.get("status") != "update_available":
         # A local payload is the offline fallback when GitHub is unavailable
-        # or does not expose a compatible stable asset.
+        # or does not expose a compatible stable asset. It is pinned by the
+        # size and SHA-256 shipped in bundle.json, which is never rewritten.
         installer = _bundled_installer()
         if installer is None:
             raise HTTPException(404, "softether.updateUnavailable")
         try:
             subprocess.Popen([str(installer)], executable=str(installer), cwd=str(installer.parent), shell=False, close_fds=True)
         except OSError as exc:
+            logger.warning("Bundled SoftEther installer failed to start: %r", exc)
             raise HTTPException(503, "softether.installFailed") from exc
         return {"started": True, "source": "bundled"}
     filename = Path(release["asset_name"]).name
     if filename != release["asset_name"] or not filename.lower().endswith(".exe"):
         raise HTTPException(502, "softether.invalidAsset")
-    softether_root = next(_softether_roots())
-    payload = softether_root / "payload"
-    target = payload / filename
-    manifest_path = payload.parent / "bundle.json"
+    curl = _curl()
+    if curl is None:
+        logger.warning("SoftEther update refused: curl.exe not found in System32")
+        raise HTTPException(503, "softether.downloadFailed")
+    # A private temporary folder, never the bundled payload: the download must
+    # not replace the pinned installer nor record its own hash as trusted.
+    temp_root = Path(tempfile.mkdtemp(prefix="sc-softether-"))
+    target = temp_root / filename
     try:
-        payload.mkdir(parents=True, exist_ok=True)
         completed = subprocess.run(
-            ["curl.exe", "--fail", "--location", "--silent", "--show-error",
+            [str(curl), "--fail", "--location", "--silent", "--show-error",
+             "--proto", "=https", "--proto-redir", "=https",
              "--max-time", "120", "--output", str(target), release["asset_url"]],
             check=False, capture_output=True, text=True, timeout=130,
         )
@@ -598,23 +724,15 @@ async def download_update(request: Request):
             raise RuntimeError("curl failed")
         if target.stat().st_size > release["size_limit"]:
             raise RuntimeError("asset too large")
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest.update({
-            "tag": release["tag"], "fileName": filename,
-            "size": target.stat().st_size,
-            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-            "sourceUrl": release["release_url"],
-            "silentInstallVerified": False,
-        })
-
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        subprocess.Popen([str(target)], executable=str(target), cwd=str(target.parent), shell=False, close_fds=True)
+        verify_authenticode(target, softether_trust.SOFTETHER_SIGNER_THUMBPRINTS)
+        process = subprocess.Popen([str(target)], executable=str(target), cwd=str(target.parent), shell=False, close_fds=True)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
-        try:
-            target.unlink(missing_ok=True)
-        except OSError:
-            pass
+        shutil.rmtree(temp_root, ignore_errors=True)
+        logger.warning("SoftEther update failed: %r", exc)
+        if isinstance(exc, SignatureError):
+            raise HTTPException(502, _UNVERIFIED) from exc
         raise HTTPException(502, "softether.downloadFailed") from exc
+    threading.Thread(target=_remove_after_exit, args=(process, temp_root), daemon=True).start()
     return {"started": True, "version": release["version"]}
 
 
@@ -659,8 +777,72 @@ _VPN_COUNTRY_NAMES = {
 }
 
 
-@router.get("/vpngate/profiles")
-def list_vpngate_profiles():
+_CONNECTED_WORDS = ("connected", "connesso", "session established", "sessione stabilita")
+_DISCONNECTED_WORDS = ("disconnect", "disconness", "not connected", "non conness", "offline")
+
+
+def _parse_connected(output, returncode=0):
+    """Interpret AccountStatusGet output: True, False or None (unknown).
+
+    Only a "Status"/"Stato" row decides; "Disconnected" and "non connesso" are
+    checked first because they contain the positive words as substrings.
+    """
+    text = output or ""
+    for line in text.splitlines():
+        if "|" not in line:
+            continue
+        label, value = (part.strip() for part in line.split("|", 1))
+        normalized = label.lower()
+        if "status" not in normalized and "stato" not in normalized:
+            continue
+        value = value.lower()
+        if any(word in value for word in _DISCONNECTED_WORDS):
+            return False
+        if any(word in value for word in _CONNECTED_WORDS):
+            return True
+        # "Connecting", "Retrying", "Negotiating": not (yet) connected.
+        return False
+    lowered = text.lower()
+    # vpncmd answers AccountStatusGet on an offline account with an error
+    # ("The specified VPN Connection Setting is not connected").
+    if any(word in lowered for word in ("not connected", "non è connesso", "non connesso")):
+        return False
+    # Failed command or unknown format: the state is unknown, not "offline".
+    return None
+
+
+def _account_connected(name):
+    """Real connection state of one account; never raises (None = unknown)."""
+    cmd = _find_vpncmd()
+    if cmd is None:
+        return None
+    try:
+        result = subprocess.run([str(cmd), "/client", "localhost", "/cmd", "AccountStatusGet", name],
+                                capture_output=True, text=True, encoding="mbcs", errors="replace",
+                                timeout=20, check=False, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return _parse_connected((result.stdout or "") + "\n" + (result.stderr or ""), result.returncode)
+
+
+def _annotate_registered(servers, details):
+    """Copy the public servers adding ``registered_profile``.
+
+    The match is on the exact server IP (never a substring and never the
+    profile name), so 1.2.3.4 cannot claim 1.2.3.45 and "VPN Gate IT" cannot
+    claim "VPN Gate ITA-2".  Copies keep the shared server cache untouched.
+    """
+    by_host = {}
+    for name in sorted(details):
+        host = str(details[name].get("host") or "").strip()
+        if host and host not in by_host:
+            by_host[host] = name
+    return [dict(server, registered_profile=by_host.get(str(server.get("host") or "").strip()))
+            for server in servers]
+
+
+def _read_vpngate_profiles():
+    """AccountList + AccountGet of every "VPN Gate …" account: (raw, names, details)."""
     cmd = _find_vpncmd()
     if cmd is None:
         raise HTTPException(404, "softether.missing")
@@ -686,8 +868,11 @@ def list_vpngate_profiles():
             profiles.append(value)
     details = {}
     for name in profiles:
-        account = _run_vpncmd("AccountGet", name).stdout or ""
-        item = {"name": name}
+        try:
+            account = _run_vpncmd("AccountGet", name).stdout or ""
+        except HTTPException:
+            account = ""
+        item = {"name": name, "registered": True}
         for line in account.splitlines():
             if "|" not in line:
                 continue
@@ -705,6 +890,14 @@ def list_vpngate_profiles():
             elif normalized == "status":
                 item["status"] = value
         details[name] = item
+    return raw, profiles, details
+
+
+@router.get("/vpngate/profiles")
+def list_vpngate_profiles():
+    raw, profiles, details = _read_vpngate_profiles()
+    for name, item in details.items():
+        item["connected"] = _account_connected(name)
     live_by_host = {server["host"]: server for server in _vpngate_servers()}
     for item in details.values():
         match = re.search(r"\b([A-Z]{2})\s*$", item["name"])
@@ -714,8 +907,9 @@ def list_vpngate_profiles():
             item.setdefault("country", _VPN_COUNTRY_NAMES.get(country_code, country_code))
         live = live_by_host.get(item.get("host"))
         if live:
-            for field in ("country", "countryCode", "name", "ping", "speed", "sessions", "reachable"):
+            for field in ("country", "countryCode", "ping", "speed", "sessions", "reachable"):
                 item[field] = live.get(field)
+            item["serverName"] = live.get("name")
         elif item.get("host"):
             # A saved profile can outlive the current VPN Gate top results.
             # Probe the configured endpoint so it still gets a live latency
@@ -773,7 +967,9 @@ def connect_vpngate_profile(body: VpnGateProfileDelete):
     name = _validate_profile_name(body.name)
     result = _run_vpncmd("AccountConnect", name)
     status = _run_vpncmd("AccountStatusGet", name)
-    connected = "connected" in (status.stdout or "").lower()
+    # Same parser as the profile list: a bare substring test would read
+    # "Disconnected"/"not connected" as connected.
+    connected = _parse_connected(status.stdout or "") is True
     return {"connected": connected, "name": name, "output": result.stdout or ""}
 
 
@@ -797,6 +993,10 @@ async def create_vpngate_profile(body: VpnGateProfile, request: Request):
     if cmd is None:
         raise HTTPException(404, "softether.missing")
     _validate_profile_name(body.name)
+    # The list check may be minutes old (cache): confirm in this very request
+    # that the server still accepts TCP on the VPN port before writing a profile.
+    if not _port_open(body.host, body.port):
+        raise HTTPException(409, "softether.serverUnreachable")
     try:
         _ensure_client_service()
         result = subprocess.run([
@@ -825,7 +1025,23 @@ async def create_vpngate_profile(body: VpnGateProfile, request: Request):
         stdin=subprocess.DEVNULL)
     if verify.returncode != 0:
         raise HTTPException(502, "softether.profileFailed")
-    return {"created": True, "name": body.name, "host": body.host, "port": body.port}
+    # The profile is never connected automatically, so it normally is not
+    # connected yet: only a real "connected" state counts as success.
+    connected = _account_connected(body.name)
+    result = {"created": True, "connected": connected, "success": connected is True,
+              "name": body.name, "host": body.host, "port": body.port}
+    if connected is not True:
+        result["detail"] = "softether.createdNotConnected"
+    return result
+
+
+def _port_open(host, port, timeout=2.0):
+    """TCP reachability only: the port answers, the VPN session is not tested."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (OSError, TimeoutError):
+        return False
 
 
 @router.post("/open-manager")
@@ -845,19 +1061,83 @@ async def open_manager(request: Request):
         # Il Client Manager può comunque avviarsi autonomamente; il servizio
         # viene quindi trattato come best effort e non blocca l'apertura GUI.
         pass
-    if _manager_running(manager):
+    state = _manager_state(manager)
+    if state == "visible":
+        # Its window is already on screen: nothing to open.
         return {"opened": True, "already_running": True}
+    # "tray": the Manager is alive but hidden. Starting it again asks for its
+    # window (SoftEther's Manager is single-instance, so the running copy is
+    # the one that shows up). A fresh start stays minimized in the tray.
+    show_command = 1 if state == "tray" else 6  # SW_SHOWNORMAL / SW_MINIMIZE
     try:
         # Do not inherit the Uvicorn handles: the GUI must remain independent
         # when the panel is started with ``py main.py``.
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = 6  # SW_MINIMIZE; keep the Manager in the tray.
+        startupinfo.wShowWindow = show_command
         subprocess.Popen([str(manager)], cwd=str(manager.parent),
                          shell=False, close_fds=True, startupinfo=startupinfo)
     except OSError as exc:
         raise HTTPException(503, "softether.openFailed") from exc
     return {"opened": True}
+
+
+@router.post("/hide-manager")
+async def hide_manager(request: Request):
+    """Send the open Manager window back to the tray. The program keeps running."""
+    if request.query_params or await request.body():
+        raise HTTPException(400, "softether.noParameters")
+    manager = _detect()
+    if manager is None:
+        raise HTTPException(404, "softether.missing")
+    if os.name != "nt" or _manager_state(manager) != "visible":
+        return {"hidden": False, "reason": "not_visible"}
+    hidden = _hide_manager_windows(manager)
+    return {"hidden": hidden > 0}
+
+
+def _hide_manager_windows(manager) -> int:
+    """SW_HIDE on every visible top-level window of the Manager process.
+
+    The tray icon belongs to the running process, so it stays where it is.
+    Returns how many windows were hidden.
+    """
+    import ctypes
+    from ctypes import wintypes
+    pids = set()
+    for row in csv.reader(
+        (subprocess.run(["tasklist.exe", "/FI", f"IMAGENAME eq {manager.name}", "/FO", "CSV", "/NH"],
+                        capture_output=True, text=True, encoding="mbcs", errors="replace",
+                        timeout=5, check=False).stdout or "").splitlines()
+    ):
+        if len(row) >= 2 and row[0].lower() == manager.name.lower():
+            try:
+                pids.add(int(row[1]))
+            except ValueError:
+                continue
+    if not pids:
+        return 0
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.EnumWindows.argtypes = [ctypes.c_void_p, wintypes.LPARAM]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    hidden = 0
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def on_window(hwnd, _lparam):
+        nonlocal hidden
+        if user32.IsWindowVisible(hwnd):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value in pids:
+                user32.ShowWindow(hwnd, 0)  # SW_HIDE
+                hidden += 1
+        return True
+
+    callback = callback_type(on_window)
+    user32.EnumWindows(callback, 0)
+    return hidden
 
 
 @router.post("/close-manager")
@@ -867,9 +1147,18 @@ async def close_manager(request: Request):
     manager = _detect()
     if manager is None:
         raise HTTPException(404, "softether.missing")
+    # A plain taskkill sends a close request, which the Manager answers by
+    # hiding to the tray: that is what "hide" already does. /F ends the Manager
+    # process itself. The VPN connection runs in the separate vpnclient
+    # service, so it stays up after this call.
     try:
-        subprocess.run(["taskkill.exe", "/IM", manager.name, "/T"],
-                       capture_output=True, text=True, timeout=10, check=False)
+        result = subprocess.run(["taskkill.exe", "/F", "/IM", manager.name, "/T"],
+                                capture_output=True, text=True, timeout=10, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         raise HTTPException(503, "softether.closeFailed") from exc
+    # taskkill exits 128 when no such process exists: nothing was open to close.
+    if result.returncode == 128:
+        return {"closed": False, "reason": "not_running"}
+    if result.returncode != 0:
+        raise HTTPException(503, "softether.closeFailed")
     return {"closed": True}

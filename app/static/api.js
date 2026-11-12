@@ -49,7 +49,10 @@ const api = {
   // call in flight when the query changes under them. Without it those two
   // would have had to stay on raw fetch, which is how a second way of calling
   // the API survives a migration meant to end it.
-  async request(method, path, { body, params, signal, headers, raw = false } = {}) {
+  // `onHeaders` receives the response headers before the body is parsed: the
+  // start page and the search read X-Cache / X-Cache-Updated / X-Stale from it
+  // to say how old a cached answer is, without changing the body's shape.
+  async request(method, path, { body, params, signal, headers, raw = false, onHeaders } = {}) {
     const opts = { method, headers: { ...headers } };
     if (signal) opts.signal = signal;
     if (body !== undefined) {
@@ -58,6 +61,9 @@ const api = {
     }
     const res = await fetch(api.url(path, params), opts);
     if (raw) return res;
+    if (onHeaders && res.ok) {
+      try { onHeaders(res.headers); } catch { /* informational only */ }
+    }
 
     // 204, and any other empty body: there is nothing to parse, and safeJson
     // would throw on the empty string.
@@ -116,6 +122,10 @@ const softetherApi = {
     headers: { 'X-SoftEther-Token': token },
   }),
   closeManager: token => api.request('POST', '/api/softether/close-manager', {
+    headers: { 'X-SoftEther-Token': token },
+  }),
+  refreshImages: () => api.request('POST', '/api/image/refresh'),
+  hideManager: token => api.request('POST', '/api/softether/hide-manager', {
     headers: { 'X-SoftEther-Token': token },
   }),
 };

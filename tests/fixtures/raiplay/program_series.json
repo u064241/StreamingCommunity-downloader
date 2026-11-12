@@ -1,0 +1,43 @@
+{
+  "name": "Serie Esempio",
+  "id": "Page-00000000-0000-0000-0000-0000000000a2",
+  "path_id": "/programmi/serieesempio.json",
+  "first_item_path": "/video/2026/09/Serie-Esempio-S1E1-0000.json",
+  "first_item_duration": "00:58:10",
+  "first_item_play_label": "St 1 Ep 1",
+  "trailer": {"content_url": "https://mediapolisvod.rai.it/relinker/relinkerServlet.htm?cont=FAKE5"},
+  "program_info": {
+    "id": "ContentItem-00000000-0000-0000-0000-0000000000a1",
+    "name": "Serie Esempio",
+    "type": "RaiPlay Programma Item",
+    "channel": "Canale Test",
+    "layout": "multi",
+    "year": "2020",
+    "direction": "Regista Uno, Regista Due",
+    "country": "Italia",
+    "actors": "Attore Uno, Attrice Due",
+    "description": "Una dottoressa immaginaria affronta casi di fantasia in un ospedale di esempio.",
+    "vanity": "Una serie di esempio per i test",
+    "typology": "Fiction",
+    "genres": [{"principal": true, "name": "Drammatico", "id": "Category-1"},
+               {"name": "Fiction Italiana", "id": "Category-2"}],
+    "subgenres": [{"name": "medical", "id": "Category-3"}],
+    "details": [{"type": "label", "key": "year", "value": "2020"}],
+    "images": {"landscape": "/dl/img/2026/01/01/0000000000001_2048x1152.jpg", "portrait": "",
+               "portrait43": "/dl/img/2026/01/01/0000000000002_1536x2048.jpg"},
+    "rights_management": {"rights": {"offline": {}, "geoprotection": {"italy": true}}}
+  },
+  "blocks": [
+    {"name": "Episodi", "type": "RaiPlay Multimedia Block", "id": "PublishingBlock-ep",
+     "sets": [
+       {"name": "Stagione 2", "id": "ContentSet-2", "type": "RaiPlay Multimedia Set",
+        "episode_size": {"label": "12 episodi", "number": 12},
+        "path_id": "/programmi/serieesempio/ContentSet-2.json"},
+       {"name": "Stagione 1", "id": "ContentSet-1", "type": "RaiPlay Multimedia Set",
+        "episode_size": {"label": "16 episodi", "number": 16},
+        "path_id": "/programmi/serieesempio/ContentSet-1.json"}
+     ]},
+    {"name": "Extra", "type": "RaiPlay Multimedia Block", "id": "PublishingBlock-extra",
+     "sets": [{"name": "Dietro le quinte", "episode_size": {"number": 3}}]}
+  ]
+}

@@ -26,7 +26,10 @@ class _SearchAdapter:
             raise ProviderError(self.source, ProviderErrorCode.UPSTREAM, "Provider home failed") from exc
 
 class StreamingCommunityProvider(_SearchAdapter):
-    source = "streamingcommunity"; capabilities = ProviderCapabilities(media_types=("movie", "tv"), home=True)
+    # download=True: the download/request flow has an engine for this source
+    # (app/source_identity.py). Checked by registry.is_downloadable at every
+    # download and request entry point.
+    source = "streamingcommunity"; capabilities = ProviderCapabilities(media_types=("movie", "tv"), home=True, download=True)
     def __init__(self, *, search_fn: Callable | None = None, domain_getter: Callable[[], str] | None = None): self._search_fn = search_fn; self._domain_getter = domain_getter
     def _host(self):
         get_domain = self._domain_getter
@@ -44,7 +47,7 @@ class StreamingCommunityProvider(_SearchAdapter):
         return search_fn(query, domain, page=page, media_type=media_type)
 
 class AnimeUnityProvider(_SearchAdapter):
-    source = "animeunity"; capabilities = ProviderCapabilities(media_types=("movie", "tv", "ova", "ona", "special"), dubbed_filter=True, home=True)
+    source = "animeunity"; capabilities = ProviderCapabilities(media_types=("movie", "tv", "ova", "ona", "special"), dubbed_filter=True, home=True, download=True)
     def __init__(self, *, search_fn: Callable | None = None): self._search_fn = search_fn
     def _host(self):
         from app.core.animeunity import host
@@ -55,3 +58,8 @@ class AnimeUnityProvider(_SearchAdapter):
         if search_fn is None:
             from app.core.animeunity import search; search_fn = search
         return search_fn(query, page=page, media_type=media_type, dubbed=dubbed)
+
+
+# Metadata-only catalogue (no download). Importing it loads no HTTP library and
+# makes no request: the client is created on first use.
+from .raiplay.provider import RaiPlayProvider  # noqa: E402

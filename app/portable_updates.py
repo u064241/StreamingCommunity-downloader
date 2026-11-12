@@ -19,10 +19,18 @@ import zipfile
 
 from app import distribution, updates
 from app.portable_update import _path
-from app.update_download import UpdateDownloadError, download_verified, github_response
+from app.update_download import (
+    UpdateDownloadError, download_verified, github_response, verify_authenticode,
+)
 
 EXE = "StreamingCommunityDownloader.exe"
 HELPER = "StreamingCommunityDownloader-Updater.exe"
+# SHA-1 thumbprints of the Authenticode certificates allowed to sign a release.
+# EMPTY = SIGNATURE CHECK DISABLED: the release binaries are not signed yet, so
+# the in-app update refuses to run and the user updates by hand. The manifest
+# and its SHA-256 only prove integrity against GitHub, not who built the file.
+# Fill this in once build.ps1 signs the executables.
+EXPECTED_SIGNER_THUMBPRINTS: tuple[str, ...] = ()
 _lock = threading.Lock()
 _prepared = None
 _running = None
@@ -41,6 +49,27 @@ def _release_asset(release, name):
     return asset
 
 
+def signature_check_enabled() -> bool:
+    return any(EXPECTED_SIGNER_THUMBPRINTS)
+
+
+def portable_asset_name(version):
+    return f"StreamingCommunityDownloader-{version}-Portable.zip"
+
+
+def portable_record(data, version):
+    """The portable package entry of an update-manifest.json written by build.ps1."""
+    if (data.get("schema") != 1 or data.get("variant") != "u064241"
+            or data.get("channel") != "stable" or data.get("repository") != distribution.PRODUCT
+            or data.get("version") != version):
+        raise UpdateDownloadError("Manifest incompatibile con questa release")
+    name = portable_asset_name(version)
+    records = [a for a in data["assets"] if a["name"] == name]
+    if len(records) != 1:
+        raise UpdateDownloadError("Pacchetto portable mancante o duplicato")
+    return records[0]
+
+
 def _manifest(release):
     asset = _release_asset(release, "update-manifest.json")
     with github_response(asset["url"]) as response:
@@ -49,17 +78,8 @@ def _manifest(release):
             payload.extend(chunk)
             if len(payload) > 256 * 1024:
                 raise UpdateDownloadError("Manifest troppo grande")
-    data = json.loads(payload.decode("utf-8-sig"))
-    if (data.get("schema") != 1 or data.get("variant") != "u064241"
-            or data.get("channel") != "stable" or data.get("repository") != distribution.PRODUCT
-            or data.get("version") != release["version"]):
-        raise UpdateDownloadError("Manifest incompatibile con questa release")
-    name = f"StreamingCommunityDownloader-{release['version']}-Portable.zip"
-    records = [a for a in data["assets"] if a["name"] == name]
-    if len(records) != 1:
-        raise UpdateDownloadError("Pacchetto portable mancante o duplicato")
-    record = records[0]
-    asset = _release_asset(release, name)
+    record = portable_record(json.loads(payload.decode("utf-8-sig")), release["version"])
+    asset = _release_asset(release, record["name"])
     if (type(record["size"]) is not int or not 0 < record["size"] <= 2 * 1024**3
             or record["size"] != asset["size"]
             or not re.fullmatch(r"[0-9a-fA-F]{64}", record["sha256"])):
@@ -91,6 +111,11 @@ def prepare(owner):
     with _lock:
         if _running is not None:
             raise UpdateDownloadError("Aggiornamento già avviato; riavvia l'app per riprovare")
+        if not signature_check_enabled():
+            # Fail-closed, before any download: nothing unsigned is ever run.
+            raise UpdateDownloadError(
+                "Verifica firma disattivata: aggiornamento automatico non eseguito. "
+                "Scarica la nuova versione dalla pagina delle release.")
         _runtime()
         _idle()
         release = updates.check(force=True)
@@ -122,6 +147,10 @@ def prepare(owner):
                 with package.open(HELPER) as src, staged_helper.open("xb") as dst:
                     import shutil
                     shutil.copyfileobj(src, dst, 1024 * 1024)
+            # Both files are executed during apply(): the helper directly,
+            # the application when the helper restarts it.
+            for binary in (target, staged_helper):
+                verify_authenticode(binary, EXPECTED_SIGNER_THUMBPRINTS)
             with target.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             if _prepared:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -14,6 +15,7 @@ from app import __version__
 UPDATE_REPOSITORY = "u064241/StreamingCommunity-downloader"
 UPDATE_API_URL = f"https://api.github.com/repos/{UPDATE_REPOSITORY}/releases/latest"
 CHECK_INTERVAL_SECONDS = 6 * 60 * 60
+logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _cached: tuple[float, dict[str, Any]] | None = None
 
@@ -75,7 +77,10 @@ def check(*, force: bool = False) -> dict[str, Any]:
                     ],
                 )
         except (requests.RequestException, ValueError, TypeError) as exc:
-            result = _result(status="unavailable", error=str(exc))
+            # Logged, not returned: the exception text carries URLs and
+            # network details the panel's users have no use for.
+            logger.warning("Update check failed: %r", exc)
+            result = _result(status="unavailable")
         _cached = (now, result)
         return dict(result)
 

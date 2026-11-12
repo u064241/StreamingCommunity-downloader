@@ -15,7 +15,6 @@ from types import SimpleNamespace
 import pytest
 
 from app import db, downloads_hooks
-from app.auth import models as auth_models
 from app.auth.permissions import ALL_PERMISSIONS
 from tests.conftest import do_setup, make_user, session_for
 
@@ -191,46 +190,19 @@ def test_the_outbound_call_has_a_timeout(client, hook, sent):
     assert sent[0].get("timeout") is not None
 
 
-# ── Jellyfin refresh ──────────────────────────────────────────────────────────
+# ── No built-in Jellyfin refresh ──────────────────────────────────────────────
 
-def test_the_refresh_is_off_by_default(client, monkeypatch):
-    called = []
-    monkeypatch.setattr(downloads_hooks, "refresh_jellyfin_library",
-                        lambda: called.append(True) or (True, 200))
-
-    downloads_hooks.on_job_finished(_job())
-    assert called == []
-
-
-def test_the_refresh_runs_only_on_success(client, monkeypatch):
+def test_a_finished_download_calls_nothing_but_the_configured_hooks(client, sent):
+    """The built-in Jellyfin library refresh is gone (the panel no longer
+    connects to Jellyfin); a webhook to the server's refresh URL replaces it."""
     from app import config
 
     config.save_settings({**config.get_settings(), "jellyfin_refresh_on_download": True})
-    called = []
-    monkeypatch.setattr(downloads_hooks, "refresh_jellyfin_library",
-                        lambda: called.append(True) or (True, 200))
-
-    downloads_hooks.on_job_finished(_job(status="error", error="boom"))
-    assert called == []
+    assert not hasattr(downloads_hooks, "refresh_jellyfin_library")
+    assert "jellyfin_refresh_on_download" not in config.get_settings()
 
     downloads_hooks.on_job_finished(_job(status="done"))
-    assert called == [True]
-
-
-def test_the_refresh_is_inert_without_jellyfin(client, sent):
-    """Open mode with no Jellyfin has no URL and no key: nothing to call."""
-    assert downloads_hooks.refresh_jellyfin_library() == (False, None)
     assert sent == []
-
-
-def test_the_refresh_uses_the_stored_credentials(client, sent):
-    auth_models.set_setting(auth_models.SETTING_JELLYFIN_URL, "http://jf.local:8096/")
-    auth_models.set_setting(auth_models.SETTING_JELLYFIN_API_KEY, "abc123")
-
-    downloads_hooks.refresh_jellyfin_library()
-
-    assert sent[0]["url"] == "http://jf.local:8096/Library/Refresh"
-    assert sent[0]["headers"]["X-Emby-Token"] == "abc123"
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

@@ -35,6 +35,7 @@ function setSource(src) {
   document.getElementById('src-all')?.classList.toggle('active', src === 'all');
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
+  document.getElementById('src-rai')?.classList.toggle('active', src === 'raiplay');
   const input = document.getElementById('search-input');
   if (input) input.dataset.i18nPlaceholder = src === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
   if (input) input.placeholder = src === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
@@ -105,7 +106,15 @@ const KIND_FILTERS = {
   streamingcommunity: [['', 'catalog.all'], ['movie', 'catalog.movie'], ['tv', 'catalog.tv']],
   animeunity: [['', 'catalog.all'], ['movie', 'catalog.movie'], ['tv', 'catalog.tv'],
                ['ova', 'OVA'], ['ona', 'ONA'], ['special', 'catalog.specials']],
+  // Metadata only, and its search does not tell film from series: no filter.
+  raiplay: [['', 'catalog.all']],
 };
+
+// Sources with a download engine. The others (RaiPlay) are browsed only: no
+// request statuses, no domain, and their cards open read-only.
+const DOWNLOAD_SOURCES = ['streamingcommunity', 'animeunity'];
+// Whether the source needs the StreamingCommunity domain to be configured.
+function _sourceNeedsDomain(src) { return src === 'streamingcommunity' || src === 'all'; }
 
 function renderSearchFilters() {
   const bar = document.getElementById('search-filters');
@@ -159,7 +168,8 @@ function _afterFilterChange() {
 function _searchParams(q, page) {
   return {
     q, source: currentSource, page: String(page),
-    media_type: _kindFilter || undefined,
+    // RaiPlay has no type filter and answers 422 for one.
+    media_type: (currentSource !== 'raiplay' && _kindFilter) || undefined,
     // Sent only where it means something; the other source answers 422 for it.
     dubbed: (_dubOnly && currentSource === 'animeunity') ? 'true' : undefined,
   };
@@ -173,8 +183,15 @@ function _setMoreVisible(on) {
 // Cards are rendered from a base index rather than from the array, so a page
 // appended later indexes into the same flat _searchResults and card n keeps
 // pointing at title n forever.
+//
+// options.action / options.noPreview: another page's own card list (the
+// archive), whose indices are not into _searchResults.
+// options.ranked: the source's "Top 10 di oggi" shelf. Each card carries its
+// position as a large outlined number behind the artwork, as on the original.
 function renderResultCards(items, container, baseIndex,
-                           wrapperClass = 'col-6 col-sm-4 col-md-3 col-lg-2') {
+                           wrapperClass = 'col-6 col-sm-4 col-md-3 col-lg-2',
+                           options = {}) {
+  const ranked = !!(options && options.ranked);
   items.forEach((item, i) => {
     const idx = Number.isInteger(item._searchIndex) ? item._searchIndex : baseIndex + i;
     const isMovie = item.type === 'movie';
@@ -187,11 +204,14 @@ function renderResultCards(items, container, baseIndex,
     // backdrop (and for the compact result views).
     const artwork = item.backdrop || item.poster;
     const posterUrl = artwork
-      ? (artwork.startsWith('http') || artwork.startsWith('/') ? artwork : `/api/image/${artwork}`)
+      ? (artwork.startsWith('http') || artwork.startsWith('/') ? artwork : imageUrl(artwork))
       : '';
     const card = document.createElement('div');
-    card.className = wrapperClass;
+    card.className = ranked ? `${wrapperClass} shelf-item-ranked` : wrapperClass;
     card.dataset.idx = String(idx);
+    const rankHtml = ranked
+      ? `<span class="rank-number" aria-hidden="true">${escapeHtml(String(i + 1))}</span>`
+      : '';
     const posterHtml = posterUrl
       ? `${!item.backdrop ? `<img class="poster-backdrop" src="${escapeHtml(posterUrl)}" alt="" aria-hidden="true" loading="lazy" onerror="this.remove()">` : ''}<img class="poster-main" src="${escapeHtml(posterUrl)}" alt="" loading="lazy" onerror="posterError(this)">`
       : '';
@@ -202,8 +222,8 @@ function renderResultCards(items, container, baseIndex,
     const ribbonHtml = isMovie
       ? ''
       : `<div class="status-ribbon" data-ribbon-for="${escapeHtml(String(item.id))}"></div>`;
-    card.innerHTML = `
-      <div class="result-card" data-action="search:open" data-idx="${idx}"
+    card.innerHTML = `${rankHtml}
+      <div class="result-card" ${options?.action ? `data-action="${escapeHtml(options.action)}"` : 'data-action="search:open"'} data-idx="${idx}"${options?.noPreview ? ' data-preview-disabled="1"' : ''}
            role="button" tabindex="0" aria-label="Apri ${escapeHtml(item.name)}">
         <div class="poster-wrap ${item.backdrop ? 'has-backdrop' : 'poster-fallback'}">
           ${posterHtml}
@@ -244,6 +264,7 @@ async function hydrateShelfArtwork(card, item) {
     }
     return;
   }
+  if (!_isStreamingItem(item)) return;
   _cardArtworkCache.set(key, null);
   try {
     const meta = await api.get(`/api/metadata/${item.type}/${item.id}`,
@@ -251,7 +272,7 @@ async function hydrateShelfArtwork(card, item) {
     const backdrop = meta?.backdrop;
     if (!backdrop || !card?.isConnected) return;
     const src = (backdrop.startsWith('http') || backdrop.startsWith('/'))
-      ? backdrop : `/api/image/${backdrop}`;
+      ? backdrop : imageUrl(backdrop);
     _cardArtworkCache.set(key, src);
     const image = card.querySelector('.poster-main');
     if (image) {
@@ -293,7 +314,7 @@ function stopCardPreview(card) {
 async function startCardPreview(card) {
   if (card.dataset.previewDisabled === '1') return;
   const item = _searchResults[Number(card.dataset.idx)];
-  if (!item || String(item.type).toLowerCase() === 'anime') return;
+  if (!item || String(item.type).toLowerCase() === 'anime' || !_isStreamingItem(item)) return;
   const key = `${item.type}:${item.id}`;
   let url = _cardPreviewCache.get(key);
   if (url === undefined) {
@@ -304,7 +325,7 @@ async function startCardPreview(card) {
       const backdrop = meta?.backdrop || null;
       if (backdrop && !_cardArtworkCache.has(key)) {
         const src = (backdrop.startsWith('http') || backdrop.startsWith('/'))
-          ? backdrop : `/api/image/${backdrop}`;
+          ? backdrop : imageUrl(backdrop);
         _cardArtworkCache.set(key, src);
         const image = card.querySelector('.poster-main');
         if (image) {
@@ -334,7 +355,10 @@ async function startCardPreview(card) {
   card.classList.add('preview-visible');
 }
 
-document.addEventListener('pointerover', event => {
+// Hover previews. Guarded so the file also loads under a minimal DOM (the
+// Node tests in tests/*.cjs give `document` no addEventListener); a browser
+// always has it, so nothing changes there.
+function _onCardPointerOver(event) {
   const card = event.target.closest?.('.result-card');
   if (!card || card.contains(event.relatedTarget)) return;
   // Keep the enlarged card inside its scrolling rail (or the result grid).
@@ -348,13 +372,18 @@ document.addEventListener('pointerover', event => {
   }
   const timer = setTimeout(() => startCardPreview(card), 380);
   _cardPreviewTimers.set(card, timer);
-});
+}
 
-document.addEventListener('pointerout', event => {
+function _onCardPointerOut(event) {
   const card = event.target.closest?.('.result-card');
   if (!card || card.contains(event.relatedTarget)) return;
   stopCardPreview(card);
-});
+}
+
+if (typeof document.addEventListener === 'function') {
+  document.addEventListener('pointerover', _onCardPointerOver);
+  document.addEventListener('pointerout', _onCardPointerOut);
+}
 
 async function doSearch(options) {
   if (_catalogSection) return loadCatalog(!!options?.append);
@@ -365,7 +394,7 @@ async function doSearch(options) {
   // The boot no longer blocks routing on the domain, so a search restored
   // from the address can start before it is known. Asking costs nothing once
   // it is: ensureDomain() shares the one request.
-  if (currentSource !== 'animeunity') {
+  if (_sourceNeedsDomain(currentSource)) {
     await ensureDomain();
     if (!currentDomain && currentSource !== 'all') { openSettings(); return; }
   }
@@ -403,9 +432,11 @@ async function doSearch(options) {
 
   try {
     let results;
+    let stamp = null;
     try {
+      const onHeaders = h => { stamp = _cacheStamp(h); };
       results = await api.get('/api/search', _searchParams(q, _searchPage),
-                              append ? undefined : {signal: _searchAbort.signal});
+                              append ? {onHeaders} : {signal: _searchAbort.signal, onHeaders});
     } catch (e) {
       if (e.name === 'AbortError') throw e;   // handled by the catch below
       const detail = escapeHtml(errText(e));
@@ -413,7 +444,10 @@ async function doSearch(options) {
       else container.innerHTML = `<div class="col-12"><div class="alert alert-danger">${detail}</div></div>`;
       return;
     }
-    if (!append) container.innerHTML = '';
+    if (!append) {
+      container.innerHTML = '';
+      if (stamp && results.length) container.insertAdjacentHTML('beforeend', _cacheStampMarkup(stamp, 'col-12'));
+    }
 
     renderResultCards(results, container, _searchResults.length);
     _searchResults = _searchResults.concat(results);
@@ -466,6 +500,24 @@ async function loadMoreResults() {
 let _homeAbort = null;
 const _homeCache = {};   // source -> shelves, for a switch back and forth
 
+// When an answer came from the panel's own cache (X-Cache: HIT), how old it is:
+// the server keeps the source's pages for a while to stay polite to it, and
+// says so rather than passing them off as live.
+function _cacheStamp(headers) {
+  if (!headers || headers.get('X-Cache') !== 'HIT') return null;
+  const at = Number(headers.get('X-Cache-Updated'));
+  return at ? {at: at * 1000, stale: headers.get('X-Stale') || ''} : null;
+}
+
+function _cacheStampMarkup(stamp, extraClass = '') {
+  if (!stamp) return '';
+  const hhmm = new Date(stamp.at).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'});
+  const why = stamp.stale === 'backoff' || stamp.stale === 'budget'
+    ? ' title="La sorgente è in pausa: copia salvata"' : '';
+  return `<div class="${extraClass} small text-muted source-updated"${why}>` +
+    `<i class="ti ti-clock me-1" aria-hidden="true"></i>Aggiornato alle ${escapeHtml(hhmm)}</div>`;
+}
+
 function _setStartPageVisible(on) {
   const shelves = document.getElementById('home-shelves');
   const results = document.getElementById('search-results');
@@ -503,7 +555,7 @@ async function showStartPage() {
   if (_searchAbort) _searchAbort.abort();
   const host = document.getElementById('home-shelves');
   if (!host) return;
-  if (currentSource !== 'animeunity') {
+  if (_sourceNeedsDomain(currentSource)) {
     await ensureDomain();
     if (homeGeneration !== _catalogGeneration) return;
     if (!currentDomain) { _setStartPageVisible(false); return; }
@@ -523,8 +575,11 @@ async function showStartPage() {
   try {
     // A 409 with no domain configured throws like any other refusal, and
     // lands in the catch below, which leaves the same bare search box.
-    const body = await api.get('/api/home', {source}, {signal: _homeAbort.signal});
-    _homeCache[cacheKey] = {shelves: body.shelves || [], genres: body.genres || [], expires: Date.now() + 900000};
+    let stamp = null;
+    const body = await api.get('/api/home', {source}, {signal: _homeAbort.signal,
+                                                       onHeaders: h => { stamp = _cacheStamp(h); }});
+    _homeCache[cacheKey] = {shelves: body.shelves || [], genres: body.genres || [], stamp,
+                            expires: Date.now() + 900000};
     if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
     renderShelves();
     renderHomeExtras(_homeCache[cacheKey]);
@@ -553,10 +608,17 @@ function _renderHeroArt(items) {
     .join('');
 }
 
+// Today's top ten on the start page: keyed on the stable machine name, with the
+// shown title as a fallback for a shelf whose key the source renamed.
+function _isTop10Shelf(shelf) {
+  return !!shelf && (shelf.key === 'top10' || shelf.title === 'Top 10 di oggi');
+}
+
 function renderShelves() {
   const host = document.getElementById('home-shelves');
-  const shelves = _homeCache[`${currentSource}:${currentDomain || ''}`]?.shelves || [];
-  host.innerHTML = '';
+  const entry = _homeCache[`${currentSource}:${currentDomain || ''}`];
+  const shelves = entry?.shelves || [];
+  host.innerHTML = shelves.length ? _cacheStampMarkup(entry?.stamp) : '';
   // One flat array across every rail, reset once here and appended to in order,
   // so openTitle(idx) needs no special case for the start page.
   _searchResults = [];
@@ -582,8 +644,10 @@ function renderShelves() {
       section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
         `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${shelf.key}">${searchLabel('catalog.browse')} <i class="ti ti-arrow-right" aria-hidden="true"></i></button>`);
     }
+    const ranked = _isTop10Shelf(shelf);
+    if (ranked) section.className = 'shelf shelf-ranked';
     renderResultCards(shelf.items, section.querySelector('.shelf-rail'),
-                      _searchResults.length, 'shelf-item');
+                      _searchResults.length, 'shelf-item', {ranked});
     _searchResults = _searchResults.concat(shelf.items);
     shelf.items.forEach(i => { if (i.type !== 'movie') ribbonIds.push(String(i.id)); });
     host.appendChild(section);
@@ -684,6 +748,7 @@ const STATUS_RIBBONS = {
 
 async function loadRequestStatuses(externalIds) {
   if (!externalIds.length || !(can('REQUEST') || can('DOWNLOAD'))) return;
+  if (!DOWNLOAD_SOURCES.includes(currentSource)) return;
   try {
     const statuses = await api.post('/api/requests/status',
       { source: currentSource, external_ids: externalIds });
@@ -897,7 +962,7 @@ registerPageHash('search', {
   read: () => ({
     params: {
       q: document.getElementById('search-input')?.value.trim() || null,
-      src: currentSource === 'animeunity' ? 'animeunity' : null,
+      src: ['animeunity', 'raiplay'].includes(currentSource) ? currentSource : null,
       type: _kindFilter || null,
       dub: _dubOnly ? '1' : null,
       section: _catalogSection?.section || null,
@@ -912,10 +977,11 @@ registerPageHash('search', {
     if (input) input.value = params.q || '';
     // Not setSource(): that clears the grid and re-runs the search, which is
     // the opposite of restoring one. Only the parts that are state.
-    currentSource = !_catalogSection && ['all', 'animeunity'].includes(params.src) ? params.src : 'streamingcommunity';
+    currentSource = !_catalogSection && ['all', 'animeunity', 'raiplay'].includes(params.src) ? params.src : 'streamingcommunity';
     document.getElementById('src-all')?.classList.toggle('active', currentSource === 'all');
     document.getElementById('src-sc')?.classList.toggle('active', currentSource === 'streamingcommunity');
     document.getElementById('src-au')?.classList.toggle('active', currentSource === 'animeunity');
+    document.getElementById('src-rai')?.classList.toggle('active', currentSource === 'raiplay');
     if (input) input.dataset.i18nPlaceholder = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
     if (input) input.placeholder = currentSource === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
     _kindFilter = params.type || '';
@@ -985,3 +1051,11 @@ window.addEventListener('sc:language-changed', () => {
   });
   root.querySelectorAll('.card-preview iframe').forEach(frame => { frame.title = t('catalog.preview'); });
 });
+
+// Only StreamingCommunity titles have numeric ids on /api/metadata. RaiPlay
+// (metadata-only) ids are "programmi:<slug>": asking the metadata route for
+// them is a 400 on every card, so those cards simply keep their own artwork.
+function _isStreamingItem(item) {
+  const source = item && item.source;
+  return (!source || source === 'streamingcommunity') && /^\d+$/.test(String(item && item.id));
+}

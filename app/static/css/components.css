@@ -68,48 +68,85 @@
     }
     .btn-secondary:hover { color: var(--text-sub) !important; border-color: var(--border-strong) !important; background: var(--bg-hover) !important; }
 
-    .btn-outline-danger {
-      background: transparent !important;
-      border-color: var(--danger-ring) !important;
-      color: var(--danger) !important;
-    }
-    .btn-outline-danger:hover { background: var(--danger-dim) !important; }
-
-    .btn-outline-primary {
-      background: transparent !important;
-      border-color: var(--blue-ring) !important;
-      color: var(--blue) !important;
-    }
-    .btn-outline-primary:hover { background: var(--blue-dim) !important; }
-
+    /* Each role has its own tint, so no two kinds of button look alike.
+       Text colours were chosen for contrast: all pairs are above 4.5:1 on the
+       dark background (checked numerically), most above 10:1. */
     .btn-outline-secondary {
-      background: transparent !important;
+      background: var(--bg-raised) !important;
       border-color: var(--border-mid) !important;
-      color: var(--text-muted) !important;
+      color: #CCD5E4 !important;
     }
     .btn-outline-secondary:hover {
-      color: var(--text-sub) !important;
+      color: #E8ECF5 !important;
       border-color: var(--border-strong) !important;
-      background: var(--bg-raised) !important;
+      background: var(--bg-hover) !important;
     }
 
-    /* Keep keyboard focus visible on every interactive surface, including
-       custom cards and links whose dark border is otherwise easy to miss. */
-    :where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
-      outline: 2px solid var(--blue) !important;
-      outline-offset: 3px !important;
+    .btn-outline-danger {
+      background: rgba(228,72,93,.16) !important;
+      border-color: var(--danger-ring) !important;
+      color: #FFB3BC !important;
     }
+    .btn-outline-danger:hover { background: rgba(228,72,93,.28) !important; }
 
-    /* Native title tooltips remain available, but long labels must not force
-       the layout wider than the viewport. */
-    [title] { overflow-wrap: anywhere; }
+    .btn-outline-primary {
+      background: rgba(61,107,245,.18) !important;
+      border-color: var(--blue-ring) !important;
+      color: #BFD3FF !important;
+    }
+    .btn-outline-primary:hover { background: rgba(61,107,245,.28) !important; }
 
     .btn-outline-success {
-      background: transparent !important;
+      background: rgba(47,191,113,.16) !important;
       border-color: var(--green-ring) !important;
-      color: var(--green) !important;
+      color: #8FE8B8 !important;
     }
-    .btn-outline-success:hover { background: var(--green-dim) !important; }
+    .btn-outline-success:hover { background: rgba(47,191,113,.28) !important; }
+
+    .btn-outline-warning {
+      background: rgba(230,164,50,.16) !important;
+      border-color: rgba(230,164,50,.45) !important;
+      color: #FFD58A !important;
+    }
+    .btn-outline-warning:hover { background: rgba(230,164,50,.28) !important; }
+
+    .btn-outline-light {
+      background: rgba(255,255,255,.08) !important;
+      border-color: rgba(255,255,255,.28) !important;
+      color: #F4F6FB !important;
+    }
+    .btn-outline-light:hover { background: rgba(255,255,255,.16) !important; }
+
+    /* Ghost buttons: quiet, but still a surface you can see. */
+    .btn-ghost-secondary {
+      background: var(--bg-raised) !important;
+      border-color: transparent !important;
+      color: #CCD5E4 !important;
+    }
+    .btn-ghost-secondary:hover { background: var(--bg-hover) !important; color: #E8ECF5 !important; }
+    .btn-ghost-primary {
+      background: rgba(61,107,245,.18) !important;
+      border-color: transparent !important;
+      color: #BFD3FF !important;
+    }
+    .btn-ghost-primary:hover { background: rgba(61,107,245,.28) !important; }
+    .btn-ghost-danger {
+      background: rgba(228,72,93,.16) !important;
+      border-color: transparent !important;
+      color: #FFB3BC !important;
+    }
+    .btn-ghost-danger:hover { background: rgba(228,72,93,.28) !important; }
+
+    .btn-warning {
+      background: rgba(230,164,50,.22) !important;
+      border-color: rgba(230,164,50,.55) !important;
+      color: #FFE2A8 !important;
+    }
+
+    .btn-outline-success:disabled, .btn-outline-danger:disabled,
+    .btn-outline-primary:disabled, .btn-outline-secondary:disabled,
+    .btn-outline-warning:disabled, .btn-ghost-secondary:disabled,
+    .btn-ghost-primary:disabled, .btn-ghost-danger:disabled { opacity: .5 !important; }
 
     .btn-sm { padding: 4px 10px !important; font-size: 11.5px !important; }
     .btn-close { opacity: .5 !important; }

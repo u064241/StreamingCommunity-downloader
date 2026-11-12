@@ -5,7 +5,8 @@ from app import config
 from app.core import transcode
 from app.jobs import _worth_retrying
 from app.progress import DownloadCancelledError
-from tests.conftest import do_setup
+from app.auth.permissions import Permission
+from tests.conftest import do_setup, restrict_local_user
 
 
 def settings(**overrides):
@@ -102,8 +103,8 @@ def test_encoder_endpoint_requires_settings_permission(client,admin_credentials,
     do_setup(client,admin_credentials)
     available(monkeypatch,["cpu"])
     assert client.get("/api/domain/video-encoders").status_code == 200
-    client.cookies.clear()
-    assert client.get("/api/domain/video-encoders").status_code in (401,403)
+    restrict_local_user(monkeypatch, Permission.DOWNLOAD)
+    assert client.get("/api/domain/video-encoders").status_code == 403
 
 
 def test_cancel_terminates_running_encoder(original,monkeypatch):
@@ -117,6 +118,9 @@ def test_cancel_terminates_running_encoder(original,monkeypatch):
         def wait(self,timeout=None): return 0
     process=Process()
     monkeypatch.setattr(transcode.subprocess,"Popen",lambda *a,**kw:process)
+    # No real ffmpeg is needed (Popen is faked) and the machine may have none:
+    # resolving it used to pass only when an earlier test had left one around.
+    monkeypatch.setattr(transcode,"get_ffmpeg_exe",lambda:"ffmpeg")
     event=threading.Event()
     event.set()
     with pytest.raises(DownloadCancelledError):

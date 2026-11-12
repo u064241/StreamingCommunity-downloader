@@ -1,19 +1,131 @@
 """Shared test fixtures.
 
-Jellyfin is faked at the ``requests`` layer rather than by patching our own
-helpers, so the client's own behaviour — header construction, the stable
-DeviceId, the X-Forwarded-For retry, token invalidation — is exercised too.
+The panel is local and single-user: there is no login, no session and no
+Jellyfin. Every request the test client makes acts as the local user
+(app/auth/deps.py LOCAL_USER). A few helpers below (``do_setup``,
+``session_for``, ``enable_open_mode``) are kept as no-op shims so tests written
+when the panel had accounts still read naturally. The local user is bound to
+its own ``jf_user`` row (migration 12); ``make_user`` inserts an extra legacy
+row, for the few tests that need a request owned by someone else to prove an
+ownership check, and ``restrict_local_user`` takes permissions away to prove a
+route guard still refuses.
 """
 
 import json
-from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import db
-from app.auth import jellyfin as jf
-from app.auth import models, permissions, ratelimit, session as sessions
+from app.auth import models, permissions
+
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "testserver"})
+
+
+class NetworkBlockedError(RuntimeError):
+    """Raised when a test reaches for the real network."""
+
+
+def _host_of(address):
+    """The host part of a socket address (tuple for INET/INET6, str for AF_UNIX)."""
+    if isinstance(address, (tuple, list)) and address:
+        return address[0]
+    return address
+
+
+def _is_loopback(host) -> bool:
+    if host is None:
+        return True  # getaddrinfo(None, port): the local wildcard, not a remote host
+    if isinstance(host, bytes):
+        host = host.decode("ascii", "replace")
+    if not isinstance(host, str):
+        return False
+    host = host.strip("[]").lower()
+    if host in _LOOPBACK_HOSTS or host.startswith("127."):
+        return True
+    return False
+
+
+@pytest.fixture(autouse=True)
+def _block_network(monkeypatch):
+    """No test reaches the real network.
+
+    ``socket.socket.connect`` (and ``connect_ex``) and ``socket.getaddrinfo``
+    refuse any host that is not loopback (127.0.0.1, localhost, ::1) or the
+    TestClient's ``testserver``, with an explicit error instead of a slow
+    timeout or, worse, a real request to the source. AF_UNIX sockets (str
+    path) are local by definition and left alone.
+
+    Applied with monkeypatch, so it is undone after every test, and a test that
+    mocks the network on its own (``requests.get``, ``httpx``, a fake
+    ``getaddrinfo``...) replaces these guards for its own duration as usual:
+    its monkeypatch runs after this autouse fixture. Every refused attempt is
+    also recorded and fails the test at teardown, even if the code under test
+    swallowed the exception.
+    """
+    import socket
+
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_getaddrinfo = socket.getaddrinfo
+
+    attempts: list = []
+
+    def _refuse(host):
+        attempts.append(host)
+        raise NetworkBlockedError(f"rete bloccata nei test: tentativo di connessione a {host!r}")
+
+    def guarded_connect(self, address):
+        host = _host_of(address)
+        if self.family != getattr(socket, "AF_UNIX", object()) and not _is_loopback(host):
+            _refuse(host)
+        return real_connect(self, address)
+
+    def guarded_connect_ex(self, address):
+        host = _host_of(address)
+        if self.family != getattr(socket, "AF_UNIX", object()) and not _is_loopback(host):
+            _refuse(host)
+        return real_connect_ex(self, address)
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if not _is_loopback(host):
+            _refuse(host)
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    # app/core/hosts.py caches DNS verdicts process-wide for a minute: without
+    # a reset, whether a test reaches the resolver would depend on which test
+    # ran before it.
+    from app.core import hosts
+
+    hosts._dns_cache.clear()
+    yield
+    hosts._dns_cache.clear()
+    # Code under test often catches broad exceptions (a source that is down is
+    # a normal case), which would swallow the error above: fail anyway.
+    if attempts:
+        pytest.fail(f"rete bloccata nei test: il test ha tentato di contattare {sorted(set(map(str, attempts)))}")
+
+
+@pytest.fixture
+def public_dns(monkeypatch):
+    """Every host resolves to a public address, without asking a resolver.
+
+    For tests that fake the HTTP layer (``requests.get``, ``Session.get``) on
+    https URLs: ``hosts.assert_public_https`` still resolves the host before
+    the request, to refuse private targets, and that lookup is real network.
+    93.184.216.34 is a global address, so the SSRF guard lets the URL through
+    to the faked request. Same stand-in tests/test_fix_media_output.py uses.
+    """
+    from app.core import hosts
+
+    lookups: list[str] = []
+    monkeypatch.setattr(hosts, "_resolve",
+                        lambda host, port: lookups.append(host) or ["93.184.216.34"])
+    return lookups
 
 
 @pytest.fixture(autouse=True)
@@ -54,15 +166,41 @@ def _own_database(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _reset_ratelimit():
-    """The login backoff in app/auth/ratelimit.py is a module-level dict, not
-    DB-backed state, so a fresh test database does not clear it on its own.
-    Autouse and independent of the `client` fixture: unit tests that call
-    ratelimit functions directly need this just as much as ones that go
-    through the API, and several tests reuse the same usernames ("bob",
-    "admin") across files."""
-    ratelimit._failures.clear()
+def _security_defaults(_own_database, monkeypatch):
+    """``testserver``, the Host a TestClient sends (and ``panel``, the one
+    tests/test_mcp.py uses), is an allowed host — in production only loopback
+    names/addresses and ALLOWED_HOSTS are."""
+    from app import config
+
+    monkeypatch.setattr(config, "ALLOWED_HOSTS", frozenset({"testserver", "panel"}))
+
+
+@pytest.fixture(autouse=True)
+def _fresh_source_budget():
+    """Every test starts from a clean source budget, backoff and page caches.
+
+    The state in app/core/source_budget.py is process-wide by design: without
+    this, one test faking a 429 would silence the source for every test after
+    it, and a long suite would spend the hourly budget. Reset before and after,
+    so a test leaves nothing behind even for code that runs at teardown.
+    """
+    from app.core import source_budget
+
+    source_budget.reset()
     yield
+    source_budget.reset()
+
+
+@pytest.fixture(autouse=True)
+def _restore_source_cap():
+    """The global source gate (app/core/m3u8.py) is resized from the settings
+    at each download and settings change; put it back after every test."""
+    from app.core import m3u8
+
+    cap = m3u8._SOURCE_MAX_CONNECTIONS
+    yield
+    m3u8._SOURCE_MAX_CONNECTIONS = cap
+    m3u8._SOURCE_SLOTS.resize(cap)
 
 
 @pytest.fixture(autouse=True)
@@ -75,167 +213,7 @@ def _no_auto_retry(monkeypatch):
     monkeypatch.setattr(jobs, "AUTO_RETRIES", 0)
 
 
-# ── Fake Jellyfin server ───────────────────────────────────────────────────────
-
-class FakeResponse:
-    def __init__(self, status_code: int, payload=None):
-        self.status_code = status_code
-        self._payload = payload
-        self.ok = 200 <= status_code < 300
-
-    def json(self):
-        if self._payload is None:
-            raise ValueError("no json body")
-        return self._payload
-
-    @property
-    def text(self):
-        return json.dumps(self._payload) if self._payload is not None else ""
-
-
-class FakeJellyfin:
-    """Stands in for a Jellyfin server at the requests.request level."""
-
-    def __init__(self):
-        self.users: dict[str, dict] = {}
-        self.passwords: dict[str, str] = {}
-        self.api_keys: list[dict] = []
-        self.calls: list[dict] = []
-        self.issued_tokens: set[str] = set()
-        self.revoked_tokens: set[str] = set()
-        self.token_owner: dict[str, str] = {}  # token → username
-        # When True the server rejects any request carrying X-Forwarded-For,
-        # which is what Jellyfin does when the panel is not a known proxy.
-        self.reject_forwarded_ip = False
-        self.reachable = True
-        self._token_seq = 0
-
-    def add_user(self, name: str, password: str = "pw", admin: bool = False, user_id: str = None):
-        user = {
-            "Id": user_id or f"jf-{name}-id",
-            "Name": name,
-            "ServerId": "server-1",
-            "Policy": {"IsAdministrator": admin, "IsDisabled": False},
-        }
-        self.users[name] = user
-        self.passwords[name] = password
-        return user
-
-    def rename_user(self, old: str, new: str):
-        user = self.users.pop(old)
-        user["Name"] = new
-        self.users[new] = user
-        self.passwords[new] = self.passwords.pop(old)
-
-    def device_ids_seen(self, path: str = "/Users/AuthenticateByName") -> list[str]:
-        return [c["device_id"] for c in self.calls if c["path"] == path]
-
-    # ── requests.request replacement ──────────────────────────────────────────
-
-    def __call__(self, method, url, json=None, headers=None, timeout=None):
-        if not self.reachable:
-            import requests as _requests
-            raise _requests.ConnectionError("connection refused")
-
-        headers = headers or {}
-        parsed = urlparse(url)
-        path = parsed.path
-        auth = headers.get("Authorization", "")
-        device_id = ""
-        token = ""
-        for part in auth.replace("MediaBrowser ", "").split(", "):
-            key, _, value = part.partition("=")
-            value = value.strip('"')
-            if key == "DeviceId":
-                device_id = value
-            elif key == "Token":
-                token = value
-
-        self.calls.append({
-            "method": method,
-            "path": path,
-            "query": parse_qs(parsed.query),
-            "device_id": device_id,
-            "token": token,
-            "forwarded_for": headers.get("X-Forwarded-For"),
-            "json": json,
-        })
-
-        if self.reject_forwarded_ip and "X-Forwarded-For" in headers:
-            return FakeResponse(400, {"Error": "unknown proxy"})
-
-        return self._route(method, path, parsed, json, token)
-
-    def _route(self, method, path, parsed, body, token):
-        if path == "/System/Info/Public":
-            return FakeResponse(200, {"ServerName": "fake", "Version": "10.9.0", "Id": "server-1"})
-
-        if path == "/Users/AuthenticateByName" and method == "POST":
-            name = (body or {}).get("Username")
-            user = self.users.get(name)
-            if user is None or self.passwords.get(name) != (body or {}).get("Pw"):
-                return FakeResponse(401, {"Error": "invalid"})
-            self._token_seq += 1
-            access = f"token-{self._token_seq}"
-            self.issued_tokens.add(access)
-            self.token_owner[access] = name
-            return FakeResponse(200, {"User": user, "AccessToken": access, "ServerId": "server-1"})
-
-        if path == "/Sessions/Logout" and method == "POST":
-            self.revoked_tokens.add(token)
-            return FakeResponse(204)
-
-        if path == "/Users/Me":
-            if not self._valid(token):
-                return FakeResponse(401, {"Error": "bad token"})
-            owner = self.token_owner.get(token)
-            user = self.users.get(owner) if owner else None
-            if user is None:
-                return FakeResponse(401, {"Error": "bad token"})
-            return FakeResponse(200, user)
-
-        if path == "/System/Info":
-            if not self._valid(token):
-                return FakeResponse(401, {"Error": "bad token"})
-            return FakeResponse(200, {"ServerName": "fake", "Id": "server-1"})
-
-        if path == "/Users" and method == "GET":
-            if not self._valid(token):
-                return FakeResponse(401, {"Error": "bad token"})
-            return FakeResponse(200, list(self.users.values()))
-
-        if path == "/Auth/Keys" and method == "POST":
-            if not self._valid(token):
-                return FakeResponse(401, {"Error": "bad token"})
-            app_name = parse_qs(parsed.query).get("App", ["?"])[0]
-            self.api_keys.append({"AppName": app_name, "AccessToken": f"apikey-{len(self.api_keys) + 1}"})
-            return FakeResponse(204)
-
-        if path == "/Auth/Keys" and method == "GET":
-            if not self._valid(token):
-                return FakeResponse(401, {"Error": "bad token"})
-            return FakeResponse(200, {"Items": list(self.api_keys)})
-
-        return FakeResponse(404, {"Error": f"no route {method} {path}"})
-
-    def _valid(self, token: str) -> bool:
-        if not token:
-            return False
-        if token in self.revoked_tokens:
-            return False
-        return token in self.issued_tokens or any(
-            k["AccessToken"] == token for k in self.api_keys
-        )
-
-
 # ── Fixtures ───────────────────────────────────────────────────────────────────
-
-@pytest.fixture
-def jellyfin(monkeypatch):
-    fake = FakeJellyfin()
-    monkeypatch.setattr(jf.requests, "request", fake)
-    return fake
-
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -361,50 +339,62 @@ def source(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def admin_credentials(jellyfin):
-    jellyfin.add_user("admin", "adminpw", admin=True)
+def admin_credentials():
+    """Kept for tests written when the panel had a Jellyfin setup step; the
+    values are no longer sent anywhere."""
     return {"url": "http://jellyfin.local:8096", "username": "admin", "password": "adminpw"}
 
 
-def do_setup(client, credentials) -> dict:
-    """Run the first-run bootstrap and return the JSON payload."""
-    response = client.post("/api/auth/setup", json=credentials)
+def do_setup(client, credentials=None) -> dict:
+    """No-op: a local panel has nothing to set up. Returns the shape the old
+    setup endpoint answered with, from /api/auth/me, with an empty CSRF token
+    so callers that forward it as a header keep working."""
+    response = client.get("/api/auth/me")
     assert response.status_code == 200, response.text
-    return response.json()
+    payload = response.json()
+    payload["csrf_token"] = ""
+    return payload
 
 
 def enable_open_mode():
-    """Put the panel in open mode, the way the wizard's "Continua senza
-    Jellyfin" button does.
-
-    The setting is the entire switch: there is no environment variable to
-    unset and no import-time constant to rebind in three modules.
-    """
-    models.set_setting(models.SETTING_AUTH_MODE, "open")
-
-
-def do_login(client, username: str, password: str):
-    return client.post("/api/auth/jellyfin", json={"username": username, "password": password})
+    """No-op: the local, account-less mode is the only mode."""
 
 
 def make_user(username: str, jellyfin_user_id: str, perms: int, enabled: bool = True):
-    return models.create_user(
-        jellyfin_user_id=jellyfin_user_id,
-        username=username,
-        permissions=perms,
-        enabled=enabled,
+    """Insert a legacy ``jf_user`` row. Nothing in the app creates these any
+    more; the request queue's schema still references the table, so its
+    service-level tests use this to have a requester id."""
+    db.execute(
+        "INSERT INTO jf_user(jellyfin_user_id, username, is_jellyfin_admin, permissions, "
+        "enabled, device_id, created_at) VALUES(?, ?, 0, ?, ?, '', ?)",
+        (jellyfin_user_id, username, permissions.sanitize(perms), int(enabled), models.now_iso()),
     )
+    row = db.query_one("SELECT id FROM jf_user WHERE jellyfin_user_id = ?", (jellyfin_user_id,))
+    return models.get_user(row["id"])
+
+
+def restrict_local_user(monkeypatch, perms: int):
+    """Swap the local user for one holding only ``perms``.
+
+    In the browser the local user holds every permission, so nothing is ever
+    refused; this is how a test still proves a route's ``require(...)`` guard
+    (or a handler's own ownership check) refuses someone without the right.
+    The stand-in keeps the local user's key, so it binds to the same jf_user
+    row and is still recognised as the local user.
+    """
+    import dataclasses
+
+    from app.auth import deps
+
+    monkeypatch.setattr(deps, "LOCAL_USER",
+                        dataclasses.replace(deps.LOCAL_USER, permissions=int(perms)))
+    return deps.local_user()
 
 
 def session_for(client, user_id: int):
-    """Attach a session cookie for ``user_id`` to ``client`` and return its CSRF token."""
-    raw_token, csrf_token = sessions.create_session(user_id)
-    # A login earlier in the test (do_setup) left the server's own cookie, set
-    # for the test host; set() beside it makes a second one of the same name,
-    # and which of the two is sent depends on the httpx version.
-    client.cookies.delete(sessions.SESSION_COOKIE)
-    client.cookies.set(sessions.SESSION_COOKIE, raw_token)
-    return csrf_token
+    """No-op: there are no sessions, every request is the local user. Returns
+    an empty CSRF token for callers that forward it as a header."""
+    return ""
 
 
 ALL = int(permissions.ALL_PERMISSIONS)

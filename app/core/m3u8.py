@@ -7,6 +7,7 @@ import time
 import threading
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urljoin, urlparse
 
 import requests
 import ffmpeg
@@ -14,22 +15,99 @@ from requests.adapters import HTTPAdapter
 from m3u8 import M3U8 as M3U8_Lib
 from tqdm.rich import tqdm
 from tqdm import TqdmExperimentalWarning
+from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
 
 from app.config import get_settings
-from app.core import container
+from app.core import container, hosts, source_budget
+from app.core._shared import AES128_KEY_BYTES, with_retry
 from app.core.ffmpeg_path import run_ffmpeg, ffmpeg_file_arg, get_ffmpeg_exe
 from app.core.headers import get_headers
+from app.core.hosts import redact
 from app.core.paths import windows_path_problem
 from app.progress import DownloadCancelledError
 
 warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
-warnings.filterwarnings("ignore", category=UserWarning, module="cryptography")
 
 logger = logging.getLogger(__name__)
 DOWNLOAD_SUB = True
 DOWNLOAD_DEFAULT_LANGUAGE = False
+
+# Segment requests in flight toward the source, across every job at once. Each
+# job has its own worker pool, so without this cap three jobs of sixteen workers
+# are forty-eight connections to one CDN. SC_SOURCE_MAX_CONNECTIONS wins when it
+# is set (an explicit override: nothing sets it by default); otherwise the
+# ``source_max_connections`` setting, clamped to
+# config.SOURCE_MAX_CONNECTIONS_CEILING. Re-read at the start of every download
+# and whenever the settings change (apply_source_cap): the gate is resized in
+# place, so requests already in flight finish and the new cap holds from the
+# next one.
+def source_cap_env() -> int | None:
+    """The SC_SOURCE_MAX_CONNECTIONS override, or None when unset or invalid."""
+    raw = os.getenv("SC_SOURCE_MAX_CONNECTIONS", "").strip()
+    if not raw:
+        return None
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning("SC_SOURCE_MAX_CONNECTIONS=%r is not a number; using the setting", raw)
+        return None
+
+
+def _source_max_connections() -> int:
+    override = source_cap_env()
+    if override is not None:
+        return override
+    from app import config
+    try:
+        return config.source_max_connections_setting(get_settings())
+    except (TypeError, ValueError, OSError, RuntimeError):
+        return config.PERFORMANCE_PRESETS[config.DEFAULT_PERFORMANCE_PRESET]["source_max_connections"]
+
+
+class SourceSlots:
+    """A counting gate whose size can change while requests are in flight."""
+
+    def __init__(self, maximum: int):
+        self._cond = threading.Condition()
+        self.maximum = max(1, int(maximum))
+        self._in_flight = 0
+
+    @property
+    def in_flight(self) -> int:
+        with self._cond:
+            return self._in_flight
+
+    def resize(self, maximum: int) -> None:
+        with self._cond:
+            self.maximum = max(1, int(maximum))
+            self._cond.notify_all()
+
+    def __enter__(self):
+        with self._cond:
+            while self._in_flight >= self.maximum:
+                self._cond.wait(0.5)
+            self._in_flight += 1
+        return self
+
+    def __exit__(self, *exc_info):
+        with self._cond:
+            self._in_flight -= 1
+            self._cond.notify()
+        return False
+
+
+_SOURCE_MAX_CONNECTIONS = _source_max_connections()
+_SOURCE_SLOTS = SourceSlots(_SOURCE_MAX_CONNECTIONS)
+
+
+def apply_source_cap() -> int:
+    """Re-read the cap (env, else setting) and resize the gate. Returns it."""
+    global _SOURCE_MAX_CONNECTIONS
+    cap = _source_max_connections()
+    _SOURCE_MAX_CONNECTIONS = cap
+    _SOURCE_SLOTS.resize(cap)
+    return cap
 
 # Segment failures worth another attempt. A 4xx that is not one of these is a
 # verdict rather than congestion: repeating it across a few thousand segments
@@ -69,17 +147,55 @@ FAILURE_ABORT_STREAK = 200
 #
 # In memory, which is the same assumption the rest of the panel makes: job state
 # lives in JobManager and the process is single by design.
-_destination_locks: dict[str, threading.Lock] = {}
+#
+# Each entry is ``[lock, users]``: the lock, and how many downloads hold or are
+# waiting for it. Counted so the entry can be dropped when the last one leaves —
+# one lock per path ever downloaded, kept for the life of the process, was a
+# dictionary that only grew.
+_destination_locks: dict[str, list] = {}
 _destination_locks_guard = threading.Lock()
 
+# How often a download waiting for the destination looks at its cancel flag.
+_LOCK_POLL = 0.5
 
-def _destination_lock(path: str) -> threading.Lock:
+
+def _acquire_destination(path: str, cancel_event=None) -> str:
+    """Take the lock for *path*, giving up if the job is cancelled meanwhile.
+
+    The wait used to be a bare ``acquire()``: a job queued behind another
+    download of the same file could not be cancelled until that one finished.
+    Returns what to hand back to ``_release_destination``.
+    """
     key = os.path.normcase(os.path.abspath(path))
     with _destination_locks_guard:
-        lock = _destination_locks.get(key)
-        if lock is None:
-            lock = _destination_locks[key] = threading.Lock()
-        return lock
+        entry = _destination_locks.setdefault(key, [threading.Lock(), 0])
+        entry[1] += 1
+    lock = entry[0]
+    acquired = lock.acquire(blocking=False)
+    try:
+        if not acquired:
+            logger.info("Waiting for another download to finish writing %s", path)
+        while not acquired:
+            if cancel_event is not None and cancel_event.is_set():
+                raise DownloadCancelledError("Download annullato dall'utente")
+            acquired = lock.acquire(timeout=_LOCK_POLL)
+    except BaseException:
+        _forget_destination(key, entry)
+        raise
+    return key, entry
+
+
+def _forget_destination(key: str, entry: list) -> None:
+    with _destination_locks_guard:
+        entry[1] -= 1
+        if entry[1] <= 0 and _destination_locks.get(key) is entry:
+            del _destination_locks[key]
+
+
+def _release_destination(held: tuple) -> None:
+    key, entry = held
+    entry[0].release()
+    _forget_destination(key, entry)
 
 
 def _segment_backoff(attempt: int) -> float:
@@ -122,6 +238,32 @@ PENALTY_INTERVAL = 2.0
 # unboundedly: a very long value is a fetch that will outlive the segment's
 # attempts anyway, and the sequential pass is a better place to arrive late.
 MAX_RETRY_AFTER = 30.0
+
+# (connect, read) for one segment request.
+SEGMENT_TIMEOUT = (10, 30)
+
+# How long the parallel pass may go without a single segment arriving before
+# the stall watchdog calls the source dead.
+#
+# It used to be thirty seconds — exactly MAX_RETRY_AFTER — so a source that
+# answered "come back in 30" had every worker doing as it was told while the
+# watchdog counted the same half-minute as a stall and killed the download.
+# The floor is now a full honoured wait plus the slowest read that can follow
+# it, with margin; and a worker sitting out a Retry-After also moves a
+# heartbeat the watchdog reads, since waiting on request is not stalling.
+PROGRESS_TIMEOUT = max(90, MAX_RETRY_AFTER + SEGMENT_TIMEOUT[1] + 30)
+
+# The sequential second pass is deliberately slow, and used to have no end: on
+# a source that had stopped serving, every lost segment cost its three attempts
+# and their backoff, one after the other, for as many segments as were lost.
+# It now stops on a run of failures with nothing recovered between them, or
+# when it has used up its time, and says which.
+SEQUENTIAL_MAX_STREAK = 20
+SEQUENTIAL_BUDGET = 15 * 60
+
+
+class UnsupportedStreamError(RuntimeError):
+    """The playlist uses a part of HLS this downloader does not implement."""
 
 
 class AdaptiveLimiter:
@@ -209,6 +351,9 @@ class AdaptiveLimiter:
             # refusing us, which the 503s alone never distinguished.
             logger.info("Source pushing back — segment concurrency %d → %d (max %d)",
                         before, after, ceiling)
+            # The same signal pauses the page requests too (source_budget's
+            # backoff): the source refusing segments is refusing us.
+            source_budget.report_pushback("download pipeline")
 
     def reward(self) -> None:
         """A segment arrived. One extra slot per allowance served, no more.
@@ -278,36 +423,81 @@ def _new_session(pool_size: int) -> requests.Session:
     return session
 
 
-class Decryption:
-    def __init__(self, key):
-        self.iv = None
-        self.key = key
+AES_128 = "AES-128"
 
-    def parse_key(self, raw_iv):
-        self.iv = bytes.fromhex(raw_iv.replace("0x", ""))
 
-    def decrypt_ts(self, encrypted_data):
-        cipher = Cipher(algorithms.AES(self.key), modes.CBC(self.iv), backend=default_backend())
-        decryptor = cipher.decryptor()
-        return decryptor.update(encrypted_data) + decryptor.finalize()
+def decrypt_aes128_cbc(key: bytes, iv: bytes, encrypted_data: bytes) -> bytes:
+    """Decrypt one HLS segment and strip its PKCS7 padding.
+
+    HLS pads every AES-128 segment (RFC 8216 §4.3.2.4). The padding used to be
+    left in, so each segment ended in up to sixteen bytes that are not MPEG-TS,
+    in the middle of the concatenated stream. Unpadding is also the check that
+    was missing: a wrong key, a wrong IV or a truncated body ends in a
+    ValueError here instead of in a file full of noise.
+
+    No ``backend`` argument: it has been optional since cryptography 3.1 and
+    ``default_backend()`` is gone from current releases.
+    """
+    decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+    padded = decryptor.update(encrypted_data) + decryptor.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    return unpadder.update(padded) + unpadder.finalize()
+
+
+def segment_iv(raw_iv: str | None, sequence: int) -> bytes:
+    """The IV for one segment: the playlist's own, or its media sequence number.
+
+    An EXT-X-KEY without an IV attribute means the segment's media sequence
+    number, as a 16-byte big-endian integer (RFC 8216 §5.2). That case used to
+    skip decryption altogether and write the ciphertext out as video.
+    """
+    if raw_iv:
+        digits = str(raw_iv).strip()
+        if digits[:2].lower() == "0x":
+            digits = digits[2:]
+        return bytes.fromhex(digits.zfill(32))
+    return int(sequence).to_bytes(16, "big")
+
+
+def _is_vtt(uri: str | None) -> bool:
+    """Whether a segment URI names a WebVTT file, by its path's extension.
+
+    Not by substring: a token, a directory or a host with "vtt" anywhere in it
+    used to turn every video segment of that playlist into a subtitle.
+    """
+    return urlparse(uri or "").path.lower().endswith((".vtt", ".webvtt"))
 
 
 class M3U8_Parser:
     def __init__(self):
         self.segments = []
+        # One entry per item of ``segments``, same index: what is needed to
+        # fetch and decrypt that segment beyond its URI. Kept beside the list
+        # rather than in it because ``segments`` is a list of URLs everywhere
+        # else in the code.
+        self.segment_info: list[dict] = []
         self.video_playlist = []
         self.keys = []
         self.subtitle_playlist = []
         self.subtitle = []
         self.audio_ts = []
 
-    def parse_data(self, m3u8_content):
+    def parse_data(self, m3u8_content, base_uri=None):
+        """Parse a playlist; with *base_uri*, every URI in it comes out absolute.
+
+        A playlist may name its variants, segments, keys and renditions
+        relative to itself (RFC 8216 §4.1). Left as they were, those reached
+        ``requests`` as "1080/playlist.m3u8" and failed with MissingSchema.
+        """
+        def absolute(uri):
+            return urljoin(base_uri, uri) if base_uri and uri else uri
+
         try:
             m3u8_obj = M3U8_Lib(m3u8_content)
 
             for playlist in m3u8_obj.playlists:
                 self.video_playlist.append({
-                    "uri": playlist.uri,
+                    "uri": absolute(playlist.uri),
                     "bandwidth": playlist.stream_info.bandwidth or 0,
                     "resolution": playlist.stream_info.resolution,
                 })
@@ -316,7 +506,7 @@ class M3U8_Parser:
                 if key is not None:
                     self.keys = {
                         "method": key.method,
-                        "uri": key.uri,
+                        "uri": absolute(key.uri),
                         "iv": key.iv,
                     }
 
@@ -327,7 +517,7 @@ class M3U8_Parser:
                         "name": media.name,
                         "default": media.default,
                         "language": ("forced-" + media.language if media.language and str(media.forced).upper() == "YES" and not media.language.startswith("forced-") else media.language),
-                        "uri": media.uri,
+                        "uri": absolute(media.uri),
                     })
                 elif media.type == "AUDIO":
                     self.audio_ts.append({
@@ -335,17 +525,48 @@ class M3U8_Parser:
                         "name": media.name,
                         "default": media.default,
                         "language": media.language,
-                        "uri": media.uri,
+                        "uri": absolute(media.uri),
                     })
 
-            for segment in m3u8_obj.segments:
-                if "vtt" not in segment.uri:
-                    self.segments.append(segment.uri)
-                else:
-                    self.subtitle.append(segment.uri)
+            first_sequence = m3u8_obj.media_sequence or 0
+            range_end: dict[str, int] = {}
+            for position, segment in enumerate(m3u8_obj.segments):
+                uri = absolute(segment.uri)
+                if _is_vtt(uri):
+                    self.subtitle.append(uri)
+                    continue
+
+                # The key in force for *this* segment. EXT-X-KEY applies from
+                # where it appears until the next one, so a playlist that
+                # rotates keys has several, and reading the last of them for
+                # every segment decrypted all but the final stretch wrongly.
+                key = getattr(segment, "key", None)
+                method = (getattr(key, "method", None) or "NONE").upper()
+                init = getattr(segment, "init_section", None)
+
+                byterange = None
+                raw_range = getattr(segment, "byterange", None)
+                if raw_range:
+                    # "<length>[@<offset>]"; without an offset the range starts
+                    # where the previous one into the same resource ended.
+                    length, _, offset = str(raw_range).partition("@")
+                    start = int(offset) if offset else range_end.get(uri, 0)
+                    range_end[uri] = start + int(length)
+                    byterange = (start, int(length))
+
+                self.segments.append(uri)
+                self.segment_info.append({
+                    "sequence": first_sequence + position,
+                    "method": method,
+                    "key_uri": absolute(getattr(key, "uri", None)) if method != "NONE" else None,
+                    "iv": getattr(key, "iv", None) if method != "NONE" else None,
+                    "byterange": byterange,
+                    "init": absolute(getattr(init, "uri", None)) if init is not None else None,
+                    "discontinuity": bool(getattr(segment, "discontinuity", False)),
+                })
 
         except Exception as e:
-            logger.error(f"Error parsing M3U8 content: {e}")
+            logger.error(f"Error parsing M3U8 content: {redact(e)}")
             raise
 
     def get_best_quality(self):
@@ -380,25 +601,38 @@ class M3U8_Segments:
         self.phase = phase
         self.emit_join_phase = emit_join_phase
 
-        if key is not None:
-            self.decryption = Decryption(key)
+        # What each segment needs beyond its URL (see M3U8_Parser.segment_info);
+        # empty when ``segments`` was assigned directly rather than parsed.
+        self.segments = []
+        self.segment_info: list[dict] = []
+        # AES keys by the URI the playlist names them at. The key handed in
+        # belongs to the first URI; any other is fetched when first needed.
+        self._keys: dict[str | None, bytes] = {}
+        self._keys_lock = threading.Lock()
 
         self.temp_folder = temp_dir if temp_dir is not None else os.path.join("tmp", "segments")
         os.makedirs(self.temp_folder, exist_ok=True)
 
         self.progress_factory = progress_factory
-        self.progress_timeout = 30
+        self.progress_timeout = PROGRESS_TIMEOUT
         self.max_retry = 3
         self._failed_segments = set()
         self._saved_count = 0
         self._failure_streak = 0
         self._failed_lock = threading.Lock()
         self._abort = threading.Event()
+        # Set by a worker that hit something no retry can change (a malformed
+        # or refused URL); download_ts raises it instead of "incomplete".
+        self._fatal: str | None = None
+        # Moved by a worker waiting out a Retry-After, read by the watchdog.
+        self._heartbeat = time.monotonic()
 
         # Read once here rather than per segment: get_settings() opens and
         # parses data.json on every call, and this is on the path taken a few
         # thousand times per download.
-        self._workers = max(1, int(get_settings().get("max_segment_workers", 16)))
+        self._workers = max(1, int(get_settings().get("max_segment_workers", 4)))
+        # The source cap follows the settings from this download on.
+        apply_source_cap()
         self._budget = segment_budget(self._workers)
         self._session = _new_session(self._workers)
 
@@ -408,20 +642,112 @@ class M3U8_Segments:
         # connection — wasted work, and exactly the shape a CDN rate-limits.
         self._user_agent = get_headers()
 
-    def parse_data(self, m3u8_content):
+    def parse_data(self, m3u8_content, base_uri=None):
         m3u8_parser = M3U8_Parser()
-        m3u8_parser.parse_data(m3u8_content)
+        m3u8_parser.parse_data(m3u8_content, base_uri=base_uri or self.url)
+        self._adopt(m3u8_parser)
 
-        if self.key is not None and m3u8_parser.keys:
-            self.decryption.parse_key(m3u8_parser.keys.get("iv"))
+    def _adopt(self, parser: "M3U8_Parser"):
+        """Take a media playlist's segments, refusing what cannot be downloaded.
 
-        self.segments = m3u8_parser.segments
+        Checked here, before anything is fetched, so an unsupported stream is
+        one clear error instead of a completed download of the wrong bytes.
+        """
+        methods = {info["method"] for info in parser.segment_info} - {"NONE"}
+        unsupported = sorted(methods - {AES_128})
+        if unsupported:
+            # SAMPLE-AES and friends encrypt inside the elementary streams.
+            # Running them through AES-128-CBC over the whole segment — which
+            # is what "there is a key, so decrypt" amounted to — produces noise.
+            raise UnsupportedStreamError(
+                f"Cifratura HLS non supportata: {', '.join(unsupported)} "
+                f"(è gestito solo {AES_128})"
+            )
+        if any(info["init"] for info in parser.segment_info):
+            # EXT-X-MAP means fragmented MP4: an initialisation section plus
+            # media fragments. The join below concatenates MPEG-TS and hands
+            # the result to FFmpeg's TS demuxer, which is not a container that
+            # an init section can be prepended to — supporting fMP4 is a
+            # different join, not an extra request. Refused rather than
+            # downloaded in full and then failed, or worse, joined wrong.
+            raise UnsupportedStreamError(
+                "fMP4 non supportato: la playlist usa EXT-X-MAP (segmenti MP4 "
+                "frammentati), questo downloader gestisce solo MPEG-TS"
+            )
+        breaks = sum(1 for info in parser.segment_info if info["discontinuity"])
+        if breaks:
+            # Tolerated, not handled: the segments are concatenated as they
+            # are and FFmpeg regenerates timestamps (+genpts) across the break.
+            # Usually an advert or a re-encode boundary; the audio can drift.
+            logger.warning("Playlist has %d EXT-X-DISCONTINUITY marker(s); joining across them", breaks)
+
+        self.segments = parser.segments
+        self.segment_info = parser.segment_info
+
+        # The key the caller resolved is the one the playlist's first key URI
+        # names; a playlist with a single URI — every one seen so far — never
+        # fetches anything here.
+        if self.key is not None:
+            first = next((info["key_uri"] for info in self.segment_info
+                          if info["method"] == AES_128), None)
+            with self._keys_lock:
+                self._keys.setdefault(first, self.key)
+
+    def _info(self, index: int) -> dict:
+        """Per-segment details, or none when ``segments`` was set by hand."""
+        return self.segment_info[index] if index < len(self.segment_info) else {}
+
+    def _key_for(self, key_uri: str | None) -> bytes:
+        """The AES key published at *key_uri*, fetched once per download."""
+        with self._keys_lock:
+            if key_uri in self._keys:
+                return self._keys[key_uri]
+            if not key_uri:
+                raise RuntimeError("La playlist è cifrata ma non indica la chiave (EXT-X-KEY senza URI)")
+            response = with_retry(
+                lambda: hosts.safe_get(self._session.get, key_uri,
+                                       headers=self._headers(), timeout=15),
+                what="segment key",
+            )
+            if not response.ok:
+                raise RuntimeError(f"Cannot fetch encryption key: HTTP {response.status_code}")
+            if len(response.content or b"") != AES128_KEY_BYTES:
+                raise RuntimeError(
+                    f"Chiave di cifratura non valida: attesi {AES128_KEY_BYTES} byte, "
+                    f"ricevuti {len(response.content or b'')}"
+                )
+            self._keys[key_uri] = response.content
+            return response.content
+
+    def _decode(self, index: int, content: bytes) -> bytes:
+        """The segment's plain bytes: decrypted when its EXT-X-KEY says so.
+
+        ValueError (bad padding, a body that is not whole blocks) means the
+        segment did not arrive intact and is the caller's to count as failed.
+        """
+        info = self._info(index)
+        if info.get("method", "NONE") != AES_128:
+            return content
+        key = self._key_for(info.get("key_uri"))
+        return decrypt_aes128_cbc(key, segment_iv(info.get("iv"), info.get("sequence", index)), content)
 
     def _headers(self):
         h = {"user-agent": self._user_agent}
         if self.referer:
             h["referer"] = self.referer
         return h
+
+    def _wait(self, delay: float) -> bool:
+        """Sleep *delay* seconds, or less if the job is cancelled. True if it was.
+
+        ``time.sleep`` could not be interrupted: a cancelled download sat out
+        every backoff still pending — up to MAX_RETRY_AFTER each — before any
+        thread looked at the flag again.
+        """
+        if self._cancel is None:
+            time.sleep(delay)
+            return False
+        return self._cancel.wait(delay)
 
     def _fetch_m3u8(self, url: str, what: str, max_retries: int = 3, retry_delay: int = 2):
         """Fetch one M3U8, riding out the errors this CDN hands out routinely.
@@ -442,24 +768,31 @@ class M3U8_Segments:
         for attempt in range(max_retries):
             last = attempt == max_retries - 1
             try:
-                response = self._session.get(current, headers=self._headers(), timeout=15)
+                response = hosts.safe_get(self._session.get, current,
+                                          headers=self._headers(), timeout=15)
+            except _UNFETCHABLE as e:
+                # Not an outage: the URL itself is unusable — no scheme, not
+                # https, a private address. The third attempt would say exactly
+                # what the first did, six seconds later.
+                raise RuntimeError(f"Failed to fetch {what} M3U8: URL non valido ({redact(e)})") from e
             except requests.RequestException as e:
                 response = None
                 logger.warning("%s M3U8 fetch failed (%s) — tentativo %d/%d",
-                               what, e, attempt + 1, max_retries)
+                               what, redact(e), attempt + 1, max_retries)
             else:
                 if response.ok:
                     return response
                 if response.status_code == 403 and not tried_with_b1:
                     # A different URL, so retry at once rather than waiting.
-                    logger.warning("%s M3U8 fetch returned 403, retrying with ?b=1: %s", what, current)
+                    logger.warning("%s M3U8 fetch returned 403, retrying with ?b=1: %s",
+                                   what, redact(current))
                     current = current + ("&b=1" if "?" in current else "?b=1")
                     tried_with_b1 = True
                     continue
                 logger.warning("%s M3U8 fetch returned HTTP %d — tentativo %d/%d",
                                what, response.status_code, attempt + 1, max_retries)
-            if not last:
-                time.sleep(retry_delay)
+            if not last and self._wait(retry_delay):
+                raise DownloadCancelledError("Download annullato dall'utente")
 
         status = response.status_code if response is not None else "nessuna risposta"
         raise RuntimeError(f"Failed to fetch {what} M3U8: HTTP {status}")
@@ -468,30 +801,32 @@ class M3U8_Segments:
         response = self._fetch_m3u8(self.url, "playlist")
 
         parser = M3U8_Parser()
-        parser.parse_data(response.text)
-
-        if self.key is not None and parser.keys:
-            self.decryption.parse_key(parser.keys.get("iv"))
+        parser.parse_data(response.text, base_uri=self.url)
 
         if parser.segments:
             # Direct segment playlist
-            self.segments = parser.segments
-            logger.info("Direct segment playlist: %d segments, first=%s", len(self.segments), self.segments[0] if self.segments else "none")
+            self._adopt(parser)
+            logger.info("Direct segment playlist: %d segments, first=%s", len(self.segments),
+                        redact(self.segments[0]) if self.segments else "none")
         elif parser.video_playlist:
             # Master playlist — resolve the best quality rendition
             best_url = parser.get_best_quality()
-            logger.info("Master playlist detected (%d variants), fetching best rendition: %s", len(parser.video_playlist), best_url)
+            logger.info("Master playlist detected (%d variants), fetching best rendition: %s",
+                        len(parser.video_playlist), redact(best_url))
             rendition_resp = self._fetch_m3u8(best_url, "rendition")
             rp = M3U8_Parser()
-            rp.parse_data(rendition_resp.text)
-            if self.key is not None and rp.keys:
-                self.decryption.parse_key(rp.keys.get("iv"))
-            self.segments = rp.segments
-            logger.info("Rendition segments: %d, first=%s", len(self.segments), self.segments[0] if self.segments else "none")
+            rp.parse_data(rendition_resp.text, base_uri=best_url)
+            self._adopt(rp)
+            logger.info("Rendition segments: %d, first=%s", len(self.segments),
+                        redact(self.segments[0]) if self.segments else "none")
         else:
-            raise RuntimeError(f"M3U8 has no segments and no variant playlists. Content: {response.text[:200]!r}")
+            # Status and size only: the body is a third party's response and
+            # used to be quoted into job.error and the log.
+            raise RuntimeError(
+                f"M3U8 has no segments and no variant playlists "
+                f"(HTTP {response.status_code}, {len(response.text)} characters)")
 
-    def get_req_ts(self, ts_url):
+    def get_req_ts(self, ts_url, byterange=None):
         """Fetch one segment, retrying what is worth retrying.
 
         The loop ran three times but only a 429 ever reached the second
@@ -501,8 +836,16 @@ class M3U8_Segments:
         handled differently depending on whether the server answered badly or
         did not answer at all.
 
+        *byterange* is ``(offset, length)`` for a segment that is a slice of a
+        larger resource (EXT-X-BYTERANGE); it is asked for with a Range header.
+
         Returns the bytes, or None once the segment is given up on.
         """
+        headers = self._headers()
+        if byterange:
+            start, length = byterange
+            headers["range"] = f"bytes={start}-{start + length - 1}"
+
         for attempt in range(self.max_retry):
             if self._cancel and self._cancel.is_set():
                 return None
@@ -512,23 +855,32 @@ class M3U8_Segments:
                 # out its backoff below must not occupy one the source is
                 # willing to give to someone else.
                 with self._budget:
-                    response = self._session.get(
-                        ts_url, headers=self._headers(), timeout=(10, 30)
+                    response = hosts.safe_get(
+                        self._session.get, ts_url, headers=headers, timeout=SEGMENT_TIMEOUT
                     )
+            except _UNFETCHABLE as e:
+                # The URL itself is unusable, and so is every other one this
+                # playlist names the same way: stop the download rather than
+                # spend three attempts on each of a few thousand segments.
+                self._fatal = f"URL di un segmento non valido: {redact(e)}"
+                self._abort.set()
+                logger.error("Segment URL refused, aborting: %s", redact(e))
+                return None
             except Exception as e:
                 # A refused or timed-out connection under load says the same
                 # thing a 503 does, and used to be the one form of pushback the
                 # limiter never heard about.
                 self._budget.penalise()
                 logger.warning("Segment exception (attempt %d/%d): %s",
-                               attempt + 1, self.max_retry, e)
+                               attempt + 1, self.max_retry, redact(e))
             else:
-                if response.status_code == 200:
+                content = self._segment_body(response, byterange)
+                if content is not None:
                     self._budget.reward()
-                    return response.content
+                    return content
                 logger.warning("Segment HTTP %d (attempt %d/%d): ...%s", response.status_code,
-                               attempt + 1, self.max_retry, ts_url[-60:])
-                if response.status_code not in RETRIABLE_SEGMENT_STATUS:
+                               attempt + 1, self.max_retry, redact(ts_url)[-60:])
+                if response.status_code not in RETRIABLE_SEGMENT_STATUS | {200, 206}:
                     # A verdict, not congestion: nothing to back off from.
                     return None
                 self._budget.penalise()
@@ -540,18 +892,71 @@ class M3U8_Segments:
                 # segment still in flight.
                 if self._abort.is_set():
                     return None
+                if asked_for is not None:
+                    # Doing what the source asked is not a stall: tell the
+                    # watchdog, which would otherwise time this wait.
+                    self._heartbeat = time.monotonic() + asked_for
                 # The source's own number wins over our guess when it sent one.
-                time.sleep(asked_for if asked_for is not None
-                           else _segment_backoff(attempt))
+                if self._wait(asked_for if asked_for is not None
+                              else _segment_backoff(attempt)):
+                    return None
         return None
 
+    @staticmethod
+    def _segment_body(response, byterange):
+        """The segment's bytes out of *response*, or None when it is not whole.
+
+        A 200 whose body is shorter than its own Content-Length is a connection
+        that dropped mid-transfer; it used to be saved as the segment. A range
+        request answered with 200 is the whole resource, so the slice is cut
+        out of it here.
+        """
+        if response.status_code not in ((200, 206) if byterange else (200,)):
+            return None
+        content = response.content
+        declared = (getattr(response, "headers", None) or {}).get("Content-Length")
+        encoded = (getattr(response, "headers", None) or {}).get("Content-Encoding")
+        if declared and not encoded and str(declared).isdigit() and int(declared) != len(content):
+            return None
+        if byterange:
+            start, length = byterange
+            if response.status_code == 200:
+                content = content[start:start + length]
+            if len(content) != length:
+                return None
+        return content
+
     def _write_ts(self, index, content):
+        """Decrypt *content* and put it on disk as segment *index*, atomically.
+
+        Decrypted before the file is opened, and written under another name
+        until it is whole: a decryption error or a full disk used to leave
+        ``N.ts`` behind at zero or partial length, and every later check — the
+        resume, the completeness gate, the join — took a file with that name
+        for the segment.
+        """
+        data = self._decode(index, content)
+        if not data:
+            raise ValueError("segmento vuoto dopo la decifratura")
         ts_filename = os.path.join(self.temp_folder, f"{index}.ts")
-        with open(ts_filename, "wb") as ts_file:
-            if self.key and self.decryption.iv:
-                ts_file.write(self.decryption.decrypt_ts(content))
-            else:
-                ts_file.write(content)
+        staged = ts_filename + ".part"
+        try:
+            with open(staged, "wb") as ts_file:
+                ts_file.write(data)
+            os.replace(staged, ts_filename)
+        except BaseException:
+            try:
+                os.remove(staged)
+            except OSError:
+                pass
+            raise
+
+    def _have_segment(self, index) -> bool:
+        """Whether segment *index* is on disk with something in it."""
+        try:
+            return os.path.getsize(os.path.join(self.temp_folder, f"{index}.ts")) > 0
+        except OSError:
+            return False
 
     def _record_success(self):
         """One segment obtained. Breaks the failure run: the source is serving."""
@@ -574,7 +979,7 @@ class M3U8_Segments:
             self._failure_streak += 1
             streak = self._failure_streak
             lost = len(self._failed_segments)
-        logger.warning("Segment %d failed after all retries: ...%s", index, ts_url[-60:])
+        logger.warning("Segment %d failed after all retries: ...%s", index, redact(ts_url)[-60:])
 
         if streak < FAILURE_ABORT_STREAK or self._abort.is_set():
             return
@@ -592,14 +997,26 @@ class M3U8_Segments:
         ts_filename = os.path.join(self.temp_folder, f"{index}.ts")
 
         downloaded_bytes = 0
-        if not os.path.exists(ts_filename):
-            ts_content = self.get_req_ts(ts_url)
+        # A resumed segment has to have something in it: a zero-byte file left
+        # by an earlier attempt is not a segment that is present.
+        if not self._have_segment(index):
+            with _SOURCE_SLOTS:
+                ts_content = self.get_req_ts(ts_url, self._info(index).get("byterange"))
             # Empty content counts as a failure: it would otherwise write a
             # zero-byte file, which then looks like a segment that is present.
             if not ts_content:
                 self._record_failure(index, ts_url)
                 return
-            self._write_ts(index, ts_content)
+            try:
+                self._write_ts(index, ts_content)
+            except Exception as e:
+                # Bad padding, a body that is not whole AES blocks, a disk
+                # error. It used to escape into the executor, where it was
+                # logged and forgotten: the segment was in neither the failed
+                # set nor on disk, so the sequential pass never retried it.
+                logger.warning("Segment %d could not be written: %s", index, redact(e))
+                self._record_failure(index, ts_url)
+                return
             downloaded_bytes = len(ts_content)
         else:
             try:
@@ -620,6 +1037,8 @@ class M3U8_Segments:
         self._saved_count = 0
         self._failure_streak = 0
         self._abort.clear()
+        self._fatal = None
+        self._heartbeat = time.monotonic()
         bar_factory = self.progress_factory or (lambda **kw: tqdm(**kw))
         progress_counter = bar_factory(total=len(self.segments), unit="seg", desc="Downloading", phase=self.phase)
         self._bar = progress_counter
@@ -668,6 +1087,9 @@ class M3U8_Segments:
             if cancelled:
                 raise DownloadCancelledError("Download annullato dall'utente")
 
+            if self._fatal:
+                raise RuntimeError(f"Download interrotto: {self._fatal}")
+
             # Both of these used to fall through to the join, which then wrote
             # an output file out of whatever had arrived.
             if self._abort.is_set():
@@ -708,16 +1130,44 @@ class M3U8_Segments:
             return
         logger.warning("Retrying %d failed segments sequentially...", len(self._failed_segments))
         still_failed = set()
-        for index in sorted(self._failed_segments):
+        streak = 0
+        deadline = time.monotonic() + SEQUENTIAL_BUDGET
+        pending = sorted(self._failed_segments)
+        for position, index in enumerate(pending):
             if self._cancel and self._cancel.is_set():
                 raise DownloadCancelledError("Download annullato dall'utente")
-            time.sleep(0.5)
-            ts_content = self.get_req_ts(self.segments[index])
+            # Bounded, and loudly: see SEQUENTIAL_MAX_STREAK. Each segment
+            # tried here can cost three attempts and their backoff, so without
+            # a limit a source that stopped serving kept the job "downloading"
+            # for hours on its way to the same error.
+            if streak >= SEQUENTIAL_MAX_STREAK or time.monotonic() > deadline:
+                left = len(pending) - position + len(still_failed)
+                reason = (f"{streak} segmenti consecutivi falliti" if streak >= SEQUENTIAL_MAX_STREAK
+                          else f"superato il limite di {SEQUENTIAL_BUDGET // 60} minuti")
+                self._failed_segments = still_failed | set(pending[position:])
+                raise RuntimeError(
+                    f"Download interrotto: recupero sequenziale abbandonato ({reason}), "
+                    f"{left} segmenti su {len(self.segments)} ancora mancanti. "
+                    f"La fonte non li sta servendo, riprova più tardi."
+                )
+            if self._wait(0.5):
+                raise DownloadCancelledError("Download annullato dall'utente")
+            ts_content = self.get_req_ts(self.segments[index], self._info(index).get("byterange"))
+            if self._fatal:
+                raise RuntimeError(f"Download interrotto: {self._fatal}")
+            recovered = False
             if ts_content:
-                self._write_ts(index, ts_content)
+                try:
+                    self._write_ts(index, ts_content)
+                    recovered = True
+                except Exception as e:
+                    logger.warning("Segment %d could not be written: %s", index, redact(e))
+            if recovered:
+                streak = 0
                 progress_counter.update(1, bytes=len(ts_content))
                 logger.info("Segment %d recovered on retry", index)
             else:
+                streak += 1
                 still_failed.add(index)
                 logger.error("Segment %d permanently failed", index)
         self._failed_segments = still_failed
@@ -737,7 +1187,10 @@ class M3U8_Segments:
             names = []
         for name in names:
             stem, ext = os.path.splitext(name)
-            if ext == ".ts" and stem.isdigit():
+            # Present means present with content: an empty N.ts is a segment
+            # that failed in a way that still left its name behind. ("N.ts.part"
+            # never matches — its extension is ".part".)
+            if ext == ".ts" and stem.isdigit() and self._have_segment(int(stem)):
                 present.add(int(stem))
         return [i for i in range(len(self.segments)) if i not in present]
 
@@ -764,22 +1217,27 @@ class M3U8_Segments:
         )
 
     def timer(self, progress_counter, quit_event, timeout_checker):
-        start_time = time.time()
+        start_time = time.monotonic()
         last_count = 0
 
         while not quit_event.is_set():
             current_count = progress_counter.n
             if current_count != last_count:
-                start_time = time.time()
+                start_time = time.monotonic()
                 last_count = current_count
 
-            if time.time() - start_time > self.progress_timeout:
+            # Measured from the last segment *or* the last honoured Retry-After,
+            # whichever is later: a worker waiting as the source asked is not a
+            # source that has stopped answering.
+            if time.monotonic() - max(start_time, self._heartbeat) > self.progress_timeout:
                 logger.warning(f"No progress for {self.progress_timeout}s, aborting download")
                 timeout_checker()
                 quit_event.set()
                 break
 
-            time.sleep(1)
+            # Woken by quit_event rather than slept through, so the end of the
+            # parallel pass does not wait out the rest of a second.
+            quit_event.wait(1)
 
         progress_counter.refresh()
 
@@ -795,11 +1253,10 @@ class M3U8_Segments:
         # "_combined.ts" is excluded by name: it has no digits, so it used to
         # raise ValueError out of the sort key if a previous attempt left one
         # behind. Reachable now that a failed join can leave the folder in place.
-        indexed = sorted(
-            ((int(os.path.splitext(f)[0]), f) for f in os.listdir(self.temp_folder)
-             if f.endswith(".ts") and os.path.splitext(f)[0].isdigit()),
-        )
-        ts_files = [name for _, name in indexed]
+        # Exactly the playlist's segments, by index: a numbered file left over
+        # from a longer earlier attempt in the same folder is not part of this
+        # download, and listing the directory used to append it.
+        ts_files = [f"{index}.ts" for index in range(len(self.segments))]
 
         # Byte-level concatenation: TS is a continuous stream format,
         # joining at byte level lets FFmpeg's TS demuxer handle PCR/PTS
@@ -808,32 +1265,61 @@ class M3U8_Segments:
         with open(combined_ts, "wb") as out:
             for ts_file in ts_files:
                 with open(os.path.join(self.temp_folder, ts_file), "rb") as seg:
-                    out.write(seg.read())
+                    shutil.copyfileobj(seg, out)
 
         logger.info("Joining %d / %d segments...", len(ts_files), len(self.segments))
         if self.emit_join_phase and hasattr(self, '_bar') and hasattr(self._bar, 'emit_status'):
             self._bar.emit_status("joining")
         os.makedirs(os.path.dirname(os.path.abspath(output_filename)), exist_ok=True)
-        # Keyed on the extension of the file actually being written, not on a
-        # parameter: this is called both for the destination (whatever container
-        # is configured) and for the temp audio tracks (genuinely mp4), and a
-        # parameter is a third thing every call site could get wrong.
-        # movflags is mov/mp4-private — handing it to the matroska muxer is not
-        # ignored, it is fatal, and it would fail after every byte is fetched.
+
+        # FFmpeg writes beside the destination and the result is renamed over
+        # it only once it is whole. It used to write the destination itself,
+        # with overwrite: a join that failed, or a job cancelled during it, had
+        # already truncated whatever good file was there.
+        from app.core.format import staging_path, JOIN_SUFFIX
+        staged = staging_path(output_filename, JOIN_SUFFIX)
         try:
-            run_ffmpeg(ffmpeg.input(combined_ts, fflags="+genpts", avoid_negative_ts="make_zero").output(
-                ffmpeg_file_arg(output_filename),
-                **container.join_options(output_filename),
-            ).overwrite_output())
+            try:
+                self._run_join(combined_ts, staged, output_filename, reencode_audio=False)
+            except ffmpeg.Error as copy_error:
+                # The copy is refused when the audio is not AAC, or its ADTS
+                # framing is too damaged to rewrap. Re-encoding the audio is
+                # the fallback; the video is still copied.
+                logger.warning("FFmpeg refused to copy the audio (%s); re-encoding it",
+                               _ffmpeg_stderr(copy_error)[-200:])
+                self._run_join(combined_ts, staged, output_filename, reencode_audio=True)
+            if not os.path.exists(staged) or os.path.getsize(staged) == 0:
+                raise RuntimeError("FFmpeg join error: nessun file prodotto")
+            os.replace(staged, output_filename)
         except ffmpeg.Error as e:
-            stderr = e.stderr.decode(errors="replace") if e.stderr else "(no stderr)"
-            if len(stderr) > 500:
-                stderr = f"...{stderr[-300:]}"
+            stderr = _ffmpeg_stderr(e)
             logger.error("FFmpeg join stderr: %s", stderr)
             raise RuntimeError(f"FFmpeg join error: {stderr}")
+        finally:
+            try:
+                os.remove(staged)
+            except OSError:
+                pass
 
         logger.info("Cleaning temp segments...")
         shutil.rmtree(self.temp_folder, ignore_errors=True)
+
+    def _run_join(self, combined_ts, staged, output_filename, reencode_audio):
+        # Options are keyed on the extension of the file the join is *for*, not
+        # on a parameter: this is called both for the destination (whatever
+        # container is configured) and for the temp audio tracks (genuinely
+        # mp4), and a parameter is a third thing every call site could get
+        # wrong. movflags is mov/mp4-private — handing it to the matroska muxer
+        # is not ignored, it is fatal, and it would fail after every byte is
+        # fetched. The staging name keeps that extension, so FFmpeg picks the
+        # same muxer for it.
+        run_ffmpeg(
+            ffmpeg.input(combined_ts, fflags="+genpts", avoid_negative_ts="make_zero").output(
+                ffmpeg_file_arg(staged),
+                **container.join_options(output_filename, reencode_audio=reencode_audio),
+            ).overwrite_output(),
+            cancel_event=self._cancel,
+        )
 
 
 class M3U8_Downloader:
@@ -856,9 +1342,35 @@ class M3U8_Downloader:
         self.audio_track_urls = audio_track_urls or []
         self.subtitle_track_urls = subtitle_track_urls or []
 
+        # A single audio playlist handed in directly is one more track to mux,
+        # and goes down the same road as the ones collected per language. It
+        # had a merge of its own (join_audio) whose -map options were placed
+        # after the output file, where FFmpeg ignores them.
+        if self.m3u8_audio is not None and not self.audio_track_urls:
+            self.audio_track_urls = [{"url": self.m3u8_audio,
+                                      "language": self.audio_languages[0]}]
+
         self.audio_paths: list[str] = []
 
     def start(self):
+        from app.core.format import remux, staging_path, WORK_SUFFIX
+
+        # Everything below is assembled under a hidden sibling of the
+        # destination and renamed onto it at the very end. A title already in
+        # the library is therefore never touched by a download that does not
+        # complete: not by the join, not by a remux that fails, not by a
+        # cancel between the two.
+        final_path = self.video_path
+        work_path = staging_path(final_path, WORK_SUFFIX)
+        try:
+            return self._assemble(work_path, final_path, remux)
+        finally:
+            try:
+                os.remove(work_path)
+            except OSError:
+                pass
+
+    def _assemble(self, work_path, final_path, remux):
         video_temp = os.path.join(self.temp_dir, "video")
         video_m3u8 = M3U8_Segments(self.m3u8_url, self.key,
                                     temp_dir=video_temp,
@@ -870,7 +1382,7 @@ class M3U8_Downloader:
         video_m3u8.get_info()
         video_m3u8.download_ts()
         bar = getattr(video_m3u8, "_bar", None)
-        video_m3u8.join(self.video_path)
+        video_m3u8.join(work_path)
 
         if self.audio_track_urls:
             for i, track in enumerate(self.audio_track_urls):
@@ -901,8 +1413,6 @@ class M3U8_Downloader:
         # It is now also *not* emitted when the only extra content is subtitles
         # and they are configured to stay outside the container: there is no
         # merge to announce then, only a move.
-        from app.core.format import remux
-
         subtitle_mode = container.subtitle_mode()
         subtitle_tracks = self._downloaded_subtitles()
         embedded = subtitle_tracks if subtitle_mode == container.EMBED else []
@@ -910,10 +1420,11 @@ class M3U8_Downloader:
         if self.audio_paths or embedded:
             if bar and hasattr(bar, "emit_status"):
                 bar.emit_status("merging")
-            self.video_path = remux(
-                self.video_path,
+            remux(
+                work_path,
                 audio_tracks=self.audio_paths,
                 subtitle_tracks=embedded,
+                cancel_event=self.cancel_event,
             )
             for sub in embedded:
                 try:
@@ -921,26 +1432,14 @@ class M3U8_Downloader:
                     logger.info("Cleaned up subtitle: %s", sub["path"])
                 except OSError:
                     pass
-        elif self.m3u8_audio is not None:
-            if bar and hasattr(bar, "emit_status"):
-                bar.emit_status("audio")
 
-            audio_temp = os.path.join(self.temp_dir, "audio")
-            audio_m3u8 = M3U8_Segments(self.m3u8_audio, self.key,
-                                        temp_dir=audio_temp,
-                                        progress_factory=self.progress_factory,
-                                        referer=self.referer,
-                                        cancel_event=self.cancel_event,
-                                        phase="audio",
-                                        emit_join_phase=False)
-            logger.info("Downloading audio track...")
-            audio_m3u8.get_info()
-            audio_m3u8.download_ts()
-            audio_path = os.path.join(self.temp_dir, "_audio_tmp.mp4")
-            audio_m3u8.join(audio_path)
-            if bar and hasattr(bar, "emit_status"):
-                bar.emit_status("merging")
-            self.join_audio()
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise DownloadCancelledError("Download annullato dall'utente")
+
+        # The one moment the library changes: a complete file takes the place
+        # of whatever was there, atomically.
+        os.replace(work_path, final_path)
+        self.video_path = final_path
 
         if subtitle_mode == container.EXTERNAL:
             self._place_subtitles_beside_video(subtitle_tracks)
@@ -1010,61 +1509,85 @@ class M3U8_Downloader:
             except OSError as exc:
                 logger.warning("Could not place subtitle %s: %s", target, exc)
 
-    def join_audio(self):
-        # splitext rather than a substring replace: the destination is not
-        # necessarily .mp4 any more, and replace() would have returned the path
-        # unchanged, handing FFmpeg the same file as both input and output.
-        stem, ext = os.path.splitext(self.video_path)
-        merged_path = stem + "_merged" + ext
-        audio_path = os.path.join(self.temp_dir, "_audio_tmp.mp4")
-        try:
-            run_ffmpeg(
-                ffmpeg
-                .output(
-                    ffmpeg.input(ffmpeg_file_arg(self.video_path)),
-                    ffmpeg.input(audio_path),
-                    ffmpeg_file_arg(merged_path),
-                    vcodec="copy",
-                    acodec="copy",
-                    loglevel="quiet",
-                )
-                .global_args("-map", "0:v:0", "-map", "1:a:0", "-shortest", "-strict", "experimental")
-                .overwrite_output()
-            )
-            logger.info("Audio merge completed.")
-        except ffmpeg.Error as e:
-            raise RuntimeError(f"FFmpeg audio merge error: {e}")
-        finally:
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
-
-        os.replace(merged_path, self.video_path)
+_UNFETCHABLE = (
+    hosts.UnsafeURLError,
+    requests.exceptions.MissingSchema,
+    requests.exceptions.InvalidSchema,
+    requests.exceptions.InvalidURL,
+)
 
 
-def _fetch_text(url):
-    response = requests.get(url, timeout=15)
+def _ffmpeg_stderr(error) -> str:
+    stderr = error.stderr.decode(errors="replace") if error.stderr else "(no stderr)"
+    if len(stderr) > 500:
+        stderr = f"...{stderr[-300:]}"
+    return stderr
+
+
+def _get_playlist(url, referer=None):
+    """One playlist request outside a download's own session.
+
+    These went out as a bare ``requests.get(url)``: no user-agent, no referer
+    — which the video host checks, so they were the requests most likely to be
+    refused — and no retry, so one flap during language detection or subtitle
+    discovery failed what a second attempt would have answered. The host is
+    validated like every other URL a playlist can name.
+    """
+    headers = {"user-agent": get_headers()}
+    if referer:
+        headers["referer"] = referer
+    return with_retry(lambda: hosts.safe_get(requests.get, url, headers=headers, timeout=15),
+                      what="playlist")
+
+
+def _fetch_text(url, referer=None):
+    response = _get_playlist(url, referer)
     if response.ok:
         return response.text
-    raise RuntimeError(f"Failed to fetch {url}: HTTP {response.status_code}")
+    raise RuntimeError(f"Failed to fetch {redact(url)}: HTTP {response.status_code}")
 
 
-def _fetch_text_with_b1_fallback(url):
-    response = requests.get(url, timeout=15)
+def _fetch_text_with_b1_fallback(url, referer=None):
+    response = _get_playlist(url, referer)
     if response.status_code == 403:
-        logger.warning("M3U8 fetch returned 403, retrying with ?b=1: %s", url)
+        logger.warning("M3U8 fetch returned 403, retrying with ?b=1: %s", redact(url))
         b1_url = url + ("&b=1" if "?" in url else "?b=1")
-        response = requests.get(b1_url, timeout=15)
+        response = _get_playlist(b1_url, referer)
     if response.ok:
         return response.text
-    raise RuntimeError(f"Failed to fetch {url}: HTTP {response.status_code}")
+    raise RuntimeError(f"Failed to fetch {redact(url)}: HTTP {response.status_code}")
 
 
 def fetch_master_languages(m3u8_url: str, referer: str) -> dict:
     """Fetch a master M3U8 playlist and return available audio/subtitle language codes."""
-    text = _fetch_text_with_b1_fallback(m3u8_url)
+    text = _fetch_text_with_b1_fallback(m3u8_url, referer=referer)
     parser = M3U8_Parser()
-    parser.parse_data(text)
+    parser.parse_data(text, base_uri=m3u8_url)
     return parser.available_languages()
+
+
+class DownloadResult(str):
+    """The path of a finished download, plus what it had to do without.
+
+    A ``str`` so every caller that treats the result as the output path —
+    ``job.output_path``, the "done" event, the library registry — keeps
+    working untouched. The two lists are optional reading:
+
+    ``missing_tracks``  requested tracks that are not in the file, as
+                        ``audio:<lang>`` / ``subtitle:<lang>``. The download
+                        used to finish as a plain success without them.
+    ``warnings``        things that went wrong after the file was complete and
+                        did not invalidate it — today, a failed conversion.
+    """
+
+    missing_tracks: list[str]
+    warnings: list[str]
+
+    def __new__(cls, path, missing_tracks=None, warnings=None):
+        self = super().__new__(cls, path)
+        self.missing_tracks = list(missing_tracks or [])
+        self.warnings = list(warnings or [])
+        return self
 
 
 def download_m3u8(**kwargs):
@@ -1085,20 +1608,36 @@ def download_m3u8(**kwargs):
     body without restating its signature.
     """
     destination = kwargs.get("output_filename") or os.path.join("videos", "output.mp4")
-    lock = _destination_lock(destination)
-    if not lock.acquire(blocking=False):
-        logger.info("Waiting for another download to finish writing %s", destination)
-        lock.acquire()
+    # Tracks the caller already knows it could not find (an audio language the
+    # source does not offer, on a non-strict download). Not the body's to know.
+    missing_tracks = list(kwargs.pop("missing_tracks", None) or [])
+    held = _acquire_destination(destination, kwargs.get("cancel_event"))
     try:
         from app.config import get_settings
-        from app.core.transcode import convert_video
+        from app.core.transcode import convert_video, TranscodeError
         settings = dict(get_settings())
         result = _download_m3u8(**kwargs)
+        missing_tracks += [t for t in getattr(result, "missing_tracks", []) if t not in missing_tracks]
+        if missing_tracks:
+            logger.warning("Download finished without the requested track(s): %s",
+                           ", ".join(missing_tracks))
+        path = str(result or destination)
         if settings.get("video_conversion", "copy") == "copy":
-            return result
-        return convert_video(result or destination, settings, kwargs.get("progress_factory"), kwargs.get("cancel_event"))
+            return DownloadResult(path, missing_tracks) if result else result
+        try:
+            path = convert_video(path, settings, kwargs.get("progress_factory"), kwargs.get("cancel_event"))
+        except TranscodeError as exc:
+            # The download is complete and the original is intact — convert_video
+            # only ever replaces it with a finished encode. Raising here made
+            # the job fail, and a failed job is retried from the first segment:
+            # hours of fetching repeated to arrive at the same encoder error.
+            # The file is delivered as it was downloaded, with the reason.
+            logger.warning("Conversion failed, keeping the downloaded file as it is: %s", exc)
+            return DownloadResult(path, missing_tracks,
+                                  [f"Conversione non riuscita, file originale conservato: {exc}"])
+        return DownloadResult(path, missing_tracks)
     finally:
-        lock.release()
+        _release_destination(held)
 
 
 def _download_m3u8(
@@ -1141,56 +1680,72 @@ def _download_m3u8(
     # up if the download is cancelled or fails mid-way.
     created_subtitle_files: list[str] = []
 
+    # Languages whose subtitle file made it into temp. Whatever was asked for
+    # and is not here by the time the video starts is reported on the result.
+    subtitles_done: set[str] = set()
+
+    def _fetch_subtitles(parser, base_url):
+        from app.core.format import download_subtitle_tracks
+        created = download_subtitle_tracks(parser, subtitle_languages, video_dir, video_stem,
+                                           temp_dir=temp_dir, referer=referer, base_url=base_url)
+        created_subtitle_files.extend(t["path"] for t in created)
+        subtitles_done.update(t["language"] for t in created)
+
     if m3u8_playlist is not None:
         parse_class_m3u8 = M3U8_Parser()
-        content = m3u8_playlist if "#EXTM3U" in m3u8_playlist else _fetch_text(m3u8_playlist)
-        parse_class_m3u8.parse_data(content)
+        inline = "#EXTM3U" in m3u8_playlist
+        content = m3u8_playlist if inline else _fetch_text(m3u8_playlist, referer=referer)
+        playlist_base = None if inline else m3u8_playlist
+        parse_class_m3u8.parse_data(content, base_uri=playlist_base)
 
         if DOWNLOAD_DEFAULT_LANGUAGE:
             m3u8_audio = parse_class_m3u8.get_track_audio("Italian")
 
         if m3u8_index is None:
             m3u8_index = parse_class_m3u8.get_best_quality()
-            if not m3u8_index or "https" not in m3u8_index:
+            # The scheme, not the substring: "https" appears in plenty of
+            # relative paths and query strings that are not https URLs.
+            if not m3u8_index or urlparse(m3u8_index).scheme != "https":
                 raise RuntimeError("Cannot find a valid M3U8 index URL")
 
         langs = parse_class_m3u8.available_languages()
         logger.info("Available languages — audio: %s | subtitles: %s", langs["audio"], langs["subtitles"])
 
         if DOWNLOAD_SUB and subtitle_languages:
-            from app.core.format import download_subtitle_tracks
-            created = download_subtitle_tracks(parse_class_m3u8, subtitle_languages, video_dir, video_stem, temp_dir=temp_dir)
-            created_subtitle_files.extend(t["path"] for t in created)
+            _fetch_subtitles(parse_class_m3u8, playlist_base)
 
     elif m3u8_index is not None and DOWNLOAD_SUB and subtitle_languages:
         # m3u8_index is a master playlist URL — parse it to extract subtitles
         try:
-            from app.core.format import download_subtitle_tracks
-            master_content = _fetch_text_with_b1_fallback(m3u8_index)
+            master_content = _fetch_text_with_b1_fallback(m3u8_index, referer=referer)
             parse_master = M3U8_Parser()
-            parse_master.parse_data(master_content)
+            parse_master.parse_data(master_content, base_uri=m3u8_index)
             langs = parse_master.available_languages()
             logger.info("Available languages — audio: %s | subtitles: %s", langs["audio"], langs["subtitles"])
-            created = download_subtitle_tracks(parse_master, subtitle_languages, video_dir, video_stem, temp_dir=temp_dir)
-            created_subtitle_files.extend(t["path"] for t in created)
+            _fetch_subtitles(parse_master, m3u8_index)
         except Exception as e:
-            logger.warning("Could not parse subtitles from master playlist: %s", e)
+            # Still not fatal — the video is what was asked for first — but no
+            # longer silent: every subtitle requested is reported as missing.
+            logger.warning("Could not parse subtitles from master playlist: %s", redact(e))
 
     if m3u8_subtitle is not None:
         parse_sub = M3U8_Parser()
-        content_sub = m3u8_subtitle if "#EXTM3U" in m3u8_subtitle else _fetch_text(m3u8_subtitle)
-        parse_sub.parse_data(content_sub)
+        inline_sub = "#EXTM3U" in m3u8_subtitle
+        content_sub = m3u8_subtitle if inline_sub else _fetch_text(m3u8_subtitle, referer=referer)
+        subtitle_base = None if inline_sub else m3u8_subtitle
+        parse_sub.parse_data(content_sub, base_uri=subtitle_base)
         if DOWNLOAD_SUB and subtitle_languages:
-            from app.core.format import download_subtitle_tracks
-            created = download_subtitle_tracks(parse_sub, subtitle_languages, video_dir, video_stem, temp_dir=temp_dir)
-            created_subtitle_files.extend(t["path"] for t in created)
+            _fetch_subtitles(parse_sub, subtitle_base)
+
+    missing_tracks = [f"subtitle:{lang}" for lang in subtitle_languages
+                      if DOWNLOAD_SUB and lang not in subtitles_done]
 
     os.makedirs(os.path.dirname(output_filename) or ".", exist_ok=True)
 
     from app.core import format as format_module
 
     try:
-        return M3U8_Downloader(
+        final_path = M3U8_Downloader(
             m3u8_index,
             m3u8_audio,
             key=key,
@@ -1204,27 +1759,35 @@ def _download_m3u8(
             audio_track_urls=audio_track_urls,
             subtitle_track_urls=subtitle_track_urls,
         ).start()
+        return DownloadResult(final_path or output_filename, missing_tracks)
     except (DownloadCancelledError, Exception) as exc:
-        # Remove subtitle files already written, wherever they got to: they are
-        # downloaded into temp, but the external mode moves them beside the
-        # video, and a failure can land on either side of that move.
+        # Remove the subtitle files this attempt downloaded. They are still in
+        # temp: the move beside the video happens only after the video itself
+        # has been published, and nothing after that raises.
         for path in created_subtitle_files:
-            for candidate in (path, os.path.join(video_dir, os.path.basename(path))):
-                try:
-                    os.remove(candidate)
-                    logger.info("Removed partial subtitle: %s", candidate)
-                except OSError:
-                    pass
-        # Remove a partial output in any container it could have been written
-        # in — the setting can have changed between the attempt that failed and
-        # this one — plus the staging file a remux killed mid-write leaves.
+            try:
+                os.remove(path)
+                logger.info("Removed partial subtitle: %s", path)
+            except OSError:
+                pass
+        # Remove what this attempt was assembling — and only that. The
+        # destination itself is never deleted here, in any container: until the
+        # final rename it is not this download's file but whatever was already
+        # in the library, and deleting it on failure is how a failed
+        # re-download used to cost the copy that worked. (A file a *job*
+        # created and wants gone is app.jobs' decision, which knows whether it
+        # existed beforehand.)
         stem = os.path.splitext(output_filename)[0]
-        leftovers = dict.fromkeys([
-            output_filename,
-            *(stem + ext for ext in container.KNOWN_EXTENSIONS),
-            *(format_module.staging_path(stem + ext) for ext in container.KNOWN_EXTENSIONS),
-        ])
-        for candidate in leftovers:
+        leftovers = []
+        for ext in container.KNOWN_EXTENSIONS:
+            work = format_module.staging_path(stem + ext, format_module.WORK_SUFFIX)
+            leftovers += [
+                work,
+                format_module.staging_path(work, format_module.JOIN_SUFFIX),
+                format_module.staging_path(work),
+                format_module.staging_path(stem + ext),
+            ]
+        for candidate in dict.fromkeys(leftovers):
             try:
                 os.remove(candidate)
                 logger.info("Removed partial output: %s", candidate)

@@ -10,9 +10,8 @@ which is what keeps "the agent" from becoming a back door around the
 permission model — and it is the only honest answer to "who asked for this?"
 when a request lands in the queue.
 
-In open mode there are no accounts, so the agent is the same implicit user as
-a browser. A token minted in open mode does not survive a switch to Jellyfin:
-it has no owner there, and is refused until someone regenerates it.
+The panel is single-user, so the agent is the same local user as the browser
+(app/auth/deps.py ``local_user()``).
 """
 
 import hashlib
@@ -21,7 +20,7 @@ import secrets
 
 from app import db
 from app.auth import models
-from app.auth.deps import OPEN_MODE_USER
+from app.auth import deps
 
 SETTING_TOKEN_HASH = "mcp_token_sha256"
 SETTING_TOKEN_OWNER = "mcp_token_owner"
@@ -34,7 +33,7 @@ def _hash(token: str) -> str:
 def generate_token(owner: models.User) -> str:
     """Replace the token, returning the only copy of the new one."""
     token = secrets.token_urlsafe(32)
-    owner_id = "" if owner is OPEN_MODE_USER else str(owner.id)
+    owner_id = "" if deps.is_local_user(owner) else str(owner.id)
     with db.tx() as conn:
         models.set_setting(SETTING_TOKEN_HASH, _hash(token), conn=conn)
         models.set_setting(SETTING_TOKEN_OWNER, owner_id, conn=conn)
@@ -54,7 +53,7 @@ def has_token() -> bool:
 def token_owner() -> models.User | None:
     """The user the agent acts as, or None when nobody valid holds the token."""
     if models.runtime_open_mode():
-        return OPEN_MODE_USER
+        return deps.local_user()
     owner_id = models.get_setting(SETTING_TOKEN_OWNER) or ""
     if not owner_id.isdigit():
         return None

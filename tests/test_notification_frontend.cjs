@@ -3,11 +3,27 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {test} = require('node:test');
 const source = fs.readFileSync('app/static/panel.js', 'utf8');
+// The real translations, in Italian, the way the other frontend tests load them.
+function italian() {
+  const i18n = vm.createContext({
+    window: {}, document: {addEventListener() {}},
+    localStorage: {getItem: () => 'it'}, navigator: {language: 'it'},
+  });
+  vm.runInContext(fs.readFileSync('app/static/i18n.js', 'utf8'), i18n);
+  return i18n.window.t;
+}
 function setup(api, confirm = async () => true) {
   const nodes = Object.fromEntries(['notif-badge','notif-list','notif-actions','notif-panel'].map(id => [id,{style:{display:'block'},innerHTML:'',textContent:''}]));
   const button = {disabled:false};
+  // Minimal browser globals panel.js touches at load time: the language-change
+  // listener on window and the update-badge poll. The poll is recorded, never run.
+  const intervals = [];
   const context = vm.createContext({api, scConfirm:confirm,
-    document:{getElementById:id=>nodes[id], querySelectorAll:()=>[button], addEventListener:()=>{}},
+    window:{addEventListener:()=>{}, t:italian()},
+    setInterval:(fn, ms)=>{intervals.push({fn, ms}); return intervals.length;},
+    clearInterval:()=>{},
+    document:{getElementById:id=>nodes[id], querySelectorAll:()=>[button], querySelector:()=>null,
+      addEventListener:()=>{}, visibilityState:'visible'},
     registerActions:()=>{}, showToast:()=>{}, errText:e=>e.message,
     NOTIFICATION_ICONS:{}, escapeHtml:v=>v, fmtDate:v=>v,
   });

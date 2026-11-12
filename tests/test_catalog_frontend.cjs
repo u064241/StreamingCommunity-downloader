@@ -3,11 +3,21 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
+// The real translations, in Italian, the way the other frontend tests load them.
+function italian() {
+  const i18n = vm.createContext({
+    window: {}, document: {addEventListener() {}},
+    localStorage: {getItem: () => 'it'}, navigator: {language: 'it'},
+  });
+  vm.runInContext(fs.readFileSync('app/static/i18n.js', 'utf8'), i18n);
+  return i18n.window.t;
+}
+
 function create() {
   const elements = new Map();
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
-      value: '', innerHTML: '', textContent: '', style: {}, hidden: false,
+      value: '', innerHTML: '', textContent: '', style: {}, hidden: false, dataset: {},
       classList: {toggle() {}}, querySelectorAll: () => [],
       appendChild() {}, querySelector: () => element('mock-rail'),
     });
@@ -27,6 +37,7 @@ function create() {
     ensureDomain: async () => {}, loadRequestStatuses() {}, showToast() {},
     escapeHtml: String, errText: e => e.message, registerActions() {},
     registerPageHash: (name, spec) => {hash = spec;}, syncHash() {},
+    t: italian(),
   });
   vm.runInContext(fs.readFileSync('app/static/page-search.js', 'utf8'), context);
   context.renderResultCards = items => renders.push(items);

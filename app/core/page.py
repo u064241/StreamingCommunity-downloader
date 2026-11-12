@@ -1,10 +1,12 @@
 import json
 import logging
 import threading
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
+from app.core import source_budget
 from app.core.headers import get_headers
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,26 @@ def site_url(domain: str, path: str = "") -> str:
     return f"https://{domain}{locale(domain)}{path}"
 
 
+def _budgeted_get(url: str, **kwargs) -> requests.Response:
+    """One GET to the source, paid for out of the hourly budget.
+
+    Raises ``source_budget.SourceUnavailable`` without sending anything while
+    the source is in backoff or the budget is spent. A 403, 429 or 503 answer
+    starts (or extends) the backoff.
+    """
+    source_budget.acquire(urlparse(url).path or "/")
+    response = requests.get(url, **kwargs)
+    source_budget.observe(getattr(response, "status_code", None), urlparse(url).path)
+    return response
+
+
+def _props(response, host: str | None) -> dict:
+    """The page's props, noting the site version it was rendered under."""
+    payload = _data_page(response.text)
+    source_budget.note_version(host, payload.get("version"))
+    return payload.get("props") or {}
+
+
 def get_localized(domain: str, path: str, **kwargs) -> requests.Response:
     """GET a page of the source, with or without the locale segment.
 
@@ -68,11 +90,11 @@ def get_localized(domain: str, path: str, **kwargs) -> requests.Response:
     answers 404 both ways, and must not flip the host.
     """
     current = locale(domain)
-    response = requests.get(f"https://{domain}{current}{path}", **kwargs)
+    response = _budgeted_get(f"https://{domain}{current}{path}", **kwargs)
     if getattr(response, "status_code", None) != 404:
         return response
     other = "" if current else _LOCALE
-    retry = requests.get(f"https://{domain}{other}{path}", **kwargs)
+    retry = _budgeted_get(f"https://{domain}{other}{path}", **kwargs)
     if getattr(retry, "status_code", None) == 404:
         return response
     with _locale_lock:
@@ -88,11 +110,11 @@ def fetch_page_props(url: str, *, params: dict | None = None, timeout: int = 10)
     One request, no session: the payload is in the HTML the source hands to any
     visitor. Shared by the search and by the start page's shelves.
     """
-    response = requests.get(
+    response = _budgeted_get(
         url, params=params, headers={"user-agent": get_headers()}, timeout=timeout,
     )
     response.raise_for_status()
-    return _data_page(response.text).get("props") or {}
+    return _props(response, urlparse(url).hostname)
 
 
 def fetch_site_props(domain: str, path: str = "", *, params: dict | None = None,
@@ -102,7 +124,7 @@ def fetch_site_props(domain: str, path: str = "", *, params: dict | None = None,
         domain, path, params=params, headers={"user-agent": get_headers()}, timeout=timeout,
     )
     response.raise_for_status()
-    return _data_page(response.text).get("props") or {}
+    return _props(response, domain)
 
 
 def get_domain_version(domain: str) -> str | None:
@@ -115,6 +137,10 @@ def get_domain_version(domain: str) -> str | None:
     them, because an administrator typing a host in is making a decision and a
     page we do not control is not.
     """
+    # Deliberately outside the budget and the backoff: domain recovery and the
+    # domain settings use this to decide whether a host is the source at all,
+    # and a pause must not make a live host look dead. It does feed the version
+    # check below, which costs nothing extra.
     site_url = f"https://{domain}"
     try:
         response = requests.get(site_url, headers={"user-agent": get_headers()}, timeout=10)
@@ -123,7 +149,9 @@ def get_domain_version(domain: str) -> str | None:
         raise RuntimeError(f"Cannot reach {domain}: {e}")
 
     try:
-        return _data_page(response.text).get("version", "")
+        found = _data_page(response.text).get("version", "")
+        source_budget.note_version(domain, found)
+        return found
     except LookupError:
         return ""
     except Exception as e:
@@ -180,6 +208,33 @@ def normalize_title(t: dict) -> dict | None:
     }
 
 
+# A search answer ten minutes old is as good as a new one: titles are added a
+# few times a day, and nobody repeats a query to see a minute's difference.
+SEARCH_TTL = 10 * 60
+_search_cache = source_budget.SourceCache("search", SEARCH_TTL, max_entries=256)
+
+
+def _search_key(title_search: str, domain: str, page: int, media_type: str | None) -> tuple:
+    return (domain, " ".join(title_search.split()).casefold(), page, media_type)
+
+
+def search_info(title_search: str, domain: str, *, page: int = 1,
+                media_type: str | None = None) -> dict | None:
+    """When the cached answer to this search was fetched, and whether it is stale.
+
+    Never does any I/O; None when nothing is cached.
+    """
+    entry = _search_cache.entry(_search_key(title_search, domain, page, media_type))
+    if entry is None:
+        return None
+    return {"updated_at": entry.fetched_at,
+            "fresh": _search_cache.is_fresh(entry, domain)}
+
+
+def clear_search_cache() -> None:
+    _search_cache.clear()
+
+
 def search(title_search: str, domain: str, *, page: int = 1,
            media_type: str | None = None) -> list[dict]:
     """Search the source.
@@ -199,15 +254,26 @@ def search(title_search: str, domain: str, *, page: int = 1,
     ``page`` and ``media_type`` are keyword-only so that ``domain`` stays the
     second positional argument and out of reach of a caller that fumbles the
     order — it is the one argument that must never come from a request.
+
+    Answers are cached for ``SEARCH_TTL`` (with jitter) per query, page and
+    type; past that, an expired answer is still served while the source is in
+    backoff or the hourly budget is spent (see ``source_budget``).
     """
-    params = {"q": title_search}
-    if page > 1:
-        params["page"] = page
+    def load():
+        params = {"q": title_search}
+        if page > 1:
+            params["page"] = page
 
-    props = fetch_site_props(domain, "/search", params=params)
-    titles = props.get("titles") or []
+        props = fetch_site_props(domain, "/search", params=params)
+        source_budget.note_fields("search", props)
+        titles = props.get("titles") or []
 
-    if media_type:
-        titles = [t for t in titles if t.get("type") == media_type]
+        if media_type:
+            titles = [t for t in titles if t.get("type") == media_type]
 
-    return [t for t in (normalize_title(raw) for raw in titles[:_RESULT_CAP]) if t]
+        return [t for t in (normalize_title(raw) for raw in titles[:_RESULT_CAP]) if t]
+
+    results, _ = source_budget.get_or_load(
+        _search_cache, _search_key(title_search, domain, page, media_type), load,
+        host=domain, label="search")
+    return list(results)

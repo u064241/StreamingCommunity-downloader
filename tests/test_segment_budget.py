@@ -87,7 +87,10 @@ def _fresh_budget():
 def workers(monkeypatch):
     """Set max_segment_workers, which now sizes the panel and not a download."""
     def _set(count):
-        monkeypatch.setattr(m3u8, "get_settings", lambda: {"max_segment_workers": count})
+        # The global source cap (re-read at each download) at its ceiling, so
+        # the per-download limiter is what these tests measure.
+        monkeypatch.setattr(m3u8, "get_settings", lambda: {"max_segment_workers": count,
+                                                          "source_max_connections": 4})
     return _set
 
 
@@ -102,7 +105,7 @@ def _segments(tmp_path, name="a", count=8, referer=None):
 
 # ── the ceiling is shared ─────────────────────────────────────────────────────
 
-def test_three_downloads_do_not_open_three_pools(tmp_path, workers, monkeypatch):
+def test_three_downloads_do_not_open_three_pools(tmp_path, workers, monkeypatch, public_dns):
     """The first defect. Concurrent downloads used to multiply the setting.
 
     Three downloads at four workers each opened twelve sockets; the source only
@@ -144,7 +147,7 @@ def test_three_downloads_do_not_open_three_pools(tmp_path, workers, monkeypatch)
         assert seg._missing_segments() == []
 
 
-def test_one_download_still_gets_the_whole_ceiling(tmp_path, workers, monkeypatch):
+def test_one_download_still_gets_the_whole_ceiling(tmp_path, workers, monkeypatch, public_dns):
     """Bounding the total must not slow the ordinary case to a crawl.
 
     A single download against a source that is serving is the only claimant, so
@@ -199,7 +202,7 @@ def test_lowering_the_ceiling_lowers_the_allowance():
     assert limiter.allowance == 4
 
 
-def test_a_waiting_thread_does_not_hold_a_slot(tmp_path, workers, monkeypatch):
+def test_a_waiting_thread_does_not_hold_a_slot(tmp_path, workers, monkeypatch, public_dns):
     """Backoff must free the slot.
 
     A thread sleeping out a 503 is not using the source; holding its slot
@@ -301,7 +304,7 @@ def test_the_climb_stops_at_the_ceiling():
     assert limiter.allowance == 4
 
 
-def test_a_503_teaches_the_limiter(tmp_path, workers, monkeypatch):
+def test_a_503_teaches_the_limiter(tmp_path, workers, monkeypatch, public_dns):
     """The wiring: pushback seen by get_req_ts has to reach the limiter."""
     workers(16)
     monkeypatch.setattr(m3u8.time, "sleep", lambda s: None)
@@ -314,7 +317,7 @@ def test_a_503_teaches_the_limiter(tmp_path, workers, monkeypatch):
     assert seg._budget.allowance < 16
 
 
-def test_a_verdict_teaches_it_nothing(tmp_path, workers, monkeypatch):
+def test_a_verdict_teaches_it_nothing(tmp_path, workers, monkeypatch, public_dns):
     """A 404 is not congestion. Narrowing on one would punish the panel for a
     segment the source was never going to serve at any rate."""
     workers(16)
@@ -327,7 +330,7 @@ def test_a_verdict_teaches_it_nothing(tmp_path, workers, monkeypatch):
     assert seg._budget.allowance == 16
 
 
-def test_a_refused_connection_counts_as_pushback(tmp_path, workers, monkeypatch):
+def test_a_refused_connection_counts_as_pushback(tmp_path, workers, monkeypatch, public_dns):
     """Under load the edge stops answering rather than answering 503, and that
     was the one form of pushback the limiter would never have heard about."""
     workers(16)
@@ -344,7 +347,7 @@ def test_a_refused_connection_counts_as_pushback(tmp_path, workers, monkeypatch)
     assert seg._budget.allowance < 16
 
 
-def test_in_flight_never_outruns_a_shrunk_allowance(tmp_path, workers, monkeypatch):
+def test_in_flight_never_outruns_a_shrunk_allowance(tmp_path, workers, monkeypatch, public_dns):
     """The point of the whole thing: once the source pushes back, fewer
     requests are actually on the wire."""
     workers(8)
@@ -379,7 +382,7 @@ def test_in_flight_never_outruns_a_shrunk_allowance(tmp_path, workers, monkeypat
 
 # ── Retry-After ───────────────────────────────────────────────────────────────
 
-def test_the_source_names_its_own_wait(tmp_path, workers, monkeypatch):
+def test_the_source_names_its_own_wait(tmp_path, workers, monkeypatch, public_dns):
     """Guessing at a backoff is only for a source that did not say."""
     workers(4)
     slept = []
@@ -394,7 +397,7 @@ def test_the_source_names_its_own_wait(tmp_path, workers, monkeypatch):
     assert slept == [7.0]
 
 
-def test_an_outlandish_wait_is_capped(tmp_path, workers, monkeypatch):
+def test_an_outlandish_wait_is_capped(tmp_path, workers, monkeypatch, public_dns):
     """An hour is not a retry, it is a stalled worker. The sequential pass is
     the better place to arrive late."""
     workers(4)
@@ -410,7 +413,7 @@ def test_an_outlandish_wait_is_capped(tmp_path, workers, monkeypatch):
     assert slept == [m3u8.MAX_RETRY_AFTER]
 
 
-def test_an_http_date_falls_back_to_the_guess(tmp_path, workers, monkeypatch):
+def test_an_http_date_falls_back_to_the_guess(tmp_path, workers, monkeypatch, public_dns):
     """The date form needs a clock both ends agree on, so it is not read."""
     workers(4)
     slept = []
@@ -429,7 +432,7 @@ def test_an_http_date_falls_back_to_the_guess(tmp_path, workers, monkeypatch):
 
 # ── the session ───────────────────────────────────────────────────────────────
 
-def test_every_segment_rides_one_connection(tmp_path, workers, monkeypatch):
+def test_every_segment_rides_one_connection(tmp_path, workers, monkeypatch, public_dns):
     """The DNS half of the bug.
 
     A bare requests.get resolves the host again for every segment. One session
@@ -464,7 +467,7 @@ def test_the_pool_is_sized_for_the_workers(workers):
     assert adapter.max_retries.total == 0
 
 
-def test_a_segment_carries_the_same_agent_every_time(tmp_path, workers, monkeypatch):
+def test_a_segment_carries_the_same_agent_every_time(tmp_path, workers, monkeypatch, public_dns):
     """get_headers() picks a new agent per call, so a single film used to send
     thousands of different ones down what is now one connection."""
     workers(4)
@@ -481,7 +484,7 @@ def test_a_segment_carries_the_same_agent_every_time(tmp_path, workers, monkeypa
     assert len(agents) == 1
 
 
-def test_a_segment_carries_the_referer(tmp_path, workers, monkeypatch):
+def test_a_segment_carries_the_referer(tmp_path, workers, monkeypatch, public_dns):
     """Segments were the one fetch that dropped it — _headers() existed and
     was used for the playlists only."""
     workers(4)
@@ -499,7 +502,7 @@ def test_a_segment_carries_the_referer(tmp_path, workers, monkeypatch):
     assert seen["referer"] == "https://vixcloud.co/embed/1"
 
 
-def test_a_segment_fetch_carries_both_timeouts(tmp_path, workers, monkeypatch):
+def test_a_segment_fetch_carries_both_timeouts(tmp_path, workers, monkeypatch, public_dns):
     """A stalled read blocks a worker as thoroughly as a stalled connect, and
     only one of the two used to be bounded separately."""
     workers(4)

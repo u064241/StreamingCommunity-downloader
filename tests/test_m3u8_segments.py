@@ -57,7 +57,8 @@ def no_sleep(monkeypatch):
 
 
 @pytest.fixture
-def segment_server(monkeypatch):
+def segment_server(monkeypatch, public_dns):
+    # public_dns: the SSRF check resolves cdn.example.test before the faked GET.
     """Answer every segment request from a queue, and count the calls."""
     calls: list[str] = []
     replies: list = []
@@ -300,7 +301,7 @@ def test_a_dead_source_gives_up_early(tmp_path, segment_server, no_sleep):
     assert len(calls) < 1000 * seg.max_retry
 
 
-def test_a_source_that_only_throttles_is_not_written_off(tmp_path, monkeypatch, no_sleep):
+def test_a_source_that_only_throttles_is_not_written_off(tmp_path, monkeypatch, no_sleep, public_dns):
     """The regression that mattered, at the scale it was reported: 1525 segments
     of which 84 were refused on the first pass.
 

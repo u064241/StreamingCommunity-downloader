@@ -7,28 +7,27 @@ same route handlers the browser uses.
 """
 
 import asyncio
+import dataclasses
 import json
 
 import httpx
 import pytest
 
 from app import config
-from app.auth import models
+from app.auth import deps, models
 from app.auth.deps import OPEN_MODE_USER
 from app.auth.permissions import Permission
-from app.core import tv
 from app.mcp import auth as mcp_auth, server as mcp_http
 from app.requests import models as request_models
-from app.watches import models as watch_models
-from tests.conftest import enable_open_mode, make_user, session_for
+from tests.conftest import enable_open_mode, session_for
 
 
 def _enable(on: bool = True):
     config.save_settings({**config.get_settings(), "mcp_enabled": on})
 
 
-def _jellyfin_mode():
-    models.set_setting(models.SETTING_AUTH_MODE, "jellyfin")
+def _local_row_id() -> int:
+    return deps.local_user().id
 
 
 def _send(token: str | None, *calls, headers: dict | None = None, query: str = ""):
@@ -103,97 +102,61 @@ def test_lists_tools(client):
     token = mcp_auth.generate_token(OPEN_MODE_USER)
     (response,) = _send(token, ("tools/list", {}))
     names = {t["name"] for t in response.json()["result"]["tools"]}
-    assert {"search_content", "download_film", "follow_series", "submit_request",
+    assert {"search_content", "download_film", "submit_request",
             "approve_request", "list_downloads"} <= names
+    # The followed-series feature was removed, and its tools with it.
+    assert not {"follow_series", "list_followed_series", "unfollow_series",
+                "check_series_now"} & names
 
 
 # ── Who the agent is ───────────────────────────────────────────────────────────
+#
+# The panel is single-user: the agent acts as the local user, bound to its
+# jf_user row (migration 12), exactly as the browser does.
 
-def test_owner_disabled_or_gone_stops_the_token(client):
-    _jellyfin_mode()
-    _enable()
-    owner = make_user("ada", "jf-ada", int(Permission.DOWNLOAD))
-    token = mcp_auth.generate_token(owner)
-    assert _send(token, ("tools/list", {}))[0].status_code == 200
-
-    models.set_enabled(owner.id, False)
-    assert _send(token, ("tools/list", {}))[0].status_code == 401
-
-
-def test_open_mode_token_dies_with_the_switch_to_jellyfin(client):
-    enable_open_mode()
+def test_a_legacy_auth_mode_setting_does_not_kill_the_token(client):
+    """auth_mode=jellyfin in an old database means nothing any more."""
     _enable()
     token = mcp_auth.generate_token(OPEN_MODE_USER)
-    _jellyfin_mode()
-    assert _send(token, ("tools/list", {}))[0].status_code == 401
+    models.set_setting(models.SETTING_AUTH_MODE, "jellyfin")
+    assert _send(token, ("tools/list", {}))[0].status_code == 200
 
 
-def test_tools_use_the_owners_live_permissions(client, stub_jobs):
-    _jellyfin_mode()
+def test_tools_use_the_local_users_live_permissions(client, stub_jobs, monkeypatch):
+    """Route dependencies do not run on a direct call, so each tool checks the
+    permission itself — against the local user's permissions at call time."""
     _enable()
-    owner = make_user("bob", "jf-bob", int(Permission.REQUEST))
-    token = mcp_auth.generate_token(owner)
+    token = mcp_auth.generate_token(OPEN_MODE_USER)
+    restricted = dataclasses.replace(deps.LOCAL_USER, permissions=int(Permission.REQUEST))
+    monkeypatch.setattr(deps, "LOCAL_USER", restricted)
 
     is_error, message = _tool(token, "download_film", film_id=7, title="Film")
     assert is_error and "DOWNLOAD" in message
     assert stub_jobs == []
 
-    models.set_permissions(owner.id, int(Permission.DOWNLOAD))
+    monkeypatch.setattr(deps, "LOCAL_USER", dataclasses.replace(
+        restricted, permissions=deps.LOCAL_PERMISSIONS))
     is_error, body = _tool(token, "download_film", film_id=7, title="Film")
     assert not is_error and body["status"] == "queued"
     (name, _, kwargs), = stub_jobs
-    assert name == "submit_film" and kwargs["user_id"] == owner.id
+    # A direct download is the panel's own: its notifications are panel-wide.
+    assert name == "submit_film" and kwargs["user_id"] is None
 
 
-def test_follow_that_cannot_read_the_source_is_rolled_back(client, source, monkeypatch):
-    """The baseline is what stops a follow from fetching the back catalogue."""
-    _jellyfin_mode()
+def test_request_is_filed_by_the_local_user(client, source):
     _enable()
-    monkeypatch.setattr(tv, "get_season_numbers", lambda *a, **k: [1])
-    owner = make_user("cy", "jf-cy", int(Permission.DOWNLOAD))
-    token = mcp_auth.generate_token(owner)
-    source.dead = True
-
-    is_error, _ = _tool(token, "follow_series", source="streamingcommunity",
-                        external_id="42", title="Serie", slug="serie")
-    assert is_error
-    assert watch_models.find_open("streamingcommunity", "tv", "42") is None
-
-
-def test_follow_belongs_to_the_owner_and_seeds_what_is_out(client, source, monkeypatch):
-    _jellyfin_mode()
-    _enable()
-    monkeypatch.setattr(tv, "get_season_numbers", lambda *a, **k: [1])
-    owner = make_user("di", "jf-di", int(Permission.REQUEST))
-    token = mcp_auth.generate_token(owner)
-
-    is_error, _ = _tool(token, "follow_series", source="streamingcommunity",
-                        external_id="42", title="Serie", slug="serie")
-    assert not is_error
-    watch = watch_models.find_open("streamingcommunity", "tv", "42")
-    assert watch.created_by == owner.id
-    assert len(watch_models.seen_keys(watch.id)) == len(source.episodes)
-
-
-def test_request_is_filed_by_the_owner_not_by_an_admin(client, source):
-    _jellyfin_mode()
-    _enable()
-    make_user("admin", "jf-admin", int(Permission.MANAGE_REQUESTS))
-    owner = make_user("eve", "jf-eve", int(Permission.REQUEST))
-    token = mcp_auth.generate_token(owner)
+    token = mcp_auth.generate_token(OPEN_MODE_USER)
 
     is_error, body = _tool(token, "submit_request", source="streamingcommunity",
                            media_type="film", external_id="7", title="Film")
     assert not is_error, body
     request = request_models.get(body["request"]["id"])
-    assert request.requested_by == owner.id
+    assert request.requested_by == _local_row_id()
 
 
 def test_request_audio_is_checked_against_the_source(client, source):
-    _jellyfin_mode()
     _enable()
-    owner = make_user("fay", "jf-fay", int(Permission.REQUEST))
-    token = mcp_auth.generate_token(owner)
+    token = mcp_auth.generate_token(OPEN_MODE_USER)
 
     is_error, message = _tool(token, "submit_request", source="streamingcommunity",
                               media_type="film", external_id="7", title="Film",
@@ -201,12 +164,17 @@ def test_request_audio_is_checked_against_the_source(client, source):
     assert is_error and "jpn" in message
 
 
-def test_queue_tools_say_there_is_no_queue_in_open_mode(client):
-    enable_open_mode()
+def test_queue_tools_work_for_the_local_user(client, source):
+    """The local user owns the request queue: it files and approves."""
     _enable()
     token = mcp_auth.generate_token(OPEN_MODE_USER)
-    is_error, message = _tool(token, "list_requests")
-    assert is_error and "coda" in message
+    is_error, body = _tool(token, "submit_request", source="streamingcommunity",
+                           media_type="film", external_id="7", title="Film")
+    assert not is_error, body
+
+    is_error, listed = _tool(token, "list_requests")
+    assert not is_error, listed
+    assert body["request"]["id"] in {r["id"] for r in listed["requests"]}
 
 
 def test_season_goes_through_the_batch(client, source, stub_jobs):
@@ -239,19 +207,17 @@ def test_episode_is_picked_by_its_number(client, source, stub_jobs):
 
 @pytest.fixture
 def settings_admin(client):
-    _jellyfin_mode()
-    user = make_user("root", "jf-root", int(Permission.MANAGE_SETTINGS))
-    return user, session_for(client, user.id)
+    return deps.LOCAL_USER, session_for(client, 0)
 
 
-def test_token_is_shown_once_and_owned_by_who_generated_it(client, settings_admin):
+def test_token_is_shown_once_and_owned_by_the_panel(client, settings_admin):
     user, csrf = settings_admin
     minted = client.post("/api/mcp/token", headers={"X-CSRF-Token": csrf})
     assert minted.status_code == 200
-    assert minted.json()["owner"] == "root"
+    assert minted.json()["owner"] == "Pannello"
 
     status = client.get("/api/mcp/status").json()
-    assert status["has_token"] is True and status["owner"] == "root"
+    assert status["has_token"] is True and status["owner"] == "Pannello"
     assert minted.json()["token"] not in json.dumps(status)
 
     assert client.delete("/api/mcp/token", headers={"X-CSRF-Token": csrf}).status_code == 200

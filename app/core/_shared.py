@@ -91,10 +91,19 @@ def _fetch_vixcloud_embed(url_embed, referer=None):
     /storage/enc.key and CDN segment URLs are NOT Cloudflare-gated.)
     """
     from bs4 import BeautifulSoup
+    from app.core.hosts import safe_get
+
     headers = {"user-agent": get_headers()}
     if referer:
         headers["referer"] = referer
-    req = _get_scraper().get(url_embed, headers=headers, timeout=15)
+    # The embed URL is whatever the source's iframe named, so it is validated
+    # (and every redirect after it) before the panel goes there. Retried like
+    # the key fetch below: this is the same resolution phase, and a flap here
+    # throws the whole job away just the same.
+    req = with_retry(
+        lambda: safe_get(_get_scraper().get, url_embed, headers=headers, timeout=15),
+        what="embed",
+    )
     req.raise_for_status()
     body = BeautifulSoup(req.text, "lxml").find("body")
     if body is None:
@@ -131,9 +140,11 @@ def embed_host(url_embed: str) -> str:
     the panel did not already extend: the embed page itself is fetched from
     this same URL.
     """
-    parsed = urlparse(url_embed)
+    parsed = urlparse(url_embed or "")
     if parsed.scheme != "https" or not parsed.hostname:
-        raise RuntimeError(f"Unexpected embed URL: {url_embed[:100]!r}")
+        # Scheme and host only: the query carries the playback token.
+        raise RuntimeError(
+            f"Unexpected embed URL: {parsed.scheme or '?'}://{parsed.hostname or '?'}")
     return parsed.hostname.lower()
 
 
@@ -166,8 +177,10 @@ def _parse_content(embed_content, url_embed):
     s = str(embed_content)
 
     video_id_m = re.search(r"window\.video\s*=\s*\{[^}]*?\bid\s*:\s*['\"]?(\d+)['\"]?", s, re.DOTALL)
+    # Neither error quotes the page: it is a third party's response, it carries
+    # the playback token, and it used to land on job.error and in the log.
     if not video_id_m:
-        raise RuntimeError(f"Cannot find video ID in embed. Snippet: {s[:400]!r}")
+        raise RuntimeError(f"Cannot find video ID in embed ({len(s)} characters)")
     parsed_video = {"id": video_id_m.group(1), "host": embed_host(url_embed)}
 
     qs = parse_qs(urlparse(url_embed).query)
@@ -177,7 +190,7 @@ def _parse_content(embed_content, url_embed):
 
     win_param_m = re.search(r"params\s*:\s*\{([^}]*)\}", s, re.DOTALL)
     if not win_param_m:
-        raise RuntimeError(f"Cannot find params in embed. Snippet: {s[:400]!r}")
+        raise RuntimeError(f"Cannot find params in embed ({len(s)} characters)")
     params_raw = win_param_m.group(1).replace("\n", "").replace(" ", "")
     json_win_param = "{" + params_raw + "}"
     json_win_param = json_win_param.replace(",}", "}").replace("'", '"')
@@ -186,14 +199,35 @@ def _parse_content(embed_content, url_embed):
     return parsed_video, parsed_param
 
 
+AES128_KEY_BYTES = 16
+
+
+def _key_hex(content: bytes) -> str:
+    """An AES-128 key as hex, or RuntimeError when it is not sixteen bytes.
+
+    The same test ``hosts.verify_video_host`` applies before a host is saved.
+    Without it a 200 carrying an error page, a challenge or an empty body was
+    taken for the key, and surfaced only after every segment had been fetched
+    — as a decryption error, or as a file full of noise.
+    """
+    if len(content or b"") != AES128_KEY_BYTES:
+        raise RuntimeError(
+            f"Chiave di cifratura non valida: attesi {AES128_KEY_BYTES} byte, "
+            f"ricevuti {len(content or b'')}"
+        )
+    return content.hex()
+
+
 def _get_m3u8_key(json_win_video, json_win_param, referer):
     """Fetch the AES decryption key from the video host, where it has always lived."""
+    from app.core.hosts import safe_get
+
     url = f"https://{json_win_video['host']}/storage/enc.key"
     headers = {"user-agent": get_headers(), "referer": referer}
-    req = with_retry(lambda: requests.get(url, headers=headers, timeout=15),
+    req = with_retry(lambda: safe_get(requests.get, url, headers=headers, timeout=15),
                      what="enc.key")
     if req.ok:
-        return "".join([f"{c:02x}" for c in req.content])
+        return _key_hex(req.content)
     raise RuntimeError(f"Cannot fetch encryption key: HTTP {req.status_code}")
 
 
@@ -294,15 +328,18 @@ def fetch_key_from_playlist(master_url: str, referer: str) -> str | None:
     fallback is registered, and the reason a new one would not have to solve
     this again.
     """
+    from app.core.hosts import safe_get
     from app.core.m3u8 import _fetch_text_with_b1_fallback
 
-    key_uri, best_variant = _key_uri_from(_fetch_text_with_b1_fallback(master_url))
+    key_uri, best_variant = _key_uri_from(
+        _fetch_text_with_b1_fallback(master_url, referer=referer))
 
     # The key usually lives on the media playlist rather than the master, so
     # follow the best variant once if the master carried none.
     if key_uri is None and best_variant:
         variant_url = urljoin(master_url, best_variant)
-        key_uri, _ = _key_uri_from(_fetch_text_with_b1_fallback(variant_url))
+        key_uri, _ = _key_uri_from(
+            _fetch_text_with_b1_fallback(variant_url, referer=referer))
         if key_uri:
             key_uri = urljoin(variant_url, key_uri)
     elif key_uri:
@@ -318,10 +355,10 @@ def fetch_key_from_playlist(master_url: str, referer: str) -> str | None:
         raise RuntimeError(f"Chiave di cifratura su un host non consentito: {host or key_uri}")
 
     headers = {"user-agent": get_headers(), "referer": referer}
-    req = with_retry(lambda: requests.get(key_uri, headers=headers, timeout=15),
+    req = with_retry(lambda: safe_get(requests.get, key_uri, headers=headers, timeout=15),
                      what="playlist key")
     if req.ok:
-        return "".join(f"{c:02x}" for c in req.content)
+        return _key_hex(req.content)
     raise RuntimeError(f"Cannot fetch encryption key: HTTP {req.status_code}")
 
 

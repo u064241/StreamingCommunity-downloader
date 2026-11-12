@@ -8,9 +8,9 @@ import json
 
 import pytest
 
-from app.auth.permissions import ALL_PERMISSIONS, Permission
+from app.auth.permissions import Permission
 from app.routers import files
-from tests.conftest import do_setup, make_user, session_for
+from tests.conftest import do_setup, restrict_local_user
 
 
 @pytest.fixture(autouse=True)
@@ -40,11 +40,21 @@ def libraries(tmp_path, monkeypatch):
     return films, series
 
 
+@pytest.fixture(autouse=True)
+def _patcher(monkeypatch):
+    """``_viewer`` needs a monkeypatch, and is called from many tests."""
+    global _monkeypatch
+    _monkeypatch = monkeypatch
+    yield
+    _monkeypatch = None
+
+
+_monkeypatch = None
+
+
 def _viewer(client, permission=Permission.VIEW_LIBRARY, username="bob"):
-    client.cookies.clear()
-    user = make_user(username, f"jf-{username}-id", int(permission))
-    session_for(client, user.id)
-    return user
+    """The local user, holding only ``permission`` (no accounts any more)."""
+    return restrict_local_user(_monkeypatch, permission)
 
 
 def test_libraries_on_one_volume_are_reported_once(client, admin_credentials, libraries):

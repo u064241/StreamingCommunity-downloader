@@ -1,4 +1,8 @@
-"""On-demand, local hardware diagnostics. No downloads or system changes."""
+"""On-demand, local hardware diagnostics. No downloads or system changes.
+
+``probe()`` only reads. ``diagnose()`` adds the source health and writes the
+chosen performance preset into the settings (never the video encoder).
+"""
 import csv
 import io
 import json
@@ -107,15 +111,113 @@ def _inventory():
     return cpu, memory, gpus, warnings
 
 
-def recommendations(cpu, memory, encoders):
-    """Conservative starting points, not network benchmarks or session limits."""
+GIB = 1024**3
+# Thresholds of the preset choice (choose_preset). "Weak" is what the rules
+# name explicitly; "strong" is the line above which three downloads of sixteen
+# segments do not compete with the rest of the PC.
+WEAK_CORES = 4
+WEAK_RAM_WITHOUT_GPU = 8 * GIB
+STRONG_CORES = 8
+STRONG_RAM = 16 * GIB
+# Display adapters that are not a GPU anyone can encode or decode on.
+_NOT_A_GPU = ("basic display", "basic render", "remote display", "virtual display", "hyper-v")
+
+
+def _cores(cpu):
+    return _positive(cpu.get("physical_cores")) or _positive(cpu.get("logical_threads"))
+
+
+def _has_gpu(gpus, encoders):
+    real = [g for g in gpus or [] if not any(word in str(g.get("name", "")).casefold() for word in _NOT_A_GPU)]
+    hardware_encoder = any(row.get("available") and row.get("backend") in ("nvenc", "qsv", "amf")
+                           for row in encoders or [])
+    return bool(real) or hardware_encoder
+
+
+SIGNAL_HOURS = 72        # any refusal in this window -> conservative
+CLEAN_HOURS = 7 * 24     # "fast" needs this long without one
+
+
+def _count(source, key):
+    try:
+        return max(0, int(source.get(key) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hours(source):
+    try:
+        value = source.get("history_hours")
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def choose_preset(cpu, memory, gpus, encoders, source):
+    """Pick a performance preset. Returns ``(preset, reasons)``.
+
+    Never above "fast" (the most a preset may ask). In order, the first rule
+    that applies wins:
+
+    1. a pause still running, or any refusal (403/429/503 or segment pushback)
+       in the last 72 hours -> conservative;
+    2. no source history, or one covering less than 72 hours -> conservative
+       (not enough data to say the source is calm);
+    3. cores or total RAM unknown -> conservative (not enough data);
+    4. fewer than 4 cores, or no GPU and less than 8 GiB -> conservative;
+    5. at least 8 cores and 16 GiB, a history of at least 7 days with no
+       refusal in it, and the hourly budget not spent -> fast;
+    6. otherwise -> balanced.
+    """
+    source = source or {}
+    cores = _cores(cpu or {})
+    ram = _positive((memory or {}).get("total_bytes"))
+    gpu = _has_gpu(gpus, encoders)
+    recent = _count(source, "pushbacks_last_72h")
+    week = _count(source, "pushbacks_last_7d")
+    hours = _hours(source)
+    if source.get("backoff_active"):
+        return "conservative", ["La sorgente è in pausa in questo momento dopo un rifiuto."]
+    if recent:
+        return "conservative", [f"La sorgente ha rifiutato o rallentato richieste nelle ultime "
+                                f"{SIGNAL_HOURS} ore ({recent})."]
+    if hours is None or hours < SIGNAL_HOURS:
+        seen = "nessuno storico" if hours is None else f"storico di {hours:.0f} ore"
+        return "conservative", [f"Dati sulla sorgente insufficienti ({seen}, ne servono almeno "
+                                f"{SIGNAL_HOURS} senza rifiuti)."]
+    if cores is None or ram is None:
+        return "conservative", ["Dati hardware insufficienti (core o RAM non rilevati)."]
+    if cores < WEAK_CORES:
+        return "conservative", [f"Hardware limitato: {cores} core (meno di {WEAK_CORES})."]
+    if not gpu and ram < WEAK_RAM_WITHOUT_GPU:
+        return "conservative", [f"Hardware limitato: nessuna GPU e {ram / GIB:.1f} GiB di RAM (meno di 8)."]
+    if cores >= STRONG_CORES and ram >= STRONG_RAM:
+        if week:
+            return "balanced", [f"Hardware potente, ma la sorgente ha rifiutato richieste negli "
+                                f"ultimi 7 giorni ({week})."]
+        if hours < CLEAN_HOURS:
+            return "balanced", [f"Hardware potente, ma lo storico della sorgente copre solo "
+                                f"{hours:.0f} ore (Veloce richiede 7 giorni senza rifiuti)."]
+        if source.get("budget_exhausted"):
+            return "balanced", ["Hardware potente, ma il budget orario di richieste alla sorgente è esaurito."]
+        return "fast", [f"Hardware potente ({cores} core, {ram / GIB:.1f} GiB) e nessun rifiuto "
+                        f"dalla sorgente negli ultimi 7 giorni."]
+    return "balanced", [f"Hardware medio ({cores} core, {ram / GIB:.1f} GiB{', GPU' if gpu else ''}) "
+                        f"e nessun rifiuto dalla sorgente nelle ultime {SIGNAL_HOURS} ore."]
+
+
+def recommendations(cpu, memory, encoders, gpus=None, source=None):
+    """Starting points, not network benchmarks or session limits.
+
+    The download limits are those of a preset (app.config.PERFORMANCE_PRESETS)
+    chosen by ``choose_preset``; the video encoder is only ever suggested.
+    """
+    from app.config import PERFORMANCE_PRESETS
     available = [row for row in encoders if row.get("available")]
     backend = next((name for name in ("nvenc", "qsv", "amf", "cpu")
                     if any(row.get("backend") == name for row in available)), None)
-    threads = cpu.get("logical_threads") or 1
-    ram = memory.get("available_bytes")
-    roomy = threads >= 8 and ram is not None and ram >= 8 * 1024**3
-    moderate = threads >= 4 and ram is not None and ram >= 4 * 1024**3
+    preset, reasons = choose_preset(cpu, memory, gpus, encoders, source)
+    values = PERFORMANCE_PRESETS[preset]
     return {
         "video_encoder": backend,
         "video_codec": next((codec for codec in ("h264", "hevc")
@@ -123,9 +225,71 @@ def recommendations(cpu, memory, encoders):
         "video_quality": "balanced",
         "video_cpu_fallback": any(row.get("backend") == "cpu" for row in available),
         "max_parallel_conversions": 1,  # Actual transcode semaphore capacity.
-        "max_concurrent_downloads": 3 if roomy else 2 if moderate else 1,
-        "max_segment_workers": 16 if roomy else 8 if moderate else 4,
+        "preset": preset,
+        "preset_label": values["label"],
+        "reasons": reasons,
+        "max_concurrent_downloads": values["max_concurrent_downloads"],
+        "max_segment_workers": values["max_segment_workers"],
+        "source_max_connections": values["source_max_connections"],
+        "source_requests_per_hour": values["source_requests_per_hour"],
     }
+
+
+def _ffmpeg_available() -> bool:
+    try:
+        from app.core.ffmpeg_path import get_ffmpeg_exe
+        exe = get_ffmpeg_exe()
+        return bool(exe) and (Path(exe).is_file() or shutil.which(exe) is not None)
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _source_health() -> dict:
+    """The fields of source_budget.status() the diagnosis uses."""
+    from app.core import source_budget
+    status = source_budget.status()
+    keys = ("requests_last_hour", "limit_per_hour", "limit_from_env", "budget_exhausted",
+            "backoff_active", "backoff_until", "backoff_level", "pushbacks_last_24h",
+            "pushbacks_last_72h", "pushbacks_last_7d", "history_since", "history_hours",
+            "backoffs_last_hour", "last_pushback", "observed_since")
+    return {key: status.get(key) for key in keys}
+
+
+def diagnose(apply: bool = True) -> dict:
+    """Hardware + source health, a chosen preset, and (``apply``) that preset written.
+
+    Only the performance values of the preset are written - exactly them,
+    never anything more aggressive. The video encoder and quality are left
+    alone: they are suggested in ``recommendations`` and change only when the
+    user saves them.
+    """
+    from app import config
+    result = dict(probe())
+    source = _source_health()
+    rec = recommendations(result.get("cpu") or {}, result.get("memory") or {},
+                          result.get("encoders") or [], result.get("gpus") or [], source)
+    result.update(source=source, ffmpeg_available=_ffmpeg_available(), recommendations=rec)
+    if apply:
+        before = config.get_settings()
+        after = config.apply_performance_preset(rec["preset"])
+        result["applied"] = {
+            "preset": rec["preset"],
+            "label": rec["preset_label"],
+            "reasons": rec["reasons"],
+            "values": config.preset_values(rec["preset"]),
+            "previous": {key: before.get(key) for key in config.PERFORMANCE_KEYS},
+            "source_cap_from_env": bool(os.getenv("SC_SOURCE_MAX_CONNECTIONS", "").strip()),
+            "budget_from_env": bool(source.get("limit_from_env")),
+        }
+        result["settings"] = {key: after.get(key) for key in config.PERFORMANCE_KEYS}
+        # The cap actually in force (env override or the new setting), and the
+        # gate resized now: requests in flight finish, the next one obeys it.
+        try:
+            from app.core import m3u8
+            result["applied"]["effective_source_max_connections"] = m3u8.apply_source_cap()
+        except Exception:
+            result["applied"]["effective_source_max_connections"] = None
+    return result
 
 
 def probe():
@@ -143,6 +307,6 @@ def probe():
         # Raw driver errors may expose local paths; return only diagnostic fields.
         encoders = [{key: row.get(key) for key in ("backend", "codec", "encoder", "available")} for row in encoders]
         _cached = {"cpu": cpu, "memory": memory, "gpus": gpus, "encoders": encoders,
-                   "warnings": warnings, "recommendations": recommendations(cpu, memory, encoders)}
+                   "warnings": warnings, "recommendations": recommendations(cpu, memory, encoders, gpus)}
         _cached_at = time.monotonic()
         return _cached

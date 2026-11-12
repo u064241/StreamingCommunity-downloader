@@ -209,14 +209,14 @@ function closeMobileMenu() {
 function showPage(page, params = null) {
   closeMobileMenu();
   if (params) PAGE_HASH[page]?.apply?.(params);
-  ['search','downloads','files','requests','my-requests','watches','users','detail','settings'].forEach(p => {
+  ['search','archive','downloads','files','requests','my-requests','detail','settings'].forEach(p => {
     const el = document.getElementById(`page-${p}`);
     if (el) el.style.display = p === page ? '' : 'none';
   });
   document.getElementById('page-title').textContent = {
-    search:'Cerca', downloads:'Download', files:'File',
+    search:'Cerca', archive:'Archivio', downloads:'Download', files:'File',
     requests:'Coda richieste', 'my-requests':'Le mie richieste',
-    get watches() { return window.t("dynamic.extra43"); }, users:'Utenti', detail:'', settings:'Impostazioni',
+    detail:'', settings:'Impostazioni',
   }[page] ?? 'Cerca';
   document.querySelectorAll('.nav-link[data-page]').forEach(el =>
     el.classList.toggle('active', el.dataset.page === page));
@@ -224,12 +224,11 @@ function showPage(page, params = null) {
   // a filter applying itself, a season loading — knows which page it is on.
   _routePage = page;
   if (page === 'search') searchPageEnter();
+  if (page === 'archive') archivePageEnter();
   if (page === 'downloads') refreshJobs();
   if (page === 'files') loadFiles();
   if (page === 'requests') loadRequestQueue();
   if (page === 'my-requests') loadMyRequests();
-  if (page === 'watches') loadWatches();
-  if (page === 'users') loadUsersPage();
   // Every page has an address now. This used to do the opposite — strip the
   // hash on the way out of the two pages that had one — because they were the
   // only two, and leaving a stale title in the bar meant the next reload
@@ -332,10 +331,6 @@ const NOTIFICATION_EVENT_GROUPS = [
     get label() { return window.t("dynamic.extra42"); },
     events: ['download_completed', 'download_failed',
              'download_batch_completed', 'download_batch_failed'],
-  },
-  {
-    get label() { return window.t("dynamic.extra43"); },
-    events: ['watch_needs_approval', 'watch_auto_approved', 'watch_languages_differ'],
   },
   {
     get label() { return window.t("dynamic.extra44"); },

@@ -43,33 +43,6 @@
 </div>
 
 <!-- ── Fix Request Modal ────────────────────────────────────────────── -->
-<div class="modal modal-blur fade" id="watch-lang-modal" tabindex="-1" style="display:none" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="ti ti-language me-2"></i>Lingue dei prossimi episodi</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="mb-3" id="watch-lang-title" style="font-weight:600"></p>
-        <label class="form-label">Audio</label>
-        <div id="watch-lang-audio" class="mb-3"></div>
-        <label class="form-label">Sottotitoli</label>
-        <div id="watch-lang-subs"></div>
-        <p class="text-muted mt-3 mb-0" style="font-size:11px">
-          Tracce lette dall'ultimo episodio pubblicato. Vale per gli episodi che
-          usciranno da ora in poi. Se la fonte non offre una
-          traccia audio scelta, l'episodio viene fermato invece di essere scaricato senza.
-        </p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button class="btn btn-primary" id="watch-lang-save" data-action="watch:saveLanguages">Salva</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <div class="modal modal-blur fade" id="fix-modal" tabindex="-1" style="display:none" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -130,32 +103,6 @@
         <video id="video-player" controls preload="metadata"
                class="player-video"></video>
         <div id="video-player-tracks" class="px-3 py-2 small text-muted" hidden></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ── New version Modal ─────────────────────────────────────────────── -->
-<div class="modal modal-blur fade" id="update-modal" tabindex="-1" style="display:none" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Nuova versione disponibile</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div id="update-modal-how" class="release-how" hidden></div>
-        <div id="update-modal-body"></div>
-      </div>
-      <div class="modal-footer">
-        <div id="update-modal-progress" class="form-text me-auto"></div>
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Chiudi</button>
-        <a class="btn btn-outline-secondary" id="update-modal-link" target="_blank" rel="noopener noreferrer">
-          <i class="ti ti-external-link me-1"></i>Apri su GitHub
-        </a>
-        <button type="button" class="btn btn-primary" id="update-install-btn" data-action="updates:install" hidden>
-          <i class="ti ti-download me-1"></i>Aggiorna ora
-        </button>
       </div>
     </div>
   </div>

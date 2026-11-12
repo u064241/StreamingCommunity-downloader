@@ -1,12 +1,14 @@
 import os
 import logging
-import subprocess
+from urllib.parse import urljoin
 
 import requests
-import ffmpeg
 
 from app.core import container
-from app.core.ffmpeg_path import hidden_process_options, ffmpeg_file_arg, get_ffmpeg_exe
+from app.core._shared import with_retry
+from app.core.ffmpeg_path import ffmpeg_file_arg, get_ffmpeg_exe, run_command
+from app.core.headers import get_headers
+from app.core.hosts import redact, safe_get
 from app.core.m3u8 import M3U8_Parser
 
 logger = logging.getLogger(__name__)
@@ -52,11 +54,24 @@ def _normalize_lang(raw: str) -> tuple[str, bool]:
 STAGING_PREFIX = "."
 STAGING_SUFFIX = ".remuxing"
 
+# The same idea one step earlier. The whole download is assembled under the
+# WORK name and renamed onto the destination as its last act, so a title that
+# is already in the library stays intact until its replacement is complete —
+# the join used to write straight onto it, and a failure or a cancel after that
+# had already destroyed the good copy. JOIN is what FFmpeg writes into while
+# the join itself runs.
+WORK_SUFFIX = ".part"
+JOIN_SUFFIX = ".joining"
 
-def staging_path(video_path: str) -> str:
+
+def staging_path(video_path: str, suffix: str = STAGING_SUFFIX) -> str:
+    """A hidden sibling of *video_path* that keeps its extension.
+
+    The extension stays last because FFmpeg picks the muxer from it.
+    """
     directory, name = os.path.split(video_path)
     stem, ext = os.path.splitext(name)
-    return os.path.join(directory, STAGING_PREFIX + stem + STAGING_SUFFIX + ext)
+    return os.path.join(directory, STAGING_PREFIX + stem + suffix + ext)
 
 
 def _remux_cmd(video_path: str, output_path: str,
@@ -119,13 +134,16 @@ def _remux_cmd(video_path: str, output_path: str,
 
 
 def remux(video_path: str, audio_tracks: list[dict] = None,
-          subtitle_tracks: list[dict] = None) -> str:
+          subtitle_tracks: list[dict] = None, cancel_event=None) -> str:
     """Mux the extra tracks into *video_path*, in the container it already names.
 
     The container is decided once, by the join that wrote *video_path*, and
     this keeps it: it used to be the other way round, with the destination
     always written as .mp4 and this function deciding — by renaming to .mkv —
     that anything with a second audio track or a subtitle was Matroska.
+
+    *cancel_event* stops FFmpeg when the job is cancelled; either way it is
+    stopped after ffmpeg_path.FFMPEG_TIMEOUT.
 
     Returns the path, which is now always the one it was given.
     """
@@ -142,15 +160,17 @@ def remux(video_path: str, audio_tracks: list[dict] = None,
 
     logger.info("Remuxing into %s: video + %d audio + %d subtitle tracks",
                 os.path.splitext(video_path)[1] or "?", len(audio_tracks), len(subtitle_tracks))
-    proc = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, **hidden_process_options())
-    if proc.returncode != 0:
+    try:
+        returncode, _, stderr_bytes = run_command(cmd, cancel_event=cancel_event)
+    except BaseException:
+        # Cancelled, timed out, or FFmpeg could not be started at all.
+        _discard(staged)
+        raise
+    if returncode != 0:
         # Never leave the half-written sibling behind: it sits in the library
         # folder, where Jellyfin would index it as a second copy of the title.
-        try:
-            os.remove(staged)
-        except OSError:
-            pass
-        stderr = proc.stderr.decode(errors="replace") if proc.stderr else "(no stderr)"
+        _discard(staged)
+        stderr = stderr_bytes.decode(errors="replace") if stderr_bytes else "(no stderr)"
         if len(stderr) > 500:
             stderr = f"...{stderr[-300:]}"
         raise RuntimeError(f"FFmpeg remux error: {stderr}")
@@ -160,7 +180,55 @@ def remux(video_path: str, audio_tracks: list[dict] = None,
     return video_path
 
 
-def download_subtitle_tracks(parser, allowed_languages: list[str], output_dir: str, video_stem: str, temp_dir: str = None) -> list[dict]:
+def _discard(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _get_text(url: str, referer: str | None, timeout: int, what: str):
+    """One subtitle fetch: validated host, the download's headers, retried."""
+    headers = {"user-agent": get_headers()}
+    if referer:
+        headers["referer"] = referer
+    return with_retry(lambda: safe_get(requests.get, url, headers=headers, timeout=timeout),
+                      what=what)
+
+
+def _join_vtt(parts: list[bytes]) -> bytes:
+    """Concatenate WebVTT segments into one file.
+
+    Each segment is a complete WebVTT document, so every one after the first
+    loses its header block — ``WEBVTT`` and whatever follows it up to the first
+    blank line, which is where HLS puts X-TIMESTAMP-MAP — and only its cues are
+    appended. The cue times are left as they are: X-TIMESTAMP-MAP offsets are
+    not applied, which is right for a playlist whose cues are already timed
+    against the programme rather than against each segment.
+    """
+    joined = []
+    for index, raw in enumerate(parts):
+        text = raw.decode("utf-8-sig", errors="replace").replace("\r\n", "\n")
+        if index and text.lstrip().startswith("WEBVTT"):
+            _, _, text = text.lstrip().partition("\n\n")
+        text = text.strip("\n")
+        if text:
+            joined.append(text)
+    return ("\n\n".join(joined) + "\n").encode("utf-8")
+
+
+def download_subtitle_tracks(parser, allowed_languages: list[str], output_dir: str,
+                             video_stem: str, temp_dir: str = None,
+                             referer: str = None, base_url: str = None) -> list[dict]:
+    """Download the requested subtitle languages; returns the ones that arrived.
+
+    A language that is absent from the result did not make it — not offered, or
+    failed — and the caller reports it as a missing track rather than letting
+    the job finish as though it were complete. Every segment of the subtitle
+    playlist is fetched and joined: only the first used to be, which is the
+    whole film on a source that publishes one segment and the opening minutes
+    on one that does not.
+    """
     downloaded = []
 
     if parser is None or not parser.subtitle_playlist:
@@ -173,6 +241,8 @@ def download_subtitle_tracks(parser, allowed_languages: list[str], output_dir: s
         lang_code = sub_info.get("language", "")
         if lang_code not in allowed_languages:
             continue
+        if any(done["language"] == lang_code for done in downloaded):
+            continue
 
         lang_short = LANG_MAP.get(lang_code, lang_code)
         out_path = os.path.join(save_dir, f"{video_stem}.{lang_short}.vtt")
@@ -180,23 +250,39 @@ def download_subtitle_tracks(parser, allowed_languages: list[str], output_dir: s
         logger.info("Downloading subtitle: %s -> %s", lang_code, out_path)
 
         try:
-            req_sub_content = requests.get(sub_info.get("uri"), timeout=15)
+            playlist_url = urljoin(base_url or "", sub_info.get("uri") or "")
+            req_sub_content = _get_text(playlist_url, referer, 15, "subtitle playlist")
             if not req_sub_content.ok:
-                logger.warning("Failed to fetch subtitle playlist for %s", lang_code)
+                logger.warning("Failed to fetch subtitle playlist for %s: HTTP %s",
+                               lang_code, req_sub_content.status_code)
                 continue
 
             sub_parse = M3U8_Parser()
-            sub_parse.parse_data(req_sub_content.text)
+            sub_parse.parse_data(req_sub_content.text, base_uri=playlist_url)
+            if not sub_parse.subtitle:
+                logger.warning("Subtitle playlist for %s lists no WebVTT segment", lang_code)
+                continue
 
-            if sub_parse.subtitle:
-                content_resp = requests.get(sub_parse.subtitle[0], timeout=30)
-                if content_resp.ok:
-                    with open(out_path, "wb") as f:
-                        f.write(content_resp.content)
-                    downloaded.append({"path": out_path, "language": lang_code})
-                    logger.info("Subtitle downloaded: %s", out_path)
+            parts = []
+            for segment_url in sub_parse.subtitle:
+                content_resp = _get_text(segment_url, referer, 30, "subtitle")
+                if not content_resp.ok or not content_resp.content:
+                    raise RuntimeError(
+                        f"segmento {len(parts) + 1}/{len(sub_parse.subtitle)}: "
+                        f"HTTP {content_resp.status_code}")
+                parts.append(content_resp.content)
+
+            # Staged and renamed, so a failure part-way never leaves a file
+            # that reads as a finished subtitle.
+            staged = out_path + ".part"
+            with open(staged, "wb") as f:
+                f.write(_join_vtt(parts))
+            os.replace(staged, out_path)
+            downloaded.append({"path": out_path, "language": lang_code})
+            logger.info("Subtitle downloaded: %s (%d segments)", out_path, len(parts))
         except Exception as e:
-            logger.warning("Failed to download subtitle %s: %s", lang_code, e)
+            _discard(out_path + ".part")
+            logger.warning("Failed to download subtitle %s: %s", lang_code, redact(e))
 
     return downloaded
 

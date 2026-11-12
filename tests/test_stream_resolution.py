@@ -55,7 +55,8 @@ class _Response:
 # ── The AES key, read rather than assumed ─────────────────────────────────────
 
 @pytest.fixture
-def playlists(monkeypatch):
+def playlists(monkeypatch, public_dns):
+    # public_dns: the SSRF check resolves vixcloud.co before the faked GET.
     """Serve a master, its best variant, and the key. Records what was fetched."""
     fetched = []
 
@@ -87,7 +88,7 @@ def test_the_best_variant_is_the_one_followed(playlists):
     assert not any("360/playlist.m3u8" in url for url in playlists)
 
 
-def test_an_unencrypted_playlist_has_no_key(monkeypatch):
+def test_an_unencrypted_playlist_has_no_key(monkeypatch, public_dns):
     def fake_get(url, *args, **kwargs):
         return _Response(MEDIA_UNENCRYPTED if "1080" in url else MASTER)
 
@@ -99,7 +100,7 @@ def test_an_unencrypted_playlist_has_no_key(monkeypatch):
     assert _shared.fetch_key_from_playlist("https://vixcloud.co/playlist/1", "r") is None
 
 
-def test_a_key_on_someone_elses_host_is_refused(monkeypatch):
+def test_a_key_on_someone_elses_host_is_refused(monkeypatch, public_dns):
     """The playlist is published by the stream page; it does not get to pick hosts."""
     reached = []
 
@@ -254,7 +255,7 @@ def test_a_film_without_a_tmdb_id_still_reports_the_real_error(monkeypatch, tmp_
 _EMBED_SCRIPT = "window.video = {id: '42'}; window.masterPlaylist = {params: {'token': 't', 'expires': '9',}}"
 
 
-def test_the_playlist_and_key_follow_the_embed_host(monkeypatch):
+def test_the_playlist_and_key_follow_the_embed_host(monkeypatch, public_dns):
     video, params = _shared._parse_content(
         _EMBED_SCRIPT, "https://vixcloud.cc/embed/42?token=t&expires=9")
 
@@ -266,7 +267,7 @@ def test_the_playlist_and_key_follow_the_embed_host(monkeypatch):
 
     def fake_get(url, *args, **kwargs):
         reached.append(url)
-        return _Response(content=b"\x00")
+        return _Response(content=b"\x00" * 16)
 
     monkeypatch.setattr(_shared.requests, "get", fake_get)
     _shared._get_m3u8_key(video, params, "r")
@@ -286,11 +287,11 @@ def test_an_embed_url_without_an_https_host_is_refused(url):
     ("vixcloud.attacker.tld", False),
     ("evilvixcloud.cc", False),
 ])
-def test_the_key_host_allowlist_ignores_the_tld(monkeypatch, host, ok):
+def test_the_key_host_allowlist_ignores_the_tld(monkeypatch, host, ok, public_dns):
     playlist = f'#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://{host}/storage/enc.key"\n#EXTINF:4,\nseg.ts\n'
 
     def fake_get(url, *args, **kwargs):
-        return _Response(playlist, content=b"\x11")
+        return _Response(playlist, content=b"\x11" * 16)
 
     monkeypatch.setattr(_shared.requests, "get", fake_get)
     from app.core import m3u8
@@ -298,7 +299,7 @@ def test_the_key_host_allowlist_ignores_the_tld(monkeypatch, host, ok):
     monkeypatch.setattr(m3u8.requests, "get", fake_get)
 
     if ok:
-        assert _shared.fetch_key_from_playlist("https://vixcloud.cc/playlist/1", "r") == "11"
+        assert _shared.fetch_key_from_playlist("https://vixcloud.cc/playlist/1", "r") == "11" * 16
     else:
         with pytest.raises(RuntimeError, match="host non consentito"):
             _shared.fetch_key_from_playlist("https://vixcloud.cc/playlist/1", "r")

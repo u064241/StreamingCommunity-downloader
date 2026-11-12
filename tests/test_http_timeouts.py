@@ -66,7 +66,7 @@ def test_film_get_iframe_has_a_timeout(recorded_get):
     assert recorded_get and recorded_get[0].get("timeout") is not None
 
 
-def test_m3u8_fetch_text_helpers_have_a_timeout(recorded_get):
+def test_m3u8_fetch_text_helpers_have_a_timeout(recorded_get, public_dns):
     from app.core.m3u8 import _fetch_text, _fetch_text_with_b1_fallback
     _fetch_text("https://example.test/x.m3u8")
     assert recorded_get[-1].get("timeout") is not None

@@ -3,10 +3,8 @@
 Every tool that changes something calls the **same handler the browser calls**,
 with the token owner as the acting user (see ``app/mcp/auth.py``). Nothing is
 reimplemented here, and that is the rule to keep: an earlier version rebuilt
-following, season batches and requests by hand and lost, in turn, the
-seed-or-roll-back that stops a follow from downloading a whole back catalogue,
-the batch write-off that lets a season's summary fire, and the requester's
-identity. Calling the handler gets every guard it has today and every one it
+season batches and requests by hand and lost, in turn, the batch write-off
+that lets a season's summary fire, and the requester's identity. Calling the handler gets every guard it has today and every one it
 gains later.
 
 Route dependencies do not run on a direct call, so each tool checks the
@@ -29,7 +27,6 @@ from pydantic import ValidationError
 from starlette.requests import Request
 
 from app import __version__
-from app.auth.deps import OPEN_MODE_USER
 from app.auth.permissions import Permission
 from app.config import download_dir, VIDEOS_DIR, configured_domain
 from app.core import page, tv
@@ -40,17 +37,15 @@ from app.routers import (
     anime as anime_router, domain as domain_router, downloads as downloads_router,
     home as home_router, metadata as metadata_router, search as search_router,
 )
-from app.watches import router as watches_router
 
 mcp_server = MCPServer(
     name="StreamingCommunity Downloader",
     version=__version__,
     instructions=(
         "Search StreamingCommunity (films, TV series) and AnimeUnity (anime), start "
-        "downloads into the Jellyfin library, follow series for new episodes, and work "
-        "the request queue. Search first: download and follow tools need the id, slug "
-        "and title exactly as search returns them. Every action runs as the panel user "
-        "who generated the MCP token, with that user's permissions."
+        "downloads into the library, and work the request queue. Search first: "
+        "download tools need the id, slug and title exactly as search returns them. "
+        "Every action runs as the panel's local user."
     ),
 )
 
@@ -415,80 +410,11 @@ async def retry_download(job_id: str) -> dict:
     return await _call(downloads_router.retry, job_id)
 
 
-# ── Followed series ────────────────────────────────────────────────────────────
-
-@mcp_server.tool()
-async def follow_series(
-    source: Literal["streamingcommunity", "animeunity"],
-    external_id: str,
-    title: str,
-    slug: str | None = None,
-    year: str | None = None,
-    anime_type: str | None = None,
-    audio_languages: list[str] = ["ita"],
-    subtitle_languages: list[str] = [],
-) -> dict:
-    """Follow a series or anime so new episodes are fetched as they are published.
-
-    Everything already published is marked as seen: following means "from now
-    on". Whether a new episode downloads by itself or waits in the request queue
-    follows the token owner's permissions, as it would in the browser.
-
-    Args:
-        source: 'streamingcommunity' for a TV series, 'animeunity' for an anime.
-        external_id: The id, from search.
-        title: The title, from search.
-        slug: The slug, from search.
-        year: Year, used in the folder name.
-        anime_type: AnimeUnity only: the source's kind; anything but 'movie' (or 'film') is a series.
-        audio_languages: Audio tracks to keep on every new episode.
-        subtitle_languages: Subtitle tracks to keep on every new episode.
-    """
-    user = _user(*CAN_BROWSE, mode="or")
-    body = _model(watches_router.WatchCreate, source=source,
-                  media_type="anime" if source == "animeunity" else "tv",
-                  external_id=external_id, title=title, slug=slug, year=year,
-                  anime_type=anime_type, audio_languages=audio_languages,
-                  subtitle_languages=subtitle_languages)
-    return await _call(watches_router.follow_series, body, _request_as(user))
-
-
-@mcp_server.tool(annotations=READ_ONLY)
-async def list_followed_series() -> dict:
-    """The series and anime the token owner follows."""
-    user = _user(*CAN_BROWSE, mode="or")
-    return await _call(watches_router.list_my_watches, _request_as(user))
-
-
-@mcp_server.tool()
-async def unfollow_series(watch_id: int) -> dict:
-    """Stop following a series.
-
-    Args:
-        watch_id: From list_followed_series.
-    """
-    user = _user(*CAN_BROWSE, mode="or")
-    return await _call(watches_router.unfollow_series, watch_id, _request_as(user))
-
-
-@mcp_server.tool()
-async def check_series_now(watch_id: int) -> dict:
-    """Look for new episodes of a followed series now, instead of at the next cycle.
-
-    Args:
-        watch_id: From list_followed_series.
-    """
-    user = _user(*CAN_BROWSE, mode="or")
-    return await _call(watches_router.check_now, watch_id, _request_as(user))
-
-
 # ── Request queue ──────────────────────────────────────────────────────────────
 
 def _queue_user(*required: Permission, mode: str = "and"):
-    """``_user`` for the request queue, which does not exist without accounts —
-    said as such, rather than as the permission the implicit user lacks."""
-    if auth.token_owner() is OPEN_MODE_USER:
-        raise ToolError("Il pannello è senza account: non c'è una coda di richieste.")
+    """``_user`` for the request queue. The local user owns the queue (it is
+    both requester and approver), so this is the plain permission check."""
     return _user(*required, mode=mode)
 
 
@@ -564,8 +490,7 @@ async def approve_request(request_id: int) -> dict:
         request_id: From list_requests.
     """
     user = _queue_user(Permission.MANAGE_REQUESTS)
-    return await _call(requests_router.approve_request, request_id, _request_as(user),
-                       requests_router.ApproveRequestOptions())
+    return await _call(requests_router.approve_request, request_id, _request_as(user))
 
 
 # ── System ─────────────────────────────────────────────────────────────────────

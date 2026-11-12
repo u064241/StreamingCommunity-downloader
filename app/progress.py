@@ -9,6 +9,43 @@ class DownloadCancelledError(Exception):
     pass
 
 
+# A job's own queue is read only while someone has its progress stream open,
+# and written for as long as the job runs: unbounded, every frame of a download
+# nobody watched stayed in memory for the life of the job object.
+PROGRESS_QUEUE_MAX = 256
+
+
+def put_dropping_oldest(queue: asyncio.Queue, item) -> None:
+    """Queue ``item``, discarding the oldest entries of a full queue.
+
+    The same trade as JobManager._fanout: a stale frame of progress is cheap,
+    and the newest ones - which include the terminal "done"/"error" - are what
+    a reader needs. Runs on the event loop.
+    """
+    while True:
+        try:
+            queue.put_nowait(item)
+            return
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                continue
+
+
+def post(queue: asyncio.Queue, loop: Optional[asyncio.AbstractEventLoop], item) -> bool:
+    """Thread-safe put onto a job's queue. False when there is no loop to run
+    it (a job finishing before the app has started, or in a test)."""
+    if loop is None:
+        return False
+    try:
+        loop.call_soon_threadsafe(put_dropping_oldest, queue, item)
+    except RuntimeError:
+        # The loop is closed: the server is shutting down and nobody reads.
+        return False
+    return True
+
+
 class WebProgressBar:
     """Drop-in tqdm replacement that pushes progress events onto an asyncio.Queue."""
 
@@ -123,7 +160,7 @@ class WebProgressBar:
         return msg
 
     def _emit(self, msg: dict):
-        asyncio.run_coroutine_threadsafe(self._queue.put(msg), self._loop)
+        post(self._queue, self._loop, msg)
         if self._on_event:
             self._on_event(msg)
 
@@ -160,10 +197,7 @@ class WebProgressBar:
                     "bytes_total_estimated": False})
 
     def emit_status(self, phase: str):
-        msg = {"type": "status", "phase": phase}
-        asyncio.run_coroutine_threadsafe(self._queue.put(msg), self._loop)
-        if self._on_event:
-            self._on_event(msg)
+        self._emit({"type": "status", "phase": phase})
 
     def close(self):
         pass

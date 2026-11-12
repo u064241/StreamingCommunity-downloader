@@ -5,11 +5,10 @@
 #
 # Poi apri http://localhost:8001.
 #
-# Questa immagine viene ricostruita a ogni push su un branch diverso da main,
-# quindi contiene lavoro non ancora rilasciato. Il tag `dev` insegue sempre
-# l'ultimo build: per fissare una versione precisa usa il nome del branch
-# (`:feat-qualcosa`) o il tag corto del commit (`:sha-abc1234`), entrambi
-# pubblicati insieme a `dev`.
+# Questa immagine viene ricostruita a ogni push sul branch di default, quindi
+# contiene lavoro non ancora rilasciato. Il tag `dev` insegue sempre l'ultimo
+# build: per fissare una versione precisa usa il tag corto del commit
+# (`:sha-abc1234`), pubblicato insieme a `dev`.
 #
 # IMPORTANTE — perché questo file usa porta e volumi propri:
 # le migrazioni del database vanno solo in avanti. Se punti questo pannello al
@@ -19,14 +18,15 @@
 
 services:
   web:
-    image: ghcr.io/edoardofiore/streamingcommunity-downloader-dev:dev
+    image: ghcr.io/u064241/streamingcommunity-downloader-dev:dev
     # Il tag `dev` è mobile: senza questo, `up -d` riusa l'immagine già scaricata
     # e non vedresti mai le modifiche appena pushate.
     pull_policy: always
     container_name: scpanel-dev
-    # Facoltativo: gira col tuo utente, così i file scaricati sono tuoi e non di
-    # root. Le due cartelle sull'host devono essere scrivibili da quell'uid; se
-    # prima girava come root: chown -R 1000:1000 /srv/scpanel-dev/config
+    # L'immagine gira come utente non privilegiato, uid 10001. Facoltativo: usa
+    # il tuo utente, così i file scaricati sono tuoi. In entrambi i casi le due
+    # cartelle sull'host devono essere scrivibili da quell'uid; se prima girava
+    # come root: chown -R 10001:10001 /srv/scpanel-dev/config (o il tuo uid)
     # user: "1000:1000"
     ports:
       # 8001 sull'host, così può convivere con la produzione sulla 8000.
@@ -41,8 +41,8 @@ services:
       - SCHEDULE_FILE=/app/config/schedule.json
       - HOST=0.0.0.0
       - PORT=8000
-      - COOKIE_SECURE=0
-      - COOKIE_SAMESITE=lax
+      # Nomi host aggiuntivi a cui risponde il pannello (loopback sempre ammesso).
+      # - ALLOWED_HOSTS=mypc.lan
       - TRUST_PROXY_HEADERS=0
     dns:
       - 8.8.8.8

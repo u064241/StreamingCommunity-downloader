@@ -3,7 +3,8 @@ from pathlib import Path
 
 from app import config, jobs
 from app.routers import files
-from tests.conftest import do_setup
+from app.auth.permissions import Permission
+from tests.conftest import do_setup, restrict_local_user
 
 
 def test_download_directory_changes_new_destinations_and_browser(client, admin_credentials, tmp_path):
@@ -28,14 +29,14 @@ def test_download_directory_rejects_relative_path(client, admin_credentials):
     assert config.download_dir() == old
 
 
-def test_logs_are_available_to_settings_admin(client, admin_credentials):
+def test_logs_are_available_to_settings_admin(client, admin_credentials, monkeypatch):
     do_setup(client, admin_credentials)
     logging.getLogger("runtime-settings-check").warning("Diagnostic event")
     response = client.get("/api/domain/logs")
     assert response.status_code == 200
     assert any("Diagnostic event" in line for line in response.json()["lines"])
-    client.cookies.clear()
-    assert client.get("/api/domain/logs").status_code in (401, 403)
+    restrict_local_user(monkeypatch, Permission.DOWNLOAD)
+    assert client.get("/api/domain/logs").status_code == 403
 
 
 

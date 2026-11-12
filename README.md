@@ -4,7 +4,7 @@
 
 <p align="center">
   A self-hosted web panel to download films, TV series and anime into a Jellyfin library.<br/>
-  Request queue, followed series, notifications to Discord and Telegram, and an integrated
+  Local and single-user: request queue, notifications to Discord and Telegram, and an integrated
   file manager.
 </p>
 
@@ -56,7 +56,7 @@
   </tr>
 </table>
 
-### Asking, approving, following
+### Asking and approving
 
 <table>
   <tr>
@@ -71,14 +71,6 @@
       request that cannot find the audio asked for is parked, never substituted.</sub>
     </td>
   </tr>
-  <tr>
-    <td colspan="2" align="center" valign="top">
-      <img src="docs/series-follow.png" alt="Followed series" width="60%"/><br/>
-      <sub><b>Followed series</b> — new episodes are looked for on their own. A followed series
-      never downloads by itself: it opens a request, which goes through the queue or is approved
-      on the spot, according to the permissions of whoever follows it.</sub>
-    </td>
-  </tr>
 </table>
 
 ### Running it
@@ -90,22 +82,12 @@
       <sub><b>Settings</b> — libraries, performance, naming templates, notification channels and
       download hooks.</sub>
     </td>
-    <td width="50%" valign="top">
-      <img src="docs/jellyfin-users.png" alt="Users"/><br/>
-      <sub><b>Users</b> — imported from Jellyfin, with independent permissions. There is no ADMIN
-      super-permission: an administrator who never sees the request queue is a valid setup.</sub>
-    </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <img src="docs/file-manager.png" alt="File manager"/><br/>
       <sub><b>File manager</b> — drag-and-drop, video streaming in place, and the free space left
       on the media volume.</sub>
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/login.png" alt="Login"/><br/>
-      <sub><b>Login</b> — Jellyfin credentials, so no second account and no local password store.
-      Authentication is opt-in; the panel also runs open.</sub>
     </td>
   </tr>
 </table>
@@ -127,19 +109,18 @@
 - Subtitle download (`.vtt`) for non-Italian audio tracks
 - Real-time download progress with per-phase steps (video → audio → merge)
 - Integrated file manager with drag-and-drop, video streaming and free space on the media volume
-- Jellyfin library path configuration, and an optional **library refresh when a download lands**
+- Jellyfin-friendly library paths and naming
 - **Post-download webhooks** with a body template
 - **Configurable file and folder names**
 - Scheduled downloads
-- **Follow a series or anime** and get new episodes as the source publishes them
 - **Notifications to Discord, Telegram, ntfy and anything else Apprise speaks**, with per-channel
   event selection
 - One notification per download — and a single summary for a whole season or series
-- Optional login with Jellyfin credentials — no second account, no local password store
-- Independent permissions: download directly, request, approve, manage users, manage settings
-- Request queue with approval, preserving the audio and subtitle tracks the requester chose
+- Local and single-user: no login, no accounts; it answers only on this PC (loopback and
+  `ALLOWED_HOSTS`) and refuses cross-site writes
+- Request queue with approval, preserving the audio and subtitle tracks chosen
 - Request status on the search result cards, and an in-app notification bell
-- MCP server for AI agents (Claude Code, Cursor, …): search, download, follow series and work the request queue
+- MCP server for AI agents (Claude Code, Cursor, …): search, download and work the request queue
 - Windows installer with an Install/Portable wizard
 - Portable installations can be removed from Windows Installed apps; extracted ZIPs register on first launch
 - Prominent panel version badges and highlighted **Browse all** buttons on catalogue shelves
@@ -253,83 +234,46 @@ pytest -q
 
 ---
 
-## Users, roles and requests
+## Local use, permissions and requests
 
-On first run the panel asks once, on its setup screen, whether to use Jellyfin. Choosing **Collega a
-Jellyfin** configures the panel and creates its administrator from that sign-in; only a Jellyfin
-administrator can do it. After that, Jellyfin accounts **do not** get access automatically —
-an administrator imports them from **Utenti** and assigns permissions. Opening the panel to every
-Jellyfin account is a switch on that page, off by default.
+The panel is a **local, single-user application**: each person installs it on their own PC and
+opens it from their own browser. There is no login, no account and no session. Two guards replace
+them, applied to every request:
 
-Permissions are independent flags, not a ladder:
+- **Host check** — only `localhost`, loopback addresses (`127.0.0.0/8`, `::1`) and the names in
+  `ALLOWED_HOSTS` are answered. This is what stops another site from reaching the panel through a
+  DNS name of its own (DNS rebinding).
+- **Origin check** — a write (`POST`, `PUT`, `DELETE`, …) must come from the panel's own origin
+  (`Sec-Fetch-Site` / `Origin`), so a page you visit cannot drive the panel behind your back.
+
+The one local user holds every permission. Routes still declare what they need, so the bits keep
+documenting what each action does:
 
 | Permission | Grants |
 |---|---|
 | `DOWNLOAD` | start and schedule downloads directly |
-| `REQUEST` | search and create requests |
+| `REQUEST` | create requests |
 | `MANAGE_REQUESTS` | see the queue, approve, deny, fix |
-| `MANAGE_USERS` | import users, assign permissions, disable accounts |
 | `MANAGE_SETTINGS` | source domain, libraries, performance |
 | `MANAGE_FILES` | move, rename and delete in the file manager |
 | `VIEW_LIBRARY` | browse and stream the library |
 
-There is deliberately no "admin" flag that implies the rest, so you can have an administrator who
-manages settings and users but never sees the request queue.
+The **request queue** still works locally: you are both requester and approver. A request keeps
+the audio and subtitle tracks you chose; on approval the source is re-resolved against the current
+domain — a dead link or a missing audio track parks the request for you to fix instead of
+downloading the wrong thing. (Internally the local user is one row of `panel.db`, created by a
+database migration, because requests reference their requester.)
 
-A user without `DOWNLOAD` sees the same form and the same audio and subtitle checkboxes; the button
-says **Richiedi** and creates a request. On approval the source is re-resolved against the current
-domain — a dead link or a missing audio track parks the request for a human instead of downloading
-the wrong thing.
+Asking for the same content with the same tracks twice joins the open request. Asking for
+**different** tracks makes two distinct requests, but they resolve to the same path in the library,
+so the download fetches the union: one film in Italian and English becomes one file carrying both.
+A request whose tracks are already in the file is satisfied without downloading anything: the check
+reads the file's audio and subtitle streams, not its name.
 
-Two people asking for the same content with the same tracks share one download and are both
-notified. Asking for **different** tracks makes two distinct requests, because merging them would
-give one of them the wrong file — but they resolve to the same path in the library, so the download
-fetches the union of what everyone asked for. Two people wanting one film in Italian and English get
-one file carrying both, and the player picks. A request whose tracks are already in the file is
-satisfied without downloading anything: the check reads the file's audio and subtitle streams, not
-its name.
-
-### Running without Jellyfin
-
-Press **Continua senza Jellyfin** on the setup screen and the panel runs with no login at all: every
-visitor gets direct download, settings and the file manager. You can connect Jellyfin later from
-**Impostazioni → Accesso e utenti**, without a restart.
-
-There is no environment variable for this. It used to be `AUTH_ENABLED`, which is gone: set to `0`
-it did not just default to open mode, it hid the setup screen altogether, so the choice the panel
-offers could not be made. An existing deployment that was running without it keeps open mode across
-the upgrade — the panel writes that answer into `panel.db` the first time it starts.
-
-Going back — from a connected Jellyfin to no login — is deliberately not offered in the UI: the
-imported users and their permissions would be left in an ambiguous state.
+Earlier versions had Jellyfin login, imported users and an `AUTH_ENABLED` variable. All of that is
+gone; an existing `panel.db` is upgraded in place and its old tables are left untouched.
 
 ---
-
-## Following a series
-
-Any series or anime can be **followed** from its page. From then on the panel checks the source
-periodically and picks up new episodes as they are published. Following means *from here on*:
-everything already released is recorded as seen, so you do not get eight seasons queued the next
-morning.
-
-What happens to a new episode depends on the permissions of whoever follows it:
-
-- someone who **can download** finds it in the library on its own;
-- someone who **can only request** produces an ordinary request for an approver to accept.
-
-In the second case the approver is told **when the series is followed**, not weeks later when an
-episode finally appears, and can **approve the series once**: from then on its new episodes go
-straight through, and only that series is affected. The choice is on the *Serie seguite* page, or on
-the "Auto i prossimi" checkbox of the request itself.
-
-A watch never downloads anything by itself — it creates a normal request and lets the queue, the
-library check and the notifications do their work, so nothing is duplicated and nothing is silently
-substituted. **Controlla ora** forces a check immediately instead of waiting for the next cycle; the
-interval is in **Impostazioni → Download**.
-
-The *Serie seguite* page lists what you follow, when it was last checked, and whether it downloads
-automatically or goes through the queue. An approver also sees everyone else's, with who follows
-each one.
 
 ---
 
@@ -337,9 +281,8 @@ each one.
 
 The panel notifies in two directions.
 
-**In-app**, the bell holds request and download events for the signed-in user, and they can be
-marked read or deleted, one at a time or all at once. On a panel running without Jellyfin the bell
-belongs to the panel itself, so an open installation still sees its own downloads.
+**In-app**, the bell holds request and download events, and they can be marked read or deleted,
+one at a time or all at once.
 
 **Outward**, any number of channels can be configured in **Impostazioni → Notifiche** by pasting an
 [Apprise](https://github.com/caronc/apprise/wiki) URL — Discord, Telegram, ntfy, Gotify, Slack,
@@ -347,9 +290,6 @@ email, and everything else Apprise supports. No key in a configuration file, no 
 chooses **which events it wants**; selecting none means all of them. Messages carry a title and are
 coloured by outcome where the service supports it, and errors have their query strings stripped
 before they leave the panel, since external channels are somebody else's servers.
-
-Channels are **global, not per user**: whoever configures one decides what reaches everybody reading
-it.
 
 Download notifications are grouped by the action that caused them — one for a film or a single
 episode, and a **single summary** for a whole season, series or anime, listing any episodes that
@@ -363,7 +303,7 @@ failed and why.
 |---|---|---|
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | bind address |
 | `VIDEOS_DIR` | `videos` | download destination |
-| `DB_FILE` | `panel.db` | users, sessions, requests — **put this on a persistent volume** |
+| `DB_FILE` | `panel.db` | requests, notifications, channels, hooks — **put this on a persistent volume** |
 | `DATA_FILE` | `data.json` | source domain, libraries, performance settings |
 | `SCHEDULE_FILE` | `schedule.json` | scheduled downloads |
 | `TMP_DIR` | `tmp` | HLS segments while a job runs, cleaned up afterwards |
@@ -371,8 +311,8 @@ failed and why.
 | `FFPROBE_PATH` | — | full path to `ffprobe`; see the note below |
 | `DOMAIN_SOURCE_URL` | a public page | where replacement domains are read from |
 | `DOMAIN_NAME_PATTERN` | `streaming(community\|unity)…` | which names may be adopted automatically |
-| `COOKIE_SECURE` | `0` | set to `1` when serving over HTTPS |
-| `COOKIE_SAMESITE` | `lax` | `none` (with `COOKIE_SECURE=1`) only to embed the panel cross-site |
+| `ALLOWED_HOSTS` | — | extra host names the panel answers to, comma-separated (loopback is always allowed) |
+| `FRAME_ANCESTORS` | — | origins allowed to embed the panel in a frame |
 | `TRUST_PROXY_HEADERS` | `0` | set to `1` only behind a reverse proxy you control |
 
 The source domain and the Jellyfin library paths are configurable from **Impostazioni** in the UI.
@@ -383,35 +323,18 @@ newer GPU can install a newer FFmpeg separately and set `FFMPEG_PATH` (or put it
 the application will use that executable instead. `ffprobe` is optional but recommended because it
 lets the panel inspect the audio and subtitle tracks already present in a file.
 
-`panel.db` holds the Jellyfin service API key: keep it out of any web-served directory and off
-world-readable storage.
+`panel.db` holds notification-channel and webhook URLs, which often carry tokens: keep it out of
+any web-served directory and off world-readable storage.
 
 **Run one process.** Download state is held in memory by a single process, so do not add
 `--workers` or scale the service — a second replica would neither see nor report on the first's
 downloads.
 
-### Embedding as a Jellyfin custom tab
+### Embedding in another page
 
-Point an iframe at the panel; nothing else is required. Sign in once inside the tab and stay signed
-in — the session lasts **30 days** and renews on every visit, so in practice you log in once and
-forget about it.
-
-With Jellyfin and the panel on subdomains of the same domain over HTTPS — say `jf.example.com` and
-`request.example.com` — the frame is same-site and the session cookie is sent inside it with the
-default `COOKIE_SAMESITE=lax`. On different domains, or different schemes, the frame is cross-site
-and a `Lax` cookie is dropped silently: every request inside the frame looks logged out and login
-bounces back on itself, which reads as an infinite loop. Either set `COOKIE_SAMESITE=none` together
-with `COOKIE_SECURE=1` — browsers reject a `SameSite=None` cookie that is not also `Secure` — or
-reverse-proxy the panel under the same site as Jellyfin.
-
-Chromium browsers separately enforce Private Network Access: the Jellyfin page and the panel must
-both resolve to public addresses, or both to private ones, from the browser's point of view. Mixing
-tiers fails with "the connection was blocked".
-
-`POST /api/auth/jellyfin-token` trades an already-issued Jellyfin access token for a panel session,
-for skipping even that one login. It needs a script running on the Jellyfin page, which posts the
-token to the frame. Do not put that script in the custom tab HTML: tab content is injected as a
-string, so quoting breaks the page, and `<script>` tags inserted that way never execute.
+The panel refuses to be framed by default. To embed it (for example as a Jellyfin custom tab on the
+same PC), list the embedding page's origin in `FRAME_ANCESTORS`, and its host name in
+`ALLOWED_HOSTS` if it is not a loopback name.
 
 ---
 
@@ -467,15 +390,13 @@ feature.
 
 **Impostazioni → Hook** can tell something else that a file has landed.
 
-- **Jellyfin**: one switch, using the server already configured for login. The library updates
-  immediately instead of on Jellyfin's own schedule.
 - **Webhook**: a URL, a method and an optional body, where `{title}`, `{path}`, `{status}`,
   `{type}`, `{season}`, `{episode}`, `{year}` and `{error}` are substituted. With no body a JSON
   object carrying all of them is sent.
 
-There is no "run a command" hook, deliberately: on a panel running without login, settings are open
-to every visitor, and a command would hand them a shell. A webhook can point at your own network —
-that is how it reaches Jellyfin — so the panel reports only whether the call succeeded, never what
+There is no "run a command" hook, deliberately: a settings change smuggled in through the browser
+must never become a shell. A webhook can point at your own network — that is how it reaches a
+Jellyfin library refresh URL — so the panel reports only whether the call succeeded, never what
 came back.
 
 ---
@@ -483,8 +404,7 @@ came back.
 ## New versions
 
 The panel asks GitHub for newer releases shortly after it starts and every 6 hours after that. When
-there is one, a badge appears beside the version number in the sidebar, for users who can manage
-settings, and opens the release notes of every version you are behind. The check installs nothing.
+there is one, a badge appears beside the version number in the sidebar and opens the release notes of every version you are behind. The check installs nothing.
 
 **Impostazioni → Aggiornamenti** shows the last check, checks on demand and turns the periodic check
 off. It is the one call the panel makes that downloading does not need. It sends GitHub your address
@@ -518,14 +438,12 @@ manager.
 
 The panel can act as an MCP server, so an AI agent (Claude Code, Cursor, or any
 client speaking Streamable HTTP) can search titles, start and watch downloads,
-follow series and file or approve requests. It is served by the panel itself at
+and file or approve requests. It is served by the panel itself at
 `/mcp` — no extra port, and the same reverse proxy and TLS as the web interface.
 
 Off by default. Enable it under **Impostazioni → MCP**, then generate a token.
 The token is shown once (only its hash is stored), and **the agent acts as the
-user who generated it, with that user's current permissions**: an agent cannot
-download if its owner cannot, and the token stops working if the owner is
-disabled or removed. Requests it files are that user's requests.
+panel's local user**, exactly as the browser does: requests it files are yours.
 
 Client configuration (the settings page shows it pre-filled):
 
@@ -546,8 +464,7 @@ With Claude Code: `claude mcp add --transport http streamingcommunity https://pa
 Tools: `search_content`, `get_content_details`, `get_series_episodes`,
 `get_anime_episodes`, `get_home_shelves`, `download_film`, `download_episode`,
 `download_season`, `download_anime_episode`, `list_downloads`,
-`get_download_progress`, `cancel_download`, `retry_download`, `follow_series`,
-`list_followed_series`, `unfollow_series`, `check_series_now`, `submit_request`,
+`get_download_progress`, `cancel_download`, `retry_download`, `submit_request`,
 `list_requests`, `approve_request`, `get_system_status`, `list_libraries`.
 
 ---

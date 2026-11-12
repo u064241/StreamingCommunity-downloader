@@ -189,7 +189,7 @@ def test_the_cache_expires(client, monkeypatch, props):
     monkeypatch.setattr(metadata, "_now", lambda: clock[0])
 
     metadata.title_metadata("tv", "1", "test-series", "v1")
-    clock[0] += metadata._TTL_HIT + 1
+    clock[0] += metadata._TTL_HIT * 1.2 + 1  # past the jitter
     metadata.title_metadata("tv", "1", "test-series", "v1")
 
     assert len(props) == 2
@@ -201,7 +201,7 @@ def test_a_miss_expires_sooner_than_a_hit(client, monkeypatch):
     monkeypatch.setattr(metadata, "_now", lambda: clock[0])
 
     metadata.title_metadata("tv", "9", "test-series", "v1")
-    clock[0] += metadata._TTL_MISS + 1
+    clock[0] += metadata._TTL_MISS * 1.2 + 1  # past the jitter
     assert metadata._cached(metadata._cache_key("tv", "9")) is None
 
 

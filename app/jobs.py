@@ -1,31 +1,35 @@
 import asyncio
 import logging
 import os
+import random
 import shutil
 import threading
+import time
 import uuid
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait as wait_for_futures
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from app.config import download_dir, VIDEOS_DIR, TMP_DIR, get_settings
-from app.progress import DownloadCancelledError, WebProgressBar
+from app import config
+from app.config import download_dir, read_data, VIDEOS_DIR, TMP_DIR, get_settings
+from app.core import source_budget
+from app.progress import DownloadCancelledError, PROGRESS_QUEUE_MAX, WebProgressBar, post
 from app.source_identity import download_source
 
 
+# Both read data.json through app.config, the one reader of that file: this
+# module is imported by the routers and must not import them back.
 def _get_library_path(type_: str) -> str:
     """Return the configured library path for content type, or VIDEOS_DIR as fallback."""
-    from app.routers.domain import _read_data
-    for lib in _read_data().get("libraries", []):
+    for lib in read_data().get("libraries", []):
         if lib.get("type") == type_:
             return lib["path"]
     return str(download_dir(VIDEOS_DIR))
 
 def _library_roots() -> list[str]:
-    from app.routers.domain import _read_data
-    roots = [lib["path"] for lib in _read_data().get("libraries", []) if lib.get("path")]
+    roots = [lib["path"] for lib in read_data().get("libraries", []) if lib.get("path")]
     return [os.path.realpath(p) for p in (*roots, str(download_dir(VIDEOS_DIR)))]
 
 
@@ -78,6 +82,79 @@ def remove_download_output(path: str) -> list[str]:
     return removed
 
 
+# Coarser than any filesystem a library lives on: FAT and some SMB shares keep
+# modification times to two seconds.
+_TIMESTAMP_SLACK = 2.0
+
+
+def _written_since(path: str, started: Optional[float]) -> bool:
+    """Whether the file at ``path`` was created or modified from ``started`` on.
+
+    How a download's cleanup tells its own output from a copy that was in the
+    library before it began: a second download of a title already there, when
+    it is cancelled, must not take the good copy with it. The job cannot record
+    the file beforehand - where it lands is decided inside the download, after
+    the source has been read - so it records when the attempt began and
+    compares. When in doubt (no start time, a file that cannot be read) the
+    answer is no, and the file stays.
+    """
+    if started is None:
+        return False
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    # The modification time alone: a file the download writes, or renames into
+    # place from its staging copy, carries one from within the attempt. The
+    # change time would also move for a chmod or a library scan - somebody
+    # else's doing, and no reason to call the file ours.
+    return st.st_mtime >= started - _TIMESTAMP_SLACK
+
+
+def _looks_like_job_id(name: str) -> bool:
+    try:
+        return str(uuid.UUID(name)) == name
+    except ValueError:
+        return False
+
+
+def purge_stale_temp_dirs(keep: frozenset = frozenset()) -> int:
+    """Remove the staging directories no job will come back for.
+
+    Called at startup: jobs live in memory, so whatever a previous run left in
+    TMP_DIR belongs to nobody - the server has just started and has no job to
+    resume from it - and it used to stay on disk for good. Only directories
+    named like a job id are removed, which is everything this module ever
+    creates there: TMP_DIR is a setting, and one pointed at a folder shared
+    with something else must not cost that something its files. A link or a
+    junction is never followed, and nothing outside TMP_DIR is touched.
+    Returns how many directories were removed.
+    """
+    tmp_root = os.path.realpath(str(TMP_DIR))
+    try:
+        entries = list(os.scandir(tmp_root))
+    except OSError:
+        return 0
+    removed = 0
+    for entry in entries:
+        if entry.name in keep or not _looks_like_job_id(entry.name):
+            continue
+        is_junction = getattr(os.path, "isjunction", lambda _p: False)(entry.path)
+        if entry.is_symlink() or is_junction or not entry.is_dir(follow_symlinks=False):
+            logger.warning("Not cleaning %s: not a plain directory", entry.path)
+            continue
+        target = os.path.realpath(entry.path)
+        if not _inside(target, tmp_root) or target == tmp_root:
+            logger.warning("Not cleaning temporary path outside TMP_DIR: %s", entry.path)
+            continue
+        shutil.rmtree(target, ignore_errors=True)
+        removed += 1
+    if removed:
+        logger.info("Removed %d stale staging director%s from %s",
+                    removed, "y" if removed == 1 else "ies", tmp_root)
+    return removed
+
+
 def _cleanup_temp_dir(path: str | None) -> None:
     """Remove a job's staging directory when it is no longer resumable."""
     if not path:
@@ -107,7 +184,44 @@ SCHEDULER_INTERVAL = 30  # seconds
 # serves the same one a minute later; a configuration mistake just fails fast
 # three more times, which costs nothing.
 AUTO_RETRIES = 3
+# The wait before the first retry; each one after waits twice as long (60, 120,
+# 240 seconds), give or take a fifth. Doubling gives a source that is down a
+# real chance to come back within the three tries, and the jitter keeps a
+# season that failed together from knocking again together.
 AUTO_RETRY_DELAY = 60  # seconds
+AUTO_RETRY_JITTER = 0.2
+
+# Automatic protection (JobManager._on_source_backoff): more than this many
+# source pauses within PROTECTION_WINDOW seconds switch to the conservative
+# preset.
+PROTECTION_MAX_BACKOFFS = 3
+PROTECTION_WINDOW = 60 * 60
+
+
+def _retry_delay(retry: int) -> float:
+    """Seconds to wait before automatic retry number ``retry`` (from 1)."""
+    base = AUTO_RETRY_DELAY * 2 ** (retry - 1)
+    return base * random.uniform(1 - AUTO_RETRY_JITTER, 1 + AUTO_RETRY_JITTER)
+
+
+# A scheduled job whose call cannot even be built (a library path gone, params
+# that no longer make sense) is tried again at the next scheduler pass - but
+# only this many times, then it fails for everyone to see.
+MAX_FIRE_FAILURES = 3
+
+# A finished job stays listed this long, then goes the way of a dismissed one.
+JOB_RETENTION = timedelta(hours=24)
+
+_ACTIVE = ("scheduled", "queued", "paused", "running")
+_TERMINAL = ("done", "error", "cancelled")
+
+# What one attempt came to (_attempt). Decided under the manager's lock and
+# carried by value: the job's own fields can change the moment the lock is
+# released - a parked job is resumed, and its ``parked`` cleared, by another
+# thread - so nothing downstream may re-read them to find out what happened.
+_FINISHED = "finished"   # reached a terminal state: clean up and notify
+_RETRY = "retry"         # failed, and runs again after a wait
+_PARKED = "parked"       # paused: left the executor, and is not over
 
 
 @dataclass
@@ -126,7 +240,10 @@ class DownloadJob:
         "bytes_done": 0, "bytes_total": None, "bytes_total_estimated": True,
     })
     phases: list = field(default_factory=list)
-    progress_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    # Bounded, oldest dropped first (app.progress.post): it is read only while
+    # someone has this job's own progress stream open.
+    progress_queue: asyncio.Queue = field(
+        default_factory=lambda: asyncio.Queue(maxsize=PROGRESS_QUEUE_MAX))
     cancel_event: threading.Event = field(default_factory=threading.Event)
 
     # Set when this job is one episode of a season or series asked for in one go,
@@ -162,6 +279,16 @@ class DownloadJob:
     # listeners hear about it once, when it is finally done or failed.
     retries: int = 0
     retry_at: Optional[datetime] = None
+    retry_delay: float = field(default=0.0, repr=False)
+    # Times its scheduled call could not be built (see MAX_FIRE_FAILURES).
+    fire_failures: int = 0
+    # When the running attempt began (time.time()), and whether the file the
+    # job finished with was written by it rather than found in the library:
+    # cleanup removes only what the download itself put there (_written_since).
+    attempt_started: Optional[float] = field(default=None, repr=False)
+    output_created: bool = False
+    # When it reached its terminal state and its worker was done with it.
+    finished_at: Optional[datetime] = None
     # Its ticket while it waits for a download slot (None otherwise): the
     # waiting jobs start in ticket order, so the frontend can number the line.
     queue_seq: Optional[int] = None
@@ -213,7 +340,21 @@ class DownloadSlots:
 
     A waiter leaves the line as soon as its job is cancelled instead of
     holding its place until a slot frees up.
+
+    Automatic protection: while the source is in backoff
+    (``source_budget.backoff_until()``, after a 403/429/503 or a segment
+    pushback) no slot is granted. The line keeps its order and its threads -
+    the head simply waits, with a timeout set to the end of the pause, and
+    starts by itself when it is over. Nothing is cancelled or failed; a
+    download already running carries on (its own pipeline already slows down
+    on pushback). The backoff lives in memory: after a restart it starts from
+    zero, which is safe because the jobs that were waiting live in memory too,
+    and the first new refusal opens a new pause at once.
     """
+
+    # Longest single wait while the source is paused: re-checks now and then,
+    # so a pause ended early (a reset, a clock change) is noticed.
+    HOLD_RECHECK = 30.0
 
     def __init__(self, limit: int):
         self._cond = threading.Condition()
@@ -235,12 +376,17 @@ class DownloadSlots:
             on_queued(job)
         with self._cond:
             try:
-                while not (self._line[0] is job and self._busy < self._limit):
+                while True:
                     if job.cancel_event.is_set() or job.paused:
                         return False
+                    if self._line[0] is job and self._busy < self._limit:
+                        held = source_budget.backoff_remaining()
+                        if not held:
+                            break
+                        # Its turn, but the source is paused: wait it out.
+                        self._cond.wait(min(held, self.HOLD_RECHECK))
+                        continue
                     self._cond.wait()
-                if job.cancel_event.is_set() or job.paused:
-                    return False
                 self._busy += 1
                 return True
             finally:
@@ -276,6 +422,10 @@ class JobManager:
         self._subscribers: list[asyncio.Queue] = []
         self._schedule_store = None  # set via set_schedule_store()
         self._listeners: list = []
+        # When the automatic protection last switched to the conservative
+        # preset (ISO time), for the interface. In memory, like the backoff.
+        self._protection_downgraded_at: Optional[str] = None
+        source_budget.add_backoff_listener(self._on_source_backoff)
 
     @staticmethod
     def _compute_phases(audio_languages: list) -> list:
@@ -289,6 +439,57 @@ class JobManager:
         # In place: running downloads keep their slot, waiting ones get the new
         # limit too (see DownloadSlots).
         self._slots.resize(n)
+
+    # ── Automatic protection ───────────────────────────────────────────────────
+
+    def _on_source_backoff(self, until: float, reason: str) -> None:
+        """A new source pause started: hold the line, tell the user, and after
+        too many pauses in an hour fall back to the conservative preset.
+
+        The hold itself needs nothing from here - DownloadSlots asks
+        source_budget at every grant - so this only announces it and wakes the
+        line, so the head starts its timed wait now rather than at the next
+        release. Runs on the thread that saw the refusal; never raises.
+        """
+        self._slots.wake()
+        downgraded = False
+        if source_budget.backoffs_since(PROTECTION_WINDOW) > PROTECTION_MAX_BACKOFFS:
+            try:
+                before = get_settings()
+                after = config.apply_performance_preset("conservative", only_lower=True)
+                downgraded = any(after.get(k) != before.get(k) for k in config.PERFORMANCE_KEYS)
+                # Always, not only when this call wrote: the settings are the
+                # truth, and the line must follow them whoever lowered them.
+                self.update_max_concurrent(after["max_concurrent_downloads"])
+                from app.core import m3u8
+                m3u8.apply_source_cap()
+                self._protection_downgraded_at = datetime.now(timezone.utc).isoformat()
+                if downgraded:
+                    logger.warning("Source paused more than %d times in an hour: "
+                                   "switched to the conservative preset",
+                                   PROTECTION_MAX_BACKOFFS)
+            except Exception:
+                logger.exception("Could not switch to the conservative preset")
+        self._broadcast({"type": "source_paused", **self.protection_status(),
+                         "reason": reason, "downgraded": downgraded})
+
+    def protection_status(self) -> dict:
+        """What the interface shows about the automatic protection."""
+        until = source_budget.backoff_until()
+        with self._lock:
+            waiting = sum(1 for j in self._jobs.values() if j.status == "queued")
+        message = (f"Sorgente in pausa fino alle {datetime.fromtimestamp(until):%H:%M}, "
+                   "la coda riprenderà automaticamente" if until else None)
+        return {
+            "paused": until is not None,
+            "until": datetime.fromtimestamp(until, timezone.utc).isoformat() if until else None,
+            "until_hhmm": f"{datetime.fromtimestamp(until):%H:%M}" if until else None,
+            "message": message,
+            "queued_jobs": waiting,
+            "backoffs_last_hour": source_budget.backoffs_since(PROTECTION_WINDOW),
+            "max_backoffs_per_hour": PROTECTION_MAX_BACKOFFS,
+            "downgraded_at": self._protection_downgraded_at,
+        }
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -317,9 +518,16 @@ class JobManager:
         return future
 
     def has_active_work(self) -> bool:
-        """Include final notifications/cleanup after a job's status becomes done."""
+        """Whether stopping the process now would lose something.
+
+        Workers count past their job's "done", for the final notifications and
+        cleanup. So do jobs that hold no worker at all: a scheduled one fires
+        from this process's scheduler and a paused one is resumed from its
+        memory, and the idle shutdown used to take both down as "nothing
+        running".
+        """
         with self._lock:
-            return bool(self._workers) or any(job.status in {"running", "queued"} for job in self._jobs.values())
+            return bool(self._workers) or any(job.status in _ACTIVE for job in self._jobs.values())
 
     def _job_to_dict(self, job: DownloadJob) -> dict:
         return {
@@ -394,16 +602,32 @@ class JobManager:
             except Exception:
                 logger.exception("Job listener failed for job %s", job.job_id)
 
+    def _finish(self, job: "DownloadJob"):
+        """A job is over, and nothing will run for it again: tell everyone.
+
+        The one place a terminal state is announced from, called exactly once
+        per job by whoever ends it - its worker, or cancel() for a job that has
+        none. Never for a parked job, which is not over.
+        """
+        with self._lock:
+            job.finished_at = datetime.now(timezone.utc)
+            if job.status != "error":
+                # Only a failed job can be run again; the call holds a whole
+                # season's episode list, for as long as the job is listed.
+                job.call = None
+        if self._schedule_store is not None and job.schedule_id and job.status in _TERMINAL:
+            # So a restart can tell a schedule that ran from one it interrupted.
+            self._schedule_store.set_outcome(job.schedule_id, job.status)
+        self._notify_listeners(job)
+
     def _emit(self, job: "DownloadJob", event: dict):
         """Push a terminal/progress event to the job's own queue and to everyone.
 
         The loop is only set once the app has started; a job finishing before
         that (or in a test) must not leave an un-awaited coroutine behind.
         """
-        if self._loop is not None:
-            asyncio.run_coroutine_threadsafe(job.progress_queue.put(event), self._loop)
-        else:
-            logger.debug("No event loop bound; dropping %s for job %s",
+        if not post(job.progress_queue, self._loop, event):
+            logger.debug("No event loop; dropping %s for job %s",
                          event.get("type"), job.job_id)
         self._broadcast({**event, "job_id": job.job_id})
 
@@ -475,37 +699,97 @@ class JobManager:
     async def _scheduler_loop(self):
         while True:
             await asyncio.sleep(SCHEDULER_INTERVAL)
-            now = datetime.now(timezone.utc)
-            with self._lock:
-                jobs = list(self._jobs.values())
-            for job in jobs:
-                if job.status != "scheduled" or job.scheduled_at is None or job.schedule_id is None:
-                    continue
-                sa = job.scheduled_at
-                if sa.tzinfo is None:
-                    sa = sa.replace(tzinfo=timezone.utc)
-                if sa > now:
-                    continue
-                if self._schedule_store is None:
-                    continue
-                entry = self._schedule_store.get_by_schedule_id(job.schedule_id)
-                if entry is None:
-                    continue
-                logger.info("Scheduler firing job_id=%s schedule_id=%s", job.job_id, job.schedule_id)
-                try:
-                    self._fire_job(job, entry["type"], entry["params"])
-                except Exception as e:
-                    logger.error("Failed to fire scheduled job %s: %s", job.job_id, e)
+            try:
+                # On a thread: firing reads data.json and writes schedule.json,
+                # and neither belongs on the event loop.
+                await asyncio.to_thread(self._scheduler_tick)
+            except Exception:
+                logger.exception("Scheduler pass failed")
 
-    def _fire_job(self, job: DownloadJob, type_: str, params: dict):
-        fn, args, kwargs = self._build_call(type_, params, job)
+    def _scheduler_tick(self, now: Optional[datetime] = None):
+        """One pass: fire what is due, forget what finished long ago."""
+        now = now or datetime.now(timezone.utc)
         with self._lock:
+            jobs = list(self._jobs.values())
+        for job in jobs:
+            if job.status != "scheduled" or job.scheduled_at is None or job.schedule_id is None:
+                continue
+            sa = job.scheduled_at
+            if sa.tzinfo is None:
+                sa = sa.replace(tzinfo=timezone.utc)
+            if sa > now:
+                continue
+            if self._schedule_store is None:
+                continue
+            entry = self._schedule_store.get_by_schedule_id(job.schedule_id)
+            if entry is None:
+                continue
+            logger.info("Scheduler firing job_id=%s schedule_id=%s", job.job_id, job.schedule_id)
+            try:
+                self._fire_job(job, entry["type"], entry["params"])
+            except Exception as e:
+                logger.error("Failed to fire scheduled job %s: %s", job.job_id, e)
+        self.expire_finished(now)
+
+    def expire_finished(self, now: Optional[datetime] = None) -> int:
+        """Dismiss the jobs that ended more than JOB_RETENTION ago.
+
+        Nothing else ever removed a finished job the user did not dismiss by
+        hand, so a panel left running kept every download it had ever made.
+        Only jobs _finish() has seen: one cancelled a moment ago whose worker
+        is still unwinding has no ``finished_at`` yet, and is left alone.
+        """
+        now = now or datetime.now(timezone.utc)
+        with self._lock:
+            expired = [j.job_id for j in self._jobs.values()
+                       if j.status in _TERMINAL and j.finished_at is not None
+                       and now - j.finished_at > JOB_RETENTION]
+        return sum(self.dismiss(job_id) for job_id in expired)
+
+    def _fire_job(self, job: DownloadJob, type_: str, params: dict) -> bool:
+        """Hand a scheduled job to the download queue. False when it is not
+        scheduled any more - fired already, or cancelled.
+
+        The check and the change of status are one step under the lock, so the
+        scheduler and "Avvia ora" - or two clicks on it - cannot both start it:
+        whoever comes second finds it queued and leaves.
+        """
+        with self._lock:
+            if job.status != "scheduled":
+                return False
             job.status = "queued"
-            if self._schedule_store is not None and job.schedule_id:
-                self._schedule_store.mark_fired(job.schedule_id)
-        self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "queued"})
+        try:
+            fn, args, kwargs = self._build_call(type_, params, job)
+        except Exception as exc:
+            with self._lock:
+                job.fire_failures += 1
+                cancelled = job.cancel_event.is_set()
+                failed = not cancelled and job.fire_failures > MAX_FIRE_FAILURES
+                if failed:
+                    job.status = "error"
+                    job.error = str(exc)
+                elif not cancelled:
+                    # Back where it was: the next scheduler pass tries again.
+                    job.status = "scheduled"
+            if failed:
+                logger.error("Scheduled job %s could not be started %d times; giving up: %s",
+                             job.job_id, job.fire_failures, exc)
+                self._emit(job, {"type": "error", "message": str(exc)})
+            if failed or cancelled:
+                # No worker was started, so nothing else would ever say so.
+                # (A cancel that found it "queued" left the telling to one.)
+                self._finish(job)
+            raise
         self._remember_call(job, fn, args, kwargs)
+        # Outside the lock - it writes a file - and before the worker starts,
+        # so the outcome a quick job records cannot be overwritten by this.
+        if self._schedule_store is not None and job.schedule_id:
+            self._schedule_store.mark_fired(job.schedule_id)
+        self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "queued"})
+        # Even if it was cancelled meanwhile: the worker sees that before it
+        # downloads anything, and it is what tells the listeners.
         self._submit_worker(self._run_download, job, fn, *args, **kwargs)
+        return True
 
     def _build_call(self, type_: str, params: dict, job: DownloadJob):
         source = download_source(type_, params.get("source"))
@@ -551,14 +835,15 @@ class JobManager:
     # ── Job lifecycle ──────────────────────────────────────────────────────────
 
     def fire_now(self, job_id: str) -> bool:
-        job = self._jobs.get(job_id)
-        if not job or job.status != "scheduled" or job.schedule_id is None:
-            return False
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.status != "scheduled" or job.schedule_id is None:
+                return False
         entry = self._schedule_store.get_by_schedule_id(job.schedule_id) if self._schedule_store else None
         if entry is None:
             return False
-        self._fire_job(job, entry["type"], entry["params"])
-        return True
+        # Decides again, under the lock: a second click loses here.
+        return self._fire_job(job, entry["type"], entry["params"])
 
     def cancel(self, job_id: str) -> bool:
         with self._lock:
@@ -577,7 +862,7 @@ class JobManager:
         self._slots.wake()
         self._emit(job, {"type": "error", "message": "Annullato"})
         if orphaned:
-            self._notify_listeners(job)
+            self._finish(job)
         return True
 
     def pause_batch(self, batch_id: str) -> int:
@@ -648,7 +933,9 @@ class JobManager:
 
         removed = 0
         for job in finished:
-            if job.output_path:
+            # Only what the batch itself wrote: an episode that was already in
+            # the library, and that the download merely found there, stays.
+            if job.output_path and job.output_created:
                 remove_download_output(job.output_path)
             with self._lock:
                 job.status = "cancelled"
@@ -663,6 +950,36 @@ class JobManager:
             jobs = [j for j in self._jobs.values()
                     if j.status in ("scheduled", "queued", "paused", "running")]
         return sum(self.cancel(job.job_id) for job in jobs)
+
+    def shutdown(self, timeout: float = 20.0) -> bool:
+        """Stop every download and wait for the workers to wind down.
+
+        Called once, as the server stops. Without it the downloads kept
+        running on their non-daemon threads - against an event loop that was
+        gone - and the process could not exit until the last one finished.
+        Cancelled first, so each worker ends by itself: it removes its partial
+        output, cleans its staging directory and tells its listeners, which is
+        why the wait comes before the executor is closed and not after.
+        Bounded: a worker stuck in a call that does not look at its
+        cancel_event is left behind with a warning. True when all ended.
+        """
+        cancelled = self.cancel_all()
+        with self._lock:
+            workers = list(self._workers)
+        _, still_running = wait_for_futures(workers, timeout=timeout)
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        if still_running:
+            logger.warning("Shutdown: %d download worker(s) still running after %.0fs",
+                           len(still_running), timeout)
+        else:
+            logger.info("Shutdown: %d job(s) cancelled, all download workers stopped", cancelled)
+        return not still_running
+
+    def purge_stale_temp(self) -> int:
+        """Clear what earlier runs left in TMP_DIR (see purge_stale_temp_dirs)."""
+        with self._lock:
+            keep = frozenset(self._jobs)
+        return purge_stale_temp_dirs(keep)
 
     def _park(self, job: DownloadJob, fn, args, kwargs) -> bool:
         """Leave the executor for a paused job. False when it was resumed or
@@ -736,14 +1053,20 @@ class JobManager:
         # anything counting completions waiting forever. An automatic retry is
         # not a path out: it loops here, so a batch still counts the episode
         # once, with its final outcome.
+        outcome = _FINISHED
         try:
-            while self._attempt(job, fn, args, kwargs):
+            while True:
+                outcome = self._attempt(job, fn, args, kwargs)
+                if outcome != _RETRY:
+                    break
                 # The wait holds no download slot, and a cancel ends it at once.
-                if job.cancel_event.wait(AUTO_RETRY_DELAY):
-                    job.retry_at = None
-                    job.status = "cancelled"
+                if job.cancel_event.wait(job.retry_delay):
+                    with self._lock:
+                        job.retry_at = None
+                        job.status = "cancelled"
                     self._emit(job, {"type": "error", "message": "Annullato"})
-                    return
+                    outcome = _FINISHED
+                    break
                 job.retry_at = None
                 if "progress_factory" in kwargs:
                     # The factory carries byte totals from phase to phase; the
@@ -751,24 +1074,45 @@ class JobManager:
                     kwargs = {**kwargs, "progress_factory": self._make_progress_factory(job)}
         finally:
             # A parked job is not over: it is resubmitted on resume, and
-            # notifies then - or cancel() does, if it never comes back.
-            if job.parked is None:
+            # notifies then - or cancel() does, if it never comes back. What
+            # _attempt returned decides, not job.parked: a resume can have
+            # cleared that already, and this thread would then announce a job
+            # that is queued again, on another thread, as finished.
+            if outcome != _PARKED:
+                with self._lock:
+                    if job.status not in _TERMINAL:
+                        # Only by an exception out of the code above, never by
+                        # a download failing. Listeners must still hear of it,
+                        # and must not hear "queued" or "running" as an ending.
+                        job.status = "error"
+                        job.error = job.error or "Errore interno del gestore dei download"
                 # Keep a failed staging directory so the explicit "Riprova"
                 # action can continue from the segments already downloaded.
                 # Successful and cancelled jobs have no reason to retain it.
                 if job.status in ("done", "cancelled"):
                     _cleanup_temp_dir(kwargs.get("temp_dir") or str(TMP_DIR / job.job_id))
-                self._notify_listeners(job)
+                self._finish(job)
 
-    def _attempt(self, job: DownloadJob, fn, args, kwargs) -> bool:
-        """Run the download once. True when it failed and should run again."""
+    def _remove_own_output(self, job: DownloadJob, path: str) -> None:
+        """Remove what a cancelled attempt left in the library - if it is its."""
+        if _written_since(path, job.attempt_started):
+            remove_download_output(path)
+        else:
+            logger.info("Kept %s: it was in the library before job %s started",
+                        path, job.job_id)
+
+    def _attempt(self, job: DownloadJob, fn, args, kwargs) -> str:
+        """Run the download once. Returns _FINISHED, _RETRY or _PARKED."""
         while not self._slots.acquire(job, on_queued=self._announce_queued):
-            if job.cancel_event.is_set():
-                job.status = "cancelled"
-                self._emit(job, {"type": "error", "message": "Annullato"})
-                return False
             if self._park(job, fn, args, kwargs):
-                return False
+                return _PARKED
+            with self._lock:
+                cancelled = job.cancel_event.is_set()
+                if cancelled:
+                    job.status = "cancelled"
+            if cancelled:
+                self._emit(job, {"type": "error", "message": "Annullato"})
+                return _FINISHED
             # Resumed before it could park: straight back in line.
         try:
             with self._lock:
@@ -776,45 +1120,67 @@ class JobManager:
                 # it runs, and must not be resumed later as if still waiting.
                 job.paused = False
                 job.status = "running"
+                job.attempt_started = time.time()
                 self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "running"})
 
             try:
                 result = fn(*args, **kwargs)
-                # Under the lock cancel_batch() reads the batch with: either it
-                # sees this job done and removes its files, or this sees purge.
+                created = bool(result) and _written_since(result, job.attempt_started)
+                # Under the lock cancel() and cancel_batch() decide with: either
+                # they find this job done (and cancel() then refuses, while
+                # cancel_batch() removes its files), or this finds their mark.
+                # A cancel that lands as the last bytes do wins - the job was
+                # told "Annullato" and its status already says so; writing
+                # "done" over it would bring it back to life.
                 with self._lock:
-                    if not job.purge:
+                    cancelled = job.purge or job.cancel_event.is_set()
+                    if not cancelled:
                         job.status = "done"
                         job.output_path = result
-                if job.purge:
-                    # Its batch was cancelled with its files while the last
-                    # bytes landed: what it wrote goes the way of the rest.
+                        job.output_created = created
+                if cancelled:
+                    # What it wrote goes the way of a download stopped midway;
+                    # a file that was there before it began is not its to take.
                     if result:
-                        remove_download_output(result)
+                        self._remove_own_output(job, result)
                     raise DownloadCancelledError("Download annullato dall'utente")
                 self._emit(job, {"type": "done", "output_path": result})
             except DownloadCancelledError:
-                job.status = "cancelled"
+                with self._lock:
+                    job.status = "cancelled"
                 self._emit(job, {"type": "error", "message": "Annullato"})
             except Exception as e:
-                if job.retries < AUTO_RETRIES and _worth_retrying(e):
-                    job.retries += 1
+                with self._lock:
+                    cancelled = job.cancel_event.is_set()
+                    retry = (not cancelled and job.retries < AUTO_RETRIES and _worth_retrying(e))
+                    if cancelled:
+                        # A download torn down by its own cancellation fails
+                        # any way it likes; it is still a cancelled one.
+                        job.status = "cancelled"
+                    elif retry:
+                        job.retries += 1
+                        job.retry_delay = _retry_delay(job.retries)
+                        job.status = "queued"
+                        job.error = str(e)
+                        job.retry_at = datetime.now(timezone.utc) + timedelta(seconds=job.retry_delay)
+                        job.progress = {**job.progress, "current": 0, "pct": 0, "speed": 0,
+                                        "eta": None, "bytes_done": 0}
+                    else:
+                        job.status = "error"
+                        job.error = str(e)
+                if cancelled:
+                    self._emit(job, {"type": "error", "message": "Annullato"})
+                elif retry:
                     logger.warning("Job %s failed (%s); retry %d/%d in %ds",
-                                   job.job_id, e, job.retries, AUTO_RETRIES, AUTO_RETRY_DELAY)
-                    job.status = "queued"
-                    job.error = str(e)
-                    job.retry_at = datetime.now(timezone.utc) + timedelta(seconds=AUTO_RETRY_DELAY)
-                    job.progress = {**job.progress, "current": 0, "pct": 0, "speed": 0,
-                                    "eta": None, "bytes_done": 0}
+                                   job.job_id, e, job.retries, AUTO_RETRIES, job.retry_delay)
                     self._broadcast({"type": "job_retrying", "job": self._job_to_dict(job)})
-                    return True
-                logger.exception(f"Job {job.job_id} failed: {e}")
-                job.status = "error"
-                job.error = str(e)
-                self._emit(job, {"type": "error", "message": str(e)})
+                    return _RETRY
+                else:
+                    logger.exception(f"Job {job.job_id} failed: {e}")
+                    self._emit(job, {"type": "error", "message": str(e)})
         finally:
             self._slots.release()
-        return False
+        return _FINISHED
 
     def _announce_queued(self, job: DownloadJob) -> None:
         """A job joined the line for a slot — first time, or back from a retry
@@ -1037,6 +1403,10 @@ class JobManager:
         job = self._make_job(title, type_, scheduled_at=scheduled_at, schedule_id=schedule_id,
                              phases=self._compute_phases(params.get("audio_languages") or ["ita"]),
                              **meta)
+        # Whatever the hour: _make_job calls a time already past "queued", but
+        # nothing is running it - only the scheduler starts a job that has a
+        # schedule entry, and it looks at scheduled ones alone.
+        job.status = "scheduled"
         with self._lock:
             self._jobs[job.job_id] = job
         self._schedule_store.set_job_id(schedule_id, job.job_id)
@@ -1044,13 +1414,27 @@ class JobManager:
         return job.job_id
 
     def load_scheduled_from_store(self):
-        """Re-hydrate pending scheduled entries from the JSON store on startup."""
+        """Re-hydrate the schedule from the JSON store on startup.
+
+        A pending entry becomes a scheduled job again - one whose hour passed
+        while the server was down included, which the next scheduler pass
+        starts. An entry a previous run fired and never saw the end of was
+        interrupted by the restart: it comes back as a failed job, so the
+        download is not lost without a word. One that ended well, or was
+        cancelled, has nothing left to say and is removed.
+        """
         if self._schedule_store is None:
             return
         for entry in self._schedule_store.list_all():
-            if entry.get("fired"):
-                continue  # already dispatched in a previous session — skip
             sid = entry["schedule_id"]
+            interrupted = False
+            if entry.get("fired"):
+                if "outcome" not in entry:
+                    continue  # fired by a version that kept no outcome — cannot tell
+                if entry["outcome"] in ("done", "cancelled"):
+                    self._schedule_store.remove_by_schedule_id(sid)
+                    continue
+                interrupted = True
             type_ = entry["type"]
             params = entry["params"]
             try:
@@ -1068,10 +1452,28 @@ class JobManager:
                                  media_label=title, year=params.get("year"),
                                  source=source,
                                  external_id=_schedule_external_id(params))
+            if interrupted:
+                self._restore_interrupted(job, entry)
+            else:
+                job.status = "scheduled"  # even if overdue: see _add_schedule
             with self._lock:
                 self._jobs[job.job_id] = job
             self._schedule_store.set_job_id(sid, job.job_id)
-            logger.info("Restored scheduled job %s (schedule_id=%s) for %s", job.job_id, sid, scheduled_at)
+            logger.info("Restored %s job %s (schedule_id=%s) for %s",
+                        job.status, job.job_id, sid, scheduled_at)
+
+    def _restore_interrupted(self, job: DownloadJob, entry: dict):
+        """Make ``job`` the visible remains of a schedule a restart cut short."""
+        if entry.get("outcome") is None:
+            self._schedule_store.set_outcome(entry["schedule_id"], "interrupted")
+        job.status = "error"
+        job.error = "Interrotto dal riavvio del server prima del completamento"
+        job.finished_at = datetime.now(timezone.utc)
+        try:
+            # So "Riprova" works on it like on any other failed download.
+            self._remember_call(job, *self._build_call(entry["type"], entry["params"], job))
+        except Exception as exc:
+            logger.warning("Interrupted scheduled job %s cannot be retried: %s", job.job_id, exc)
 
 
 job_manager = JobManager()

@@ -313,22 +313,29 @@ def _get_embed_content(episode_id) -> tuple[str, str]:
     r.raise_for_status()
     embed_url = r.text.strip()
 
-    if not embed_url.startswith("http"):
-        raise RuntimeError(f"Unexpected embed-url response: {embed_url[:100]!r}")
+    # The body is not quoted: it is a third party's response, and when it is
+    # not a URL it is usually a whole error page.
+    if not embed_url.startswith("https://"):
+        raise RuntimeError(
+            f"Unexpected embed-url response (HTTP {r.status_code}, {len(r.text)} characters)")
 
-    from app.core._shared import apply_video_host
+    from app.core._shared import apply_video_host, with_retry
+    from app.core.hosts import redact, safe_get
     embed_url = apply_video_host(embed_url)
-    logger.info("Episode %s embed URL: %s", episode_id, embed_url[:80])
+    logger.info("Episode %s embed URL: %s", episode_id, redact(embed_url)[:80])
 
     # Fetch the vixcloud embed page. vixcloud now serves this /embed/ HTML
     # page behind Cloudflare, so plain requests.get returns a 403 challenge page.
     # Use the cloudscraper session to clear the challenge. (The downstream
     # /playlist, /storage/enc.key and CDN segment URLs are NOT Cloudflare-gated
     # and still work with plain requests.)
-    req_embed = scraper.get(
-        embed_url,
-        headers={"Referer": f"https://{au_host}/"},
-        timeout=15,
+    #
+    # The URL is whatever the source answered with, so it — and any redirect
+    # after it — must be https to a public host before the panel goes there.
+    req_embed = with_retry(
+        lambda: safe_get(scraper.get, embed_url,
+                         headers={"Referer": f"https://{au_host}/"}, timeout=15),
+        what="embed",
     )
     req_embed.raise_for_status()
 
@@ -340,7 +347,8 @@ def _get_embed_content(episode_id) -> tuple[str, str]:
     if not script:
         raise RuntimeError("No script tag found in vixcloud embed page")
 
-    logger.info("Embed script (first 400 chars): %s", script.text[:400])
+    # Its length and nothing else: the script carries the playback token.
+    logger.info("Embed script received (%d characters)", len(script.text))
     return script.text, embed_url
 
 
@@ -394,15 +402,17 @@ def download_anime_episode(
     json_win_video, json_win_param = _parse_content(embed_content, embed_url)
 
     logger.info(
-        "Anime episode %s — video_id=%s token=%.8s...",
-        episode_number, json_win_video.get("id"), json_win_param.get("token", ""),
+        "Anime episode %s — video_id=%s token=<redacted>",
+        episode_number, json_win_video.get("id"),
     )
 
     m3u8_url = _get_m3u8_url(json_win_video, json_win_param)
     m3u8_key = _get_m3u8_key(json_win_video, json_win_param, embed_url)
 
+    missing_tracks: list[str] = []
     audio_track_urls = _collect_audio_tracks(
-        m3u8_url, embed_url, audio_languages, strict=strict_audio
+        m3u8_url, embed_url, audio_languages, strict=strict_audio,
+        missing=missing_tracks,
     )
     subtitle_track_urls = _collect_subtitle_tracks(m3u8_url, embed_url, subtitle_languages)
 
@@ -434,6 +444,7 @@ def download_anime_episode(
         subtitle_languages=subtitle_languages,
         audio_track_urls=audio_track_urls,
         subtitle_track_urls=subtitle_track_urls,
+        missing_tracks=missing_tracks,
     )
 
     # download_m3u8 returns the real output path: the destination is built in

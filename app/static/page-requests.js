@@ -153,7 +153,7 @@ function requestPoster(request) {
   if (!request.poster) return `<div class="req-poster req-poster-empty">🎬</div>`;
   const url = request.poster.startsWith('http')
     ? request.poster
-    : `/api/image/${request.poster}`;
+    : imageUrl(request.poster);
   return `<img class="req-poster" src="${escapeHtml(url)}" alt=""
             onerror="reqPosterError(this)">`;
 }
@@ -260,12 +260,6 @@ function renderQueueRow(r, compact = false) {
       <div class="req-side">
         ${statusBadge(r.status)}
         <div class="req-actions">
-          ${r.watch_id && r.status === 'pending' ? `
-            <label class="form-check form-check-inline mb-0" style="font-size:11px"
-                   title="${window.t('dynamic.hint11')}">
-              <input type="checkbox" class="form-check-input" id="watch-auto-${r.id}">
-              <span class="form-check-label">${window.t('dynamic.extra48')}</span>
-            </label>` : ''}
           ${['pending', 'needs_attention'].includes(r.status) ? `
             <button class="btn btn-sm btn-success" data-action="queue:approveOne" data-id="${r.id}">
               <i class="ti ti-check me-1"></i>${r.status === 'needs_attention' ? window.t("dynamic.ui97") : window.t("dynamic.extra45")}</button>
@@ -341,14 +335,9 @@ function syncSelectionBar(page) {
 }
 
 async function approveRequests(ids) {
-  // Ticked only on requests a followed series produced: saying yes here means
-  // the rest of that series stops asking.
-  const auto_approve_watch_ids = ids.filter(
-    id => document.getElementById(`watch-auto-${id}`)?.checked
-  );
   let data;
   try {
-    data = await api.post('/api/requests/approve-batch', { ids, auto_approve_watch_ids });
+    data = await api.post('/api/requests/approve-batch', { ids });
   } catch (e) { showToast(errText(e), 'danger'); return; }
   const failed = (data.results || []).filter(r => !r.ok);
   showToast(

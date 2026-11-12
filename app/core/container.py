@@ -12,10 +12,13 @@ A module of its own rather than part of ``app.core.format``, because
 cycle. Nothing here imports from ``app.core`` at all, and the one import of
 ``app.config`` is deferred, so this module stays safe to import from anywhere.
 
-Nothing is ever re-encoded. What comes out of the source's HLS is H.264 video
-and AAC audio, both native to either container, so a stream copy always works.
-The single conversion is WebVTT to ``mov_text``, because MP4 has no WebVTT
-track type — and that is a subtitle, not the picture.
+Nothing is re-encoded here unless it has to be. What comes out of the source's
+HLS is H.264 video and AAC audio, both native to either container, so the join
+and the remux are stream copies. Two exceptions, neither touching the picture:
+WebVTT becomes ``mov_text`` in MP4, which has no WebVTT track type, and the
+join re-encodes the *audio* to AAC as a fallback when FFmpeg refuses to copy
+it. (The optional conversion in ``app.core.transcode`` is a separate, explicit
+setting and runs after all of this.)
 """
 
 import logging
@@ -60,14 +63,29 @@ EXTERNAL = "external"
 SUBTITLE_MODES = (EMBED, EXTERNAL)
 DEFAULT_SUBTITLE_MODE = EMBED
 
-# Applied to every join regardless of container: the video is copied, the audio
-# is normalised to AAC, and both are native to MKV and MP4 alike. Only the
-# muxer flags merged in on top of this differ.
+# Applied to every join regardless of container: both streams are copied. The
+# source's AAC is native to MKV and MP4 alike, so decoding and re-encoding it —
+# which every join used to do — cost a generation of quality and most of the
+# join's time for nothing. Only the muxer flags merged in on top differ.
 JOIN_COMMON: dict[str, str] = {
+    "c:v": "copy",
+    "c:a": "copy",
+}
+
+# What the join falls back to when the copy is refused: audio that is not AAC,
+# or an ADTS stream too damaged to rewrap. The video is still never touched.
+JOIN_REENCODE_AUDIO: dict[str, str] = {
     "c:v": "copy",
     "c:a": "aac",
     "b:a": "192k",
     "af": "aresample=async=1000",
+}
+
+# AAC travels in MPEG-TS with an ADTS header on every frame; MP4 wants the
+# configuration once, in the track header. Matroska's muxer does the rewrap by
+# itself, MP4's is told to.
+_COPY_AUDIO_BSF: dict[str, dict[str, str]] = {
+    ".mp4": {"bsf:a": "aac_adtstoasc"},
 }
 
 
@@ -139,9 +157,17 @@ def _spec_for_path(path: str) -> dict:
     return spec()
 
 
-def join_options(output_path: str) -> dict:
-    """FFmpeg output options for the join, for whatever *output_path* names."""
-    return {**JOIN_COMMON, **_spec_for_path(output_path)["mux_options"]}
+def join_options(output_path: str, reencode_audio: bool = False) -> dict:
+    """FFmpeg output options for the join, for whatever *output_path* names.
+
+    *reencode_audio* is the fallback for a copy FFmpeg refused; see
+    JOIN_REENCODE_AUDIO.
+    """
+    entry = _spec_for_path(output_path)
+    if reencode_audio:
+        return {**JOIN_REENCODE_AUDIO, **entry["mux_options"]}
+    return {**JOIN_COMMON, **_COPY_AUDIO_BSF.get(entry["extension"], {}),
+            **entry["mux_options"]}
 
 
 def subtitle_codec(output_path: str) -> str:

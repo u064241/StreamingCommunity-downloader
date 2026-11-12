@@ -15,28 +15,40 @@ import time
 
 from bs4 import BeautifulSoup
 
-from app.core import animeunity, page
+from app.core import animeunity, page, source_budget
 
 logger = logging.getLogger(__name__)
 
-# A "trending" shelf fifteen minutes stale is indistinguishable from a fresh
-# one; an hour is not.
-_TTL = 15 * 60
+# The shelves change a few times a day. Past half an hour the start page still
+# shows the copy it has at once, with its time, and refreshes it in background
+# (stale-while-revalidate): nobody waits on the source to see the start page.
+_TTL = 30 * 60
 
-# Only two keys are ever live. The bound exists so a pathological run of domain
-# rotations cannot grow the dict.
-_MAX_ENTRIES = 8
+# Two shelf keys and two genre keys are live at once. The bound exists so a
+# pathological run of domain rotations cannot grow the dict.
+_MAX_ENTRIES = 16
 
 # How many titles of a shelf are worth rendering. The source sends thirty.
 _SHELF_CAP = 30
-
-_cache: dict[tuple, tuple[float, list]] = {}
-_cache_lock = threading.Lock()
 
 
 def _now() -> float:
     """Wall clock, indirected so tests can expire an entry without sleeping."""
     return time.time()
+
+
+_cache = source_budget.SourceCache("home", _TTL, max_entries=_MAX_ENTRIES,
+                                   clock=lambda: _now())
+
+# Where the last answer for each source came from, for the router to tell the
+# browser: {source: {"cached", "stale", "updated_at"}}.
+_served: dict[str, dict] = {}
+_served_lock = threading.Lock()
+
+
+def _spawn(job) -> None:
+    """Start a background refresh. Indirected so tests can run it inline."""
+    source_budget.spawn_thread(job)
 
 
 # The panel's own headings. The source's label is Italian copy it can re-word
@@ -66,26 +78,25 @@ def _cache_key(source: str, host: str) -> tuple:
 
 
 def _cached(key: tuple) -> list | None:
-    with _cache_lock:
-        entry = _cache.get(key)
-        if entry is None:
-            return None
-        expires_at, value = entry
-        if expires_at < _now():
-            _cache.pop(key, None)
-            return None
-        return value
+    """The cached value, expired or not; None when nothing is cached.
+
+    Expired is still worth showing here: the start page serves its last copy
+    while a refresh runs, and the genres ride along with the shelves.
+    """
+    entry = _cache.entry(key)
+    return entry.value if entry is not None else None
 
 
 def _store(key: tuple, value: list) -> None:
-    with _cache_lock:
-        if len(_cache) >= _MAX_ENTRIES:
-            now = _now()
-            for stale in [k for k, (exp, _) in _cache.items() if exp < now]:
-                _cache.pop(stale, None)
-            if len(_cache) >= _MAX_ENTRIES:
-                _cache.pop(next(iter(_cache)), None)
-        _cache[key] = (_now() + _TTL, value)
+    host = key[1] if len(key) > 1 and key[0] == "streamingcommunity" else None
+    _cache.put(key, value, host=host)
+
+
+def last_served(source: str) -> dict | None:
+    """Where the most recent answer for *source* came from. No I/O."""
+    with _served_lock:
+        info = _served.get(source)
+        return dict(info) if info else None
 
 
 def clear_cache(source: str | None = None) -> None:
@@ -93,12 +104,15 @@ def clear_cache(source: str | None = None) -> None:
     from app.core import catalog
     if source in (None, "streamingcommunity"):
         catalog.clear_cache()
-    with _cache_lock:
+    with _served_lock:
         if source is None:
-            _cache.clear()
-            return
-        for key in [k for k in _cache if k[0] == source]:
-            _cache.pop(key, None)
+            _served.clear()
+        else:
+            _served.pop(source, None)
+    if source is None:
+        _cache.clear()
+        return
+    _cache.clear(lambda k: k[0] == source)
 
 
 # ── StreamingCommunity ────────────────────────────────────────────────────────
@@ -106,6 +120,7 @@ def clear_cache(source: str | None = None) -> None:
 def _sc_shelves(domain: str) -> list[dict]:
     """The home page's own sliders: trending, recently added, today's top ten."""
     props = page.fetch_site_props(domain)
+    source_budget.note_fields("home", props)
     _store(("streamingcommunity", domain, "genres"), [
         {"id": g["id"], "name": g["name"], "type": g.get("type", "all")}
         for g in (props.get("genres") or []) if isinstance(g, dict)
@@ -184,25 +199,36 @@ def _shelf(source: str, key: str, items: list, fallback: str | None = None) -> d
 
 
 def shelves(source: str, domain: str) -> list[dict]:
-    """The front-page shelves for *source*, cached for a quarter of an hour.
+    """The front-page shelves for *source*, cached for half an hour (±20%).
+
+    Past that the cached copy is still answered at once and a refresh runs in
+    background, one per key however many tabs ask. While the source is in
+    backoff or the hourly budget is spent, the copy is answered and nothing is
+    sent (see ``source_budget``).
 
     A failed fetch is **not** cached, which is where this parts company with
     ``metadata``. That one caches a miss for ten minutes because a title with no
     plot usually still has none ten minutes later. A home page that failed is a
     flap, and remembering it would blank the start page for every user for the
-    duration — so the answer is an empty list now and a fresh try on the next
-    page load.
+    duration — so the answer is the last good copy if there is one, an empty
+    list otherwise, and a fresh try on the next page load.
     """
     key = _cache_key(source, domain)
-    hit = _cached(key)
-    if hit is not None:
-        return hit
+
+    def load():
+        return _au_shelves() if source == "animeunity" else _sc_shelves(domain)
 
     try:
-        result = _au_shelves() if source == "animeunity" else _sc_shelves(domain)
+        result, info = source_budget.get_or_load(
+            _cache, key, load, host=domain if source == "streamingcommunity" else None,
+            label=f"home:{source}", swr=True, spawn=_spawn)
+    except source_budget.SourceUnavailable as exc:
+        logger.warning("Front page of %s not fetched: %s", source, exc)
+        return []
     except Exception:
         logger.exception("Cannot read the front page of %s", source)
         return []
 
-    _store(key, result)
+    with _served_lock:
+        _served[source] = info
     return result

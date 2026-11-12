@@ -17,24 +17,42 @@ from app.core._shared import (
     _get_m3u8_url,
     embed_referer,
     apply_video_host,
+    with_retry,
 )
+from app.core.hosts import redact, safe_get
 
 logger = logging.getLogger(__name__)
+
+
+def iframe_src(html: str) -> str:
+    """The embed URL a source's iframe page names, or a RuntimeError saying it has none.
+
+    A page without the iframe — a removed title, a challenge, a login wall —
+    used to surface as "'NoneType' object has no attribute 'get'".
+    """
+    iframe = BeautifulSoup(html, "lxml").find("iframe")
+    src = iframe.get("src") if iframe is not None else None
+    if not src:
+        raise RuntimeError("Video non disponibile: la pagina della sorgente non contiene l'iframe del player")
+    return src
 
 
 def _get_iframe(id_title, domain):
     ua = get_headers()
     for path in (f"/iframe/{id_title}", f"/it/iframe/{id_title}"):
-        req = requests.get(f"https://{domain}{path}", headers={"User-agent": ua}, timeout=15)
+        url = f"https://{domain}{path}"
+        req = with_retry(lambda: requests.get(url, headers={"User-agent": ua}, timeout=15),
+                         what="iframe")
         if req.ok:
             break
     else:
         raise RuntimeError(f"Cannot fetch iframe: HTTP {req.status_code}")
 
-    url_embed = apply_video_host(BeautifulSoup(req.text, "lxml").find("iframe").get("src"))
+    url_embed = apply_video_host(iframe_src(req.text))
     # The vixcloud /embed/ is behind Cloudflare — fetch via cloudscraper.
     script_text = _fetch_vixcloud_embed(url_embed, referer=f"https://{domain}/")
-    logger.info("Embed script (first 800 chars): %s", script_text[:800])
+    # Its length and nothing else: the script carries the playback token.
+    logger.info("Embed script received (%d characters)", len(script_text))
     return script_text, url_embed
 
 
@@ -59,29 +77,48 @@ def _get_audio_track_url(parser, lang_code: str) -> str | None:
     return None
 
 
+def _fetch_master(m3u8_url: str, referer: str, what: str):
+    """The master playlist response, with the ``?b=1`` retry both collectors need."""
+    headers = {"user-agent": get_headers(), "referer": referer}
+    req = safe_get(requests.get, m3u8_url, headers=headers, timeout=15)
+    if req.status_code == 403:
+        b1_url = m3u8_url + ("&b=1" if "?" in m3u8_url else "?b=1")
+        logger.warning("Master M3U8 returned 403, retrying with ?b=1 for %s track collection", what)
+        req = safe_get(requests.get, b1_url, headers=headers, timeout=15)
+    return req
+
+
 def _collect_audio_tracks(m3u8_url: str, referer: str, audio_languages: list[str],
-                          strict: bool = False) -> list[dict]:
+                          strict: bool = False, missing: list[str] | None = None) -> list[dict]:
     """Resolve the audio playlists for the requested languages.
 
     With ``strict`` set, a language that is not on offer raises instead of being
     skipped. The request flow uses that: a user who asked for Italian audio must
     not silently receive an English file.
+
+    Without it the language is still skipped, but no longer silently: it is
+    appended to *missing* (as ``audio:<lang>``) when the caller passes a list,
+    which is how the finished job gets to say what it does not contain.
     """
     tracks = []
+
+    def _report(languages):
+        if missing is not None:
+            missing.extend(f"audio:{lang}" for lang in languages
+                           if f"audio:{lang}" not in missing)
+
     try:
-        headers = {"user-agent": get_headers(), "referer": referer}
-        req = requests.get(m3u8_url, headers=headers, timeout=15)
-        if req.status_code == 403:
-            b1_url = m3u8_url + ("&b=1" if "?" in m3u8_url else "?b=1")
-            logger.warning("Master M3U8 returned 403, retrying with ?b=1 for audio track collection")
-            req = requests.get(b1_url, headers=headers, timeout=15)
+        req = _fetch_master(m3u8_url, referer, "audio")
         if not req.ok:
             logger.warning("Could not fetch master M3U8 for audio tracks: HTTP %d", req.status_code)
             if strict:
                 raise RuntimeError(f"Master M3U8 non raggiungibile: HTTP {req.status_code}")
+            # Unknown, not absent — but the file will be written without them
+            # either way, and that is what the job has to report.
+            _report(audio_languages)
             return tracks
         parser = M3U8_Parser()
-        parser.parse_data(req.text)
+        parser.parse_data(req.text, base_uri=m3u8_url)
 
         # No separate audio renditions at all: this source muxes its single
         # soundtrack into the video rendition. There is nothing to choose
@@ -98,42 +135,48 @@ def _collect_audio_tracks(m3u8_url: str, referer: str, audio_languages: list[str
             url = _get_audio_track_url(parser, lang)
             if url:
                 tracks.append({"url": url, "language": lang})
-                logger.info("Audio track found for %s: %s", lang, url[:80])
+                logger.info("Audio track found for %s: %s", lang, redact(url)[:80])
                 continue
             available = [t.get("language") or t.get("name") for t in parser.audio_ts]
             logger.warning("Audio track not found for language: %s (available: %s)", lang, available)
             if strict:
                 raise MissingAudioTrackError(lang, [a for a in available if a])
+            _report([lang])
     except MissingAudioTrackError:
         raise
     except Exception as e:
         if strict:
             raise
-        logger.warning("Could not collect audio tracks: %s", e)
+        logger.warning("Could not collect audio tracks: %s", redact(e))
+        _report(lang for lang in audio_languages
+                if lang not in {t["language"] for t in tracks})
     return tracks
 
 
 def _collect_subtitle_tracks(m3u8_url: str, referer: str, subtitle_languages: list[str]) -> list[dict]:
+    """The subtitle playlists on offer for the requested languages.
+
+    Informational: the subtitles themselves are fetched by download_m3u8, which
+    is also what reports the ones that did not arrive.
+    """
     tracks = []
     try:
-        headers = {"user-agent": get_headers(), "referer": referer}
-        req = requests.get(m3u8_url, headers=headers, timeout=15)
-        if req.status_code == 403:
-            b1_url = m3u8_url + ("&b=1" if "?" in m3u8_url else "?b=1")
-            logger.warning("Master M3U8 returned 403, retrying with ?b=1 for subtitle track collection")
-            req = requests.get(b1_url, headers=headers, timeout=15)
+        req = _fetch_master(m3u8_url, referer, "subtitle")
         if not req.ok:
+            logger.warning("Could not fetch master M3U8 for subtitle tracks: HTTP %d",
+                           req.status_code)
             return tracks
         parser = M3U8_Parser()
-        parser.parse_data(req.text)
+        parser.parse_data(req.text, base_uri=m3u8_url)
         for lang in subtitle_languages:
             for sub in parser.subtitle_playlist:
                 if sub.get("language") == lang:
                     tracks.append({"uri": sub.get("uri"), "language": lang})
-                    logger.info("Subtitle track found for %s: %s", lang, sub.get("uri", "")[:80])
+                    logger.info("Subtitle track found for %s: %s", lang,
+                                redact(sub.get("uri") or "")[:80])
                     break
     except Exception as e:
-        logger.warning("Could not collect subtitle tracks: %s", e)
+        logger.warning("Could not collect subtitle tracks: %s", redact(e))
     return tracks
 
 
@@ -168,7 +211,7 @@ def download_film(id_film: int, title_name: str, domain: str,
     def _primary() -> StreamSource:
         embed_content, embed_referer = _get_iframe(id_film, domain)
         json_win_video, json_win_param = _parse_content(embed_content, embed_referer)
-        logger.info("Video ID: %s token: %.8s... embed_url: %s", json_win_video['id'], json_win_param.get('token', ''), embed_referer[:80])
+        logger.info("Video ID: %s token: <redacted> embed_url: %s", json_win_video['id'], redact(embed_referer)[:80])
         logger.info("Audio language: %s", json_win_video.get("lang", "it"))
         return StreamSource(
             m3u8_url=_get_m3u8_url(json_win_video, json_win_param),
@@ -184,8 +227,10 @@ def download_film(id_film: int, title_name: str, domain: str,
 
     # Runs against whichever playlist answered, so a missing language is still a
     # MissingAudioTrackError rather than a quiet substitution.
+    missing_tracks: list[str] = []
     audio_track_urls = _collect_audio_tracks(
-        m3u8_url, embed_referer, audio_languages, strict=strict_audio
+        m3u8_url, embed_referer, audio_languages, strict=strict_audio,
+        missing=missing_tracks,
     )
     subtitle_track_urls = _collect_subtitle_tracks(m3u8_url, embed_referer, subtitle_languages)
 
@@ -209,6 +254,7 @@ def download_film(id_film: int, title_name: str, domain: str,
         subtitle_languages=subtitle_languages,
         audio_track_urls=audio_track_urls,
         subtitle_track_urls=subtitle_track_urls,
+        missing_tracks=missing_tracks,
     )
 
     # download_m3u8 returns the real output path: the destination is built in

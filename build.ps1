@@ -43,6 +43,32 @@ $ProjectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
 $DistDir = Join-Path $ProjectRoot 'dist'
 $WorkDir = Join-Path $ProjectRoot '.build-work'
 $AppName = 'StreamingCommunityDownloader'
+# Pinned: an unpinned bootloader would change with every build machine.
+$PyInstallerVersion = '6.22.3'
+
+function New-UpdateManifest {
+    # update-manifest.json: one record per published asset. The in-app portable
+    # update (app/portable_updates.py) looks its ZIP up here by exact name, so
+    # every asset of the release must be listed. tests/test_fix_ops_manifest.py
+    # runs this function in isolation.
+    param(
+        [Parameter(Mandatory)][string]$Version,
+        [Parameter(Mandatory)][string[]]$AssetPaths
+    )
+    $records = foreach ($asset in $AssetPaths) {
+        $file = Get-Item -LiteralPath $asset
+        $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+        [ordered]@{ name = $file.Name; size = $file.Length; sha256 = $hash }
+    }
+    return [ordered]@{
+        schema = 1
+        variant = 'u064241'
+        channel = 'stable'
+        version = $Version
+        repository = 'u064241/StreamingCommunity-downloader'
+        assets = @($records)
+    }
+}
 
 function Get-AutoReleaseNotes([string]$Version) {
     $previousTag = (& git -C $ProjectRoot tag --sort=-version:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1)
@@ -263,7 +289,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Creazione ambiente temporaneo Python fallita.' }
         & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $ProjectRoot 'requirements.txt')
         if ($LASTEXITCODE -ne 0) { throw 'Installazione delle dipendenze del progetto fallita.' }
-        & $venvPython -m pip install --disable-pip-version-check pyinstaller
+    }
+
+    # Fresh or reused, the environment must build with the pinned PyInstaller.
+    & $venvPython -c "import importlib.metadata,sys; sys.exit(0 if importlib.metadata.version('pyinstaller') == '$PyInstallerVersion' else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        & $venvPython -m pip install --disable-pip-version-check "pyinstaller==$PyInstallerVersion"
         if ($LASTEXITCODE -ne 0) { throw 'Installazione di PyInstaller fallita.' }
     }
 
@@ -547,7 +578,9 @@ end;
                     Remove-Item -LiteralPath $intermediate -Force
                 }
             }
-            if (Test-Path -LiteralPath $portablePath -PathType Leaf) {
+            # A release publishes the portable ZIP: the in-app update of the
+            # portable mode downloads exactly that asset.
+            if (-not $Release -and (Test-Path -LiteralPath $portablePath -PathType Leaf)) {
                 Remove-Item -LiteralPath $portablePath -Force
             }
         } else {
@@ -556,25 +589,16 @@ end;
     }
 
     if ($Release) {
-        # The installer already contains the portable mode; do not publish a
-        # duplicate portable ZIP in the GitHub release.
-        $assets = @($outputPath)
-        $assetRecords = foreach ($asset in $assets) {
-            $file = Get-Item -LiteralPath $asset
-            $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
-            [ordered]@{ name = $file.Name; size = $file.Length; sha256 = $hash }
+        # Installer and portable ZIP are both release assets: the manifest and
+        # SHA256SUMS must describe every file the release publishes.
+        if (-not (Test-Path -LiteralPath $portablePath -PathType Leaf)) {
+            throw "Pacchetto portable mancante: $portablePath"
         }
-        $manifest = [ordered]@{
-            schema = 1
-            variant = 'u064241'
-            channel = 'stable'
-            version = $Version
-            repository = 'u064241/StreamingCommunity-downloader'
-            assets = @($assetRecords)
-        }
+        $assets = @($outputPath, $portablePath)
+        $manifest = New-UpdateManifest -Version $Version -AssetPaths $assets
         $manifestPath = Join-Path $DistDir 'update-manifest.json'
         $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
-        $checksums = $assetRecords | ForEach-Object { "$($_.sha256)  $($_.name)" }
+        $checksums = $manifest.assets | ForEach-Object { "$($_.sha256)  $($_.name)" }
         $checksums | Set-Content -LiteralPath (Join-Path $DistDir 'SHA256SUMS.txt') -Encoding ascii
         Write-Host "Release manifest: $manifestPath" -ForegroundColor Green
         if ($CleanReleaseArtifacts -and $outputPath -ne $exePath) {
@@ -611,6 +635,7 @@ end;
                 if ($LASTEXITCODE -ne 0) { throw "Push del branch release fallito: $releaseBranch" }
                 $releaseFiles = @(
                     (Join-Path $DistDir "$AppName-Setup-v$Version.exe"),
+                    $portablePath,
                     (Join-Path $DistDir 'update-manifest.json'),
                     (Join-Path $DistDir 'SHA256SUMS.txt')
                 )

@@ -7,8 +7,8 @@ say when a season was finished.
 import pytest
 
 from app import downloads_notify
-from app.auth.permissions import ALL_PERMISSIONS
-from tests.conftest import do_setup, make_user, session_for
+from app.auth.deps import local_user
+from tests.conftest import do_setup, session_for
 
 
 @pytest.fixture(autouse=True)
@@ -25,10 +25,8 @@ def panel(client, admin_credentials, source, stub_jobs, monkeypatch):
     from app.core import tv
 
     monkeypatch.setattr(tv, "get_season_numbers", lambda *a, **k: [1])
-    boss = make_user("boss", "jf-boss-id", int(ALL_PERMISSIONS))
-    client.cookies.clear()
-    source.csrf = session_for(client, boss.id)
-    source.user = boss
+    source.csrf = session_for(client, 0)
+    source.user = local_user()
     return source
 
 
@@ -193,9 +191,12 @@ def test_a_scheduled_batch_creates_scheduled_jobs(client, panel, stub_jobs, monk
 
 
 def test_the_batch_carries_the_acting_user(client, panel, stub_jobs):
+    """The local user's direct downloads are the panel's own: every job of the
+    batch carries user_id None, so its notifications go to the panel-wide bell
+    (which the local user's bell shows)."""
     _post(client, panel, "/api/download/season", SEASON_BODY)
 
-    assert {kwargs["user_id"] for _, _, kwargs in stub_jobs} == {panel.user.id}
+    assert {kwargs["user_id"] for _, _, kwargs in stub_jobs} == {None}
 
 
 def test_a_batch_is_registered_before_any_job_is_submitted(client, panel, monkeypatch):

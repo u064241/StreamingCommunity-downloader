@@ -350,8 +350,14 @@ def _run_check(force: bool = False) -> dict:
     if result["current"]:
         result["current_ok"] = verify(result["current"]) is not None
 
+    # Old aliases are dropped before any request goes to them: probing a retired
+    # host is traffic toward the source for nothing, and it can be proposed back.
+    retired = config.retired_domains()
     for host in candidates:
         if host == result["current"]:
+            continue
+        if host.strip().lower() in retired:
+            result["rejected"].append({"host": host, "reason": "dominio ritirato"})
             continue
         ok, reason = is_plausible(host)
         if not ok:
@@ -370,10 +376,11 @@ def _run_check(force: bool = False) -> dict:
     if result["candidate"] is None:
         return result
 
-    # A verified Telegram candidate is authoritative and is applied without
-    # requiring the optional auto-apply setting.  All plausibility and source
-    # version checks above still apply.
-    if result["candidate"] in telegram_candidates or _settings().get("domain_auto_apply"):
+    # Applied only when an administrator asked for that. Telegram is read first
+    # and wins over the other page, but it is still a channel edited by people
+    # we do not control: with ``domain_auto_apply`` off its candidate is
+    # proposed like any other, as the module docstring promises.
+    if _settings().get("domain_auto_apply"):
         try:
             apply_candidate(result["candidate"])
             result["applied"] = True

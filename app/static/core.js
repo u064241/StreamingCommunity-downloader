@@ -1,25 +1,27 @@
-// Shared primitives: session, the fetch wrapper, the small formatters, the
-// modal and toast plumbing. Everything here is used by more than one page.
+// Shared primitives: the local identity, the fetch wrapper, the small
+// formatters, the modal and toast plumbing. Everything here is used by more than one page.
 //
 // Loaded before app.js and panel.js, and a classic script on purpose, not a
 // module: the markup still carries inline onclick handlers, which resolve
 // against global scope. See the rework plan.
 
 
-// ── Session ────────────────────────────────────────────────────────────────────
+// ── Local identity ─────────────────────────────────────────────────────────────
+//
+// The panel is local and single-user: no login, no session, no logout.
+// /api/auth/me names the one local user and its permissions, which drive the
+// menu below. Cross-site writes are refused server-side by the Origin /
+// Sec-Fetch-Site guard (app/auth/deps.py), not by a token.
 
-let _me = null;           // { user, csrf_token, auth_enabled }
+let _me = null;           // { user, csrf_token: null, auth_enabled: false, version }
 let _csrf = '';
-let _authEnabled = true;  // false when the panel runs without Jellyfin (auth_mode=open)
 
 function can(permission) {
   return !!_me && _me.user.permission_names.includes(permission);
 }
 
-// Every state-changing call carries the session's CSRF token, and an expired or
-// revoked session lands on the login page instead of failing silently. Wrapping
-// fetch once covers every call site, including the ones written before auth
-// existed.
+// Wrapping fetch once covers every call site. The CSRF header is only sent if
+// the server ever hands out a token again; today /api/auth/me answers null.
 const _nativeFetch = window.fetch.bind(window);
 
 function _withCsrfHeader(opts, method) {
@@ -29,8 +31,7 @@ function _withCsrfHeader(opts, method) {
   return opts;
 }
 
-/** Re-fetch identity and CSRF token without the page-load side effects
- * (nav visibility, header). Returns false if the session itself is gone. */
+/** Fetch the local identity. Returns false if the panel did not answer. */
 async function _refreshIdentity() {
   const res = await _nativeFetch('/api/auth/me');
   if (!res.ok) return false;
@@ -42,36 +43,18 @@ async function _refreshIdentity() {
 window.fetch = async (input, init) => {
   init = init || {};
   const method = (init.method || 'GET').toUpperCase();
-  const isAuthCall = String(input).startsWith('/api/auth/');
-
-  let res = await _nativeFetch(input, _withCsrfHeader(init, method));
-
-  // A stale token — typically a tab left open across a newer login elsewhere,
-  // which rotates the (browser-wide) session cookie but leaves this tab's own
-  // in-memory token behind — is safe to recover from: refresh it once and
-  // retry. A real permission-denied 403 carries no such header and falls
-  // through untouched, since refreshing a token would never fix that.
-  if (res.status === 403 && res.headers.get('X-CSRF-Retry') && !isAuthCall) {
-    if (await _refreshIdentity()) {
-      res = await _nativeFetch(input, _withCsrfHeader(init, method));
-    }
-  }
-
-  if (res.status === 401 && !isAuthCall) {
-    window.location.href = '/login';
-  }
-  return res;
+  return _nativeFetch(input, _withCsrfHeader(init, method));
 };
 
 async function initAuth() {
-  if (!await _refreshIdentity()) { window.location.href = '/login'; return false; }
-
-  _authEnabled = _me.auth_enabled !== false;
-
-  const initials = (_me.user.username || '?').slice(0, 2).toUpperCase();
-  document.getElementById('user-initials').textContent = initials;
-  document.getElementById('user-name').textContent = _me.user.username;
-  document.getElementById('user-role').textContent = _roleLabel();
+  // There is no login page to send anyone to: if the panel itself does not
+  // answer, say so where the page would have been.
+  let ok = false;
+  try { ok = await _refreshIdentity(); } catch (_) { ok = false; }
+  if (!ok) {
+    showToast('Pannello non raggiungibile: ricarica la pagina.', 'danger');
+    return false;
+  }
 
   const version = document.getElementById('app-version');
   if (version && _me.version) version.textContent = `SC Panel v${_me.version}`;
@@ -86,40 +69,12 @@ async function initAuth() {
   // downloads directly never files a request, so the queue of their own
   // requests is an empty page with a name.
   //
-  // A followed series does file requests in their name, but that is
-  // machinery, not something they asked for: the request exists so dedup, the
-  // library check and the notifications keep working, it is auto-approved
-  // against their own DOWNLOAD permission, and what they actually want to see
-  // - the episode arriving - shows up under Download like any other job. One
-  // that parks on a missing track still reaches them through the bell, which
-  // carries no permission gate.
-  //
   // Applied second so it can override a data-perm that just showed the
   // element.
   document.querySelectorAll('[data-hide-perm]').forEach(el => {
     if (el.dataset.hidePerm.split('|').some(can)) el.style.display = 'none';
   });
-  // Without Jellyfin there is no identity or request queue to show, even for
-  // the one permission (DOWNLOAD) that would otherwise leave them visible.
-  if (!_authEnabled) {
-    document.querySelectorAll('[data-requires-auth]').forEach(el => { el.style.display = 'none'; });
-  }
   return true;
-}
-
-function _roleLabel() {
-  if (can('MANAGE_USERS') || can('MANAGE_SETTINGS')) return 'Amministratore';
-  if (can('MANAGE_REQUESTS')) return 'Approvatore';
-  if (can('DOWNLOAD')) return 'Download diretto';
-  if (can('REQUEST')) return 'Richieste';
-  return 'Sola lettura';
-}
-
-async function logout() {
-  // Best effort: the cookie is the session, and landing on /login without
-  // having managed to tell the server is still better than staying put.
-  try { await api.post('/api/auth/logout'); } catch (e) { /* leaving anyway */ }
-  window.location.href = '/login';
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -248,14 +203,24 @@ function showToast(message, type = 'info', link = null) {
   setTimeout(() => toast.remove(), link ? 7000 : 4000);
 }
 
+// A blocked source answers every queued request with a 403: one notice per
+// interval, whatever the cascade. Only the event is gated here; nothing is
+// re-requested on a timer.
+const SOFTETHER_BLOCK_NOTICE_INTERVAL_MS = 10 * 60 * 1000;
 let _softEtherOfferAt = 0;
 window.addEventListener('softether:block-detected', () => {
   const now = Date.now();
-  if (now - _softEtherOfferAt < 10 * 60 * 1000) return;
+  if (_softEtherOfferAt && now - _softEtherOfferAt < SOFTETHER_BLOCK_NOTICE_INTERVAL_MS) return;
   _softEtherOfferAt = now;
-  if (document.getElementById('page-settings')?.style.display !== 'none') return;
+  // The Settings notice (page-settings.js) stays up until reload; the toast
+  // is for whoever is on another page.
+  window.dispatchEvent(new CustomEvent('softether:block-notice'));
+  // The notice only counts as seen when it is laid out: on another page, or
+  // on another Settings tab, offsetParent is null and the toast is needed.
+  const notice = document.getElementById('softether-block-notice');
+  if (notice && !notice.hidden && notice.offsetParent !== null) return;
   showToast(window.t('softether.blockDetected'), 'warning', {
-    label: window.t('softether.openSettings'), page: 'settings',
+    label: window.t('softether.openSettings'), page: 'settings', tab: 'sorgente',
   });
 });
 
@@ -303,13 +268,19 @@ function posterError(img) {
   img.style.display = 'none';
 }
 
+// Artwork URL for a bare filename. The generation changes on a manual refresh,
+// so a new value makes the browser fetch the image again.
+function imageUrl(name) {
+  return `/api/image/${name}?g=${encodeURIComponent(window.IMAGE_GEN || '0')}`;
+}
+
 // A title's poster. AnimeUnity sends an absolute URL; StreamingCommunity sends
 // a bare filename that /api/image/ resolves against the current source host -
 // which is why it must not be hardcoded anywhere.
 function posterUrl(item) {
   const p = item && item.poster;
   if (!p) return '';
-  return p.startsWith('http') ? p : `/api/image/${p}`;
+  return p.startsWith('http') ? p : imageUrl(p);
 }
 
 
@@ -417,9 +388,12 @@ function diskLevel(pct) {
 
 
 registerActions({
-  'session:logout': () => logout(),
   // The button sits inside the .alert; the positioned wrapper is its parent,
   // and that is what has to go, or an invisible box keeps covering the corner.
   'toast:dismiss':  (d, el) => el.closest('.alert')?.parentElement?.remove(),
-  'toast:go':       (d, el) => { el.closest('.alert')?.parentElement?.remove(); showPage(d.page); },
+  'toast:go':       (d, el) => {
+    el.closest('.alert')?.parentElement?.remove();
+    showPage(d.page);
+    if (d.tab && typeof window.switchSettingsTab === 'function') window.switchSettingsTab(d.tab);
+  },
 });

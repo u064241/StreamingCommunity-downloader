@@ -11,15 +11,18 @@
       'common.save': 'Salva', 'common.loading': 'Caricamento...', 'common.error': 'Errore',
       'common.retry': 'Riprova', 'common.refresh': 'Aggiorna',
       'nav.search': 'Cerca', 'nav.downloads': 'Download', 'nav.requests': 'Richieste',
-      'nav.myRequests': 'Le mie richieste', 'nav.watches': 'Serie seguite',
-      'nav.files': 'File', 'nav.users': 'Utenti', 'nav.settings': 'Impostazioni',
+      'nav.myRequests': 'Le mie richieste', 'nav.files': 'File', 'nav.settings': 'Impostazioni',
       'updates.check': 'Controlla aggiornamenti', 'home.next': 'Scopri cosa guardare',
       'home.media': 'serie, film, anime.', 'home.subtitle': 'Cerca nel catalogo, scegli audio e sottotitoli, e mandalo in libreria.',
       'search.placeholder': 'Film, serie TV...', 'search.button': 'Cerca', 'search.allSources': 'Tutte le fonti',
       'downloads.title': 'Download', 'downloads.subtitle': 'Ogni download attraversa le sue fasi in ordine — video, una traccia per lingua audio, poi l’unione. La barra segue i segmenti ottenuti.',
       'downloads.refresh': 'Aggiorna', 'downloads.retryFailed': 'Riprova falliti', 'downloads.clearDone': 'Rimuovi completati', 'downloads.clearErrors': 'Pulisci errori',
       'downloads.cancelAll': 'Annulla tutto', 'downloads.all': 'Tutti', 'downloads.running': 'In corso', 'downloads.waiting': 'In attesa', 'downloads.scheduled': 'Programmati', 'downloads.completed': 'Completati', 'downloads.errors': 'Errori', 'downloads.empty': 'Nessun download in corso',
-      'title.related': 'Correlati', 'title.switch': 'Scegli un altro titolo', 'title.item': 'Titolo'
+      'title.related': 'Correlati', 'title.switch': 'Scegli un altro titolo', 'title.item': 'Titolo',
+      'nav.archive': 'Archivio', 'archive.title': 'Archivio', 'archive.subtitle': 'Tutto il catalogo StreamingCommunity, 60 titoli alla volta.',
+      'archive.genre': 'Genere', 'archive.country': 'Paese', 'archive.anyGenre': 'Tutti i generi', 'archive.anyCountry': 'Tutti i paesi',
+      'archive.filterUnsupported': 'Filtro non ancora supportato per l’archivio della sorgente',
+      'archive.count': '{count} titoli', 'archive.count.one': '{count} titolo', 'archive.unavailable': 'Archivio non disponibile'
     },
     en: {
       'domain.recovery.checking': 'Searching for the source domain…',
@@ -30,22 +33,25 @@
       'common.save': 'Save', 'common.loading': 'Loading...', 'common.error': 'Error',
       'common.retry': 'Retry', 'common.refresh': 'Refresh',
       'nav.search': 'Search', 'nav.downloads': 'Downloads', 'nav.requests': 'Requests',
-      'nav.myRequests': 'My requests', 'nav.watches': 'Followed series',
-      'nav.files': 'Files', 'nav.users': 'Users', 'nav.settings': 'Settings',
+      'nav.myRequests': 'My requests', 'nav.files': 'Files', 'nav.settings': 'Settings',
       'updates.check': 'Check for updates', 'home.next': 'Discover what to watch',
       'home.media': 'series, films, anime.', 'home.subtitle': 'Search the catalog, choose audio and subtitles, and send it to your library.',
       'search.placeholder': 'Films, TV series...', 'search.button': 'Search', 'search.allSources': 'All sources',
       'downloads.title': 'Downloads', 'downloads.subtitle': 'Each download goes through its stages in order — video, one audio track per language, then merging. The bar follows the downloaded segments.',
       'downloads.refresh': 'Refresh', 'downloads.retryFailed': 'Retry failed', 'downloads.clearDone': 'Remove completed', 'downloads.clearErrors': 'Clear errors',
       'downloads.cancelAll': 'Cancel all', 'downloads.all': 'All', 'downloads.running': 'Running', 'downloads.waiting': 'Waiting', 'downloads.scheduled': 'Scheduled', 'downloads.completed': 'Completed', 'downloads.errors': 'Errors', 'downloads.empty': 'No active downloads',
-      'title.related': 'Related', 'title.switch': 'Choose another title', 'title.item': 'Title'
+      'title.related': 'Related', 'title.switch': 'Choose another title', 'title.item': 'Title',
+      'nav.archive': 'Archive', 'archive.title': 'Archive', 'archive.subtitle': 'The whole StreamingCommunity catalog, 60 titles at a time.',
+      'archive.genre': 'Genre', 'archive.country': 'Country', 'archive.anyGenre': 'All genres', 'archive.anyCountry': 'All countries',
+      'archive.filterUnsupported': 'Filter not yet supported for the source archive',
+      'archive.count': '{count} titles', 'archive.count.one': '{count} title', 'archive.unavailable': 'Archive unavailable'
     }
   };
 
   // Shared catalog and title messages; data stays separate from UI labels.
   const pageMessages = {
 "settings.hardware.title": {it:"Hardware e suggerimenti",en:"Hardware and recommendations"},
-"settings.hardware.hint": {it:"Analizza il computer che esegue il portale. I suggerimenti sono indicativi e non modificano le impostazioni.",en:"Analyze the computer running the portal. Recommendations are estimates and do not change settings."},
+"settings.hardware.hint": {it:"Analizza il computer che esegue il portale e lo stato della sorgente, poi applica il profilo download adatto (Conservativo, Bilanciato o Veloce). Encoder e formato video restano invariati.",en:"Analyze the computer running the portal and the source's health, then apply the matching download profile (Conservative, Balanced or Fast). Video encoder and format are left unchanged."},
 "settings.hardware.scan": {it:"Analizza hardware",en:"Analyze hardware"},
 "settings.hardware.scanning": {it:"Analisi hardware e verifica encoder in corso…",en:"Analyzing hardware and testing encoders…"},
 "settings.hardware.unknown": {it:"Non rilevato",en:"Unknown"},
@@ -55,12 +61,23 @@
 "settings.hardware.noGpu": {it:"GPU: non rilevata (non implica assenza di encoder hardware)",en:"GPU: not detected (hardware encoders may still be available)"},
 "settings.hardware.encoders": {it:"Encoder verificati: {encoders}",en:"Verified encoders: {encoders}"},
 "settings.hardware.conversion": {it:"Conversione suggerita: {encoder}, {codec}, qualità bilanciata. Conversioni simultanee supportate: {count}.",en:"Suggested conversion: {encoder}, {codec}, balanced quality. Supported concurrent conversions: {count}."},
-"settings.hardware.downloads": {it:"Punto di partenza: {count} download simultanei e {workers} segmenti complessivi.",en:"Starting point: {count} concurrent downloads and {workers} segments overall."},
+"settings.hardware.downloads": {it:"Punto di partenza: {count} download simultanei, {workers} segmenti complessivi, {connections} connessioni alla sorgente, {requests} richieste/ora.",en:"Starting point: {count} concurrent downloads, {workers} segments overall, {connections} source connections, {requests} requests/hour."},
 "settings.hardware.applied": {it:"Impostazioni consigliate applicate: {count} download simultanei e {workers} segmenti in parallelo.",en:"Recommended settings applied: {count} concurrent downloads and {workers} parallel segments."},
 "settings.hardware.advice": {it:"Mantieni Originale per evitare la ricodifica. Per convertire, scegli manualmente l'encoder suggerito e usa il fallback CPU solo se risulta disponibile. Rete, sorgente e disco possono richiedere limiti inferiori; non sono stati misurati.",en:"Keep Original to avoid re-encoding. To convert, manually select the suggested encoder and enable CPU fallback only if available. Network, source and disk may require lower limits; they have not been measured."},
 "settings.hardware.partial": {it:"Analisi parziale: alcuni dati non sono disponibili.",en:"Partial analysis: some information is unavailable."},
 "settings.hardware.failed": {it:"Analisi hardware non riuscita. Riprova.",en:"Hardware analysis failed. Try again."},
 "settings.hardware.noEncoder": {it:"Nessun encoder verificato: mantieni la modalità Originale.",en:"No verified encoder: keep Original mode."},
+"settings.hardware.ffmpegOk": {it:"ffmpeg: disponibile",en:"ffmpeg: available"},
+"settings.hardware.ffmpegMissing": {it:"ffmpeg: non trovato (necessario per unire i segmenti)",en:"ffmpeg: not found (needed to join segments)"},
+"settings.hardware.source": {it:"Sorgente: {pushbacks} rifiuti/rallentamenti nelle ultime 72 ore, {week} negli ultimi 7 giorni (storico di {hours} ore), {requests}/{limit} richieste nell'ultima ora.",en:"Source: {pushbacks} refusals/slowdowns in the last 72 hours, {week} in the last 7 days ({hours}-hour history), {requests}/{limit} requests in the last hour."},
+"settings.hardware.capFromEnv": {it:"Limite connessioni imposto da SC_SOURCE_MAX_CONNECTIONS: {cap} (ha precedenza sul profilo).",en:"Connection cap set by SC_SOURCE_MAX_CONNECTIONS: {cap} (overrides the profile)."},
+"settings.hardware.budgetFromEnv": {it:"Budget richieste imposto da SC_SOURCE_REQUESTS_PER_HOUR: {limit}/ora (ha precedenza sul profilo).",en:"Request budget set by SC_SOURCE_REQUESTS_PER_HOUR: {limit}/hour (overrides the profile)."},
+"settings.hardware.sourcePaused": {it:"Sorgente in pausa in questo momento.",en:"The source is paused right now."},
+"settings.hardware.presetApplied": {it:"Profilo {preset} applicato: {count} download simultanei, {workers} segmenti in parallelo, {connections} connessioni alla sorgente, {requests} richieste/ora. Motivo: {reason}",en:"{preset} profile applied: {count} concurrent downloads, {workers} parallel segments, {connections} source connections, {requests} requests/hour. Reason: {reason}"},
+"settings.hardware.conservativeRestored": {it:"Profilo Conservativo ripristinato: {count} download simultanei, {workers} segmenti in parallelo, {connections} connessioni alla sorgente, {requests} richieste/ora.",en:"Conservative profile restored: {count} concurrent downloads, {workers} parallel segments, {connections} source connections, {requests} requests/hour."},
+"settings.hardware.resetConservative": {it:"Ripristina Conservativo",en:"Restore Conservative"},
+"settings.hardware.queuePaused": {it:"Sorgente in pausa fino alle {time}, la coda riprenderà automaticamente.",en:"Source paused until {time}; the queue will resume automatically."},
+"settings.hardware.downgraded": {it:"La sorgente si è fermata più di 3 volte in un'ora: è stato applicato il profilo Conservativo.",en:"The source paused more than 3 times in an hour: the Conservative profile was applied."},
 "files.moved": {it:"Spostato: {name}",en:"Moved: {name}"},
 "files.movedCount": {it:"{count} file spostati",en:"{count} files moved"},
 "files.moveFailedCount": {it:"{count} file non spostati",en:"{count} files could not be moved"},
@@ -75,10 +92,6 @@
 "downloads.cancelledCount": {it:"{count} download annullati",en:"{count} downloads cancelled"},
 "downloads.removedCount": {it:", {count} eliminati dalla libreria",en:", {count} removed from library"},
 "downloads.notQueued": {it:"{count} download non sono stati rimessi in coda",en:"{count} downloads could not be queued again"},
-"watches.confirmQueue": {it:"I nuovi episodi di «{name}» torneranno in coda. Procedere?",en:"New episodes of “{name}” will return to the queue. Continue?"},
-"watches.autoEnabled": {it:"«{name}»: i nuovi episodi verranno scaricati automaticamente",en:"“{name}”: new episodes will download automatically"},
-"watches.autoDisabled": {it:"«{name}»: i nuovi episodi torneranno in coda",en:"“{name}”: new episodes will return to the queue"},
-"watches.confirmUnfollow": {it:"Smettere di seguire «{name}»?",en:"Unfollow “{name}”?"},
 "requests.confirmCancel": {it:"Annullare {count} richieste?",en:"Cancel {count} requests?"},
 "updates.badgeHint": {it:"Disponibile la v{version}: apri le note di rilascio",en:"Version {version} available: open release notes"},
 "updates.confirmRestart": {it:"Aggiornare il pannello alla v{version}? Verrà riavviato: qualche istante senza interfaccia.",en:"Update the panel to v{version}? It will restart and be unavailable briefly."},
@@ -87,13 +100,6 @@
 "dynamic.hint2": {it:"Elimina questa notifica",en:"Delete this notification"},
 "dynamic.hint3": {it:"Elimina",en:"Delete"},
 "dynamic.hint4": {it:"Per aggiornare:",en:"To update:"},
-"dynamic.hint5": {it:"Tracce audio e sottotitoli dei prossimi episodi",en:"Audio and subtitle tracks for upcoming episodes"},
-"dynamic.hint6": {it:"I nuovi episodi torneranno a passare dalla coda di approvazione",en:"New episodes will go through the approval queue again"},
-"dynamic.hint7": {it:"Approva la serie una volta: i nuovi episodi verranno scaricati senza passare dalla coda",en:"Approve the series once: new episodes will download without approval"},
-"dynamic.hint8": {it:"Scarica tutte le lingue richieste dai follower, dai prossimi episodi",en:"Download all languages requested by followers starting with upcoming episodes"},
-"dynamic.hint9": {it:"Cerca subito nuovi episodi, senza aspettare il controllo automatico",en:"Check for new episodes now without waiting for the automatic check"},
-"dynamic.hint10": {it:"Lettura delle tracce dalla fonte...",en:"Reading tracks from the source..."},
-"dynamic.hint11": {it:"Approva anche i prossimi episodi di questa serie, senza ripassare dalla coda",en:"Also approve upcoming episodes of this series without returning to the queue"},
 "dynamic.hint12": {it:"In attesa di una verifica da parte di un amministratore.",en:"Waiting for an administrator to review."},
 "dynamic.hint13": {it:"Rimuovi dall'elenco",en:"Remove from list"},
 "dynamic.hint14": {it:"Metti in pausa: il download in corso finisce, gli altri aspettano",en:"Pause: the active download finishes and the others wait"},
@@ -110,21 +116,6 @@
     'dynamic.updateConfirm': {it: "Versione {version} verificata. Applicarla? L'applicazione verrà riavviata automaticamente dopo la sostituzione.", en: 'Version {version} verified. Apply it? The application will restart automatically after replacement.'},
     'dynamic.installedVersion': {it: 'Versione installata: v{version}', en: 'Installed version: v{version}'},
     'dynamic.domainUpdated': {it: 'Dominio aggiornato: {domain}', en: 'Domain updated: {domain}'},
-"dynamic.extra0": {it:"Attivo",en:"Active"},
-"dynamic.extra1": {it:"Disabilitato",en:"Disabled"},
-"dynamic.extra2": {it:"Non importato",en:"Not imported"},
-"dynamic.extra3": {it:"Importa",en:"Import"},
-"dynamic.extra4": {it:"Segui",en:"Follow"},
-"dynamic.extra5": {it:"Seguita",en:"Following"},
-"dynamic.extra6": {it:"Lingue",en:"Languages"},
-"dynamic.extra7": {it:"Controlla ora",en:"Check now"},
-"dynamic.extra8": {it:"Non seguire più",en:"Unfollow"},
-"dynamic.extra9": {it:"Togli automatico",en:"Disable automatic downloads"},
-"dynamic.extra10": {it:"Approva automatico",en:"Approve automatic downloads"},
-"dynamic.extra11": {it:"Unisci lingue",en:"Merge languages"},
-"dynamic.extra12": {it:"download automatico",en:"automatic downloads"},
-"dynamic.extra13": {it:"passa dalla coda",en:"requires approval"},
-"dynamic.extra14": {it:"Nessuna serie seguita.",en:"No followed series."},
 "dynamic.extra15": {it:"Nessuna traccia disponibile.",en:"No tracks available."},
 "dynamic.extra16": {it:"Nessun download in questo filtro",en:"No downloads match this filter"},
 "dynamic.extra17": {it:"Nessun download in corso",en:"No active downloads"},
@@ -153,12 +144,10 @@
 "dynamic.extra40": {it:"Hook fallito",en:"Hook failed"},
 "dynamic.extra41": {it:"Richieste",en:"Requests"},
 "dynamic.extra42": {it:"Download diretti",en:"Direct downloads"},
-"dynamic.extra43": {it:"Serie seguite",en:"Followed series"},
 "dynamic.extra44": {it:"Sorgente",en:"Source"},
 "dynamic.extra45": {it:"Approva",en:"Approve"},
 "dynamic.extra46": {it:"Rifiuta",en:"Reject"},
 "dynamic.extra47": {it:"Correggi",en:"Correct"},
-"dynamic.extra48": {it:"Auto i prossimi",en:"Auto-download upcoming"},
 "dynamic.extra49": {it:"In coda",en:"Queued"},
 "dynamic.extra50": {it:"Lancia subito",en:"Start now"},
 "dynamic.extra51": {it:"Interrompi",en:"Stop"},
@@ -184,51 +173,7 @@
 "dynamic.ui17": {it:"Fallita",en:"Failed"},
 "dynamic.ui18": {it:"Annullata",en:"Cancelled"},
 "dynamic.ui19": {it:"Da verificare",en:"Needs attention"},
-"dynamic.ui20": {it:"Scarica direttamente",en:"Download directly"},
-"dynamic.ui21": {it:"Può richiedere",en:"Can request"},
-"dynamic.ui22": {it:"Approva richieste",en:"Approve requests"},
-"dynamic.ui23": {it:"Gestisce utenti",en:"Manage users"},
-"dynamic.ui24": {it:"Gestisce impostazioni",en:"Manage settings"},
-"dynamic.ui25": {it:"Gestisce file",en:"Manage files"},
-"dynamic.ui26": {it:"Sfoglia libreria",en:"Browse library"},
-"dynamic.ui27": {it:"Importati",en:"Imported"},
-"dynamic.ui28": {it:"Da importare",en:"Not imported"},
-"dynamic.ui29": {it:"Disabilitati",en:"Disabled"},
-"dynamic.ui30": {it:"Nessun utente corrisponde al filtro.",en:"No users match the filter."},
-"dynamic.ui31": {it:"Nessun account trovato su Jellyfin.",en:"No accounts found on Jellyfin."},
-"dynamic.ui32": {it:"Disabilita",en:"Disable"},
-"dynamic.ui33": {it:"Abilita",en:"Enable"},
-"dynamic.ui34": {it:"Utente importato",en:"User imported"},
-"dynamic.ui35": {it:"Permessi aggiornati",en:"Permissions updated"},
-"dynamic.ui36": {it:"Disabilitare questo utente? Le sue sessioni verranno chiuse subito.",en:"Disable this user? Their sessions will be closed immediately."},
-"dynamic.ui37": {it:"Utente abilitato",en:"User enabled"},
-"dynamic.ui38": {it:"Utente disabilitato",en:"User disabled"},
-"dynamic.ui39": {it:"Chiunque abbia un account Jellyfin può ora accedere",en:"Anyone with a Jellyfin account can now sign in"},
-"dynamic.ui40": {it:"Accesso limitato agli utenti importati",en:"Access restricted to imported users"},
-"dynamic.ui41": {it:"mai controllata",en:"never checked"},
-"dynamic.ui42": {it:"controllata ora",en:"checked just now"},
-"dynamic.ui43": {it:"Impossibile caricare le serie seguite.",en:"Unable to load followed series."},
-"dynamic.ui44": {it:"Seguite",en:"Following"},
-"dynamic.ui45": {it:"Automatiche",en:"Automatic"},
-"dynamic.ui46": {it:"Dalla coda",en:"Through queue"},
-"dynamic.ui47": {it:"Serie TV",en:"TV series"},
-"dynamic.ui48": {it:"originale",en:"original"},
-"dynamic.ui49": {it:"nessuno",en:"none"},
-"dynamic.ui50": {it:"Altri follower",en:"Other followers"},
-"dynamic.ui51": {it:"chiede",en:"requests"},
-"dynamic.ui52": {it:"chiedono",en:"request"},
-"dynamic.ui53": {it:" e ",en:" and "},
-"dynamic.ui54": {it:"Scegli almeno una traccia audio",en:"Select at least one audio track"},
-"dynamic.ui55": {it:"Lingue aggiornate: varranno dai prossimi episodi",en:"Languages updated: applies to future episodes"},
-"dynamic.ui56": {it:"Lingue unite: varranno dai prossimi episodi",en:"Languages merged: applies to future episodes"},
-"dynamic.ui57": {it:"Serie non più seguita",en:"Series unfollowed"},
-"dynamic.ui58": {it:"Impossibile seguire la serie",en:"Unable to follow series"},
-"dynamic.ui59": {it:"Serie seguita: i nuovi episodi arriveranno da soli",en:"Following series: new episodes will download automatically"},
-"dynamic.ui60": {it:"Serie seguita: i nuovi episodi verranno richiesti a un amministratore",en:"Following series: new episodes will be requested from an administrator"},
 "dynamic.ui61": {it:"Errore di rete",en:"Network error"},
-"dynamic.ui62": {it:"Controllo fallito",en:"Check failed"},
-"dynamic.ui63": {it:"1 nuovo episodio trovato",en:"1 new episode found"},
-"dynamic.ui64": {it:"Nessun nuovo episodio",en:"No new episodes"},
 "dynamic.ui65": {it:"Operazione fallita",en:"Operation failed"},
 "dynamic.ui66": {it:"Percorso cartella di destinazione (vuoto = radice):",en:"Destination folder path (empty = root):"},
 "dynamic.ui67": {it:"Errore ricerca",en:"Search failed"},
@@ -264,10 +209,6 @@
 "dynamic.ui97": {it:"Riprova",en:"Retry"},
 "dynamic.ui98": {it:"Aggiorna",en:"Refresh"},
 "dynamic.ui99": {it:"Caricamento...",en:"Loading..."},
-"title.follow": {it:"Segui",en:"Follow"},
-"title.following": {it:"Seguita",en:"Following"},
-"title.followHint": {it:"Cerca automaticamente i nuovi episodi di questa serie",en:"Automatically check for new episodes of this series"},
-"title.followingHint": {it:"I nuovi episodi vengono cercati automaticamente. Premi per smettere.",en:"New episodes are checked automatically. Click to unfollow."},
 "catalog.genre0": {it:"Azione",en:"Action"},
 "catalog.genre1": {it:"Avventura",en:"Adventure"},
 "catalog.genre2": {it:"Animazione",en:"Animation"},
@@ -408,7 +349,6 @@
     "title.confirmAnime": {it: "{action} tutti i {count} episodi{note}?", en: "{action} all {count} episodes{note}?"},
     "title.actorQuery": {it: "informazioni attore", en: "actor information"},
     "title.forced": {it: "(forzati)", en: "(forced)"},
-    "title.unfollow": {it: "Non seguire più", en: "Unfollow"}
   };
   Object.entries(pageMessages).forEach(([key, values]) => {
     translations.it[key] = values.it;
@@ -418,116 +358,6 @@
 
   // Central catalog for the login and settings pages.
   const pageCatalog = [
-  {
-    "key": "login.sign.in.sc.panel",
-    "it": "Accedi — SC Panel",
-    "en": "Sign in — SC Panel"
-  },
-  {
-    "key": "login.sign.in.with.jellyfin",
-    "it": "Accesso tramite Jellyfin",
-    "en": "Sign in with Jellyfin"
-  },
-  {
-    "key": "login.initial.setup",
-    "it": "Configurazione iniziale",
-    "en": "Initial setup"
-  },
-  {
-    "key": "login.connect.the.panel.to.your.jellyfin.server",
-    "it": "Collega il pannello al tuo server Jellyfin.",
-    "en": "Connect the panel to your Jellyfin server."
-  },
-  {
-    "key": "login.you.need.a",
-    "it": "Serve un account",
-    "en": "You need a"
-  },
-  {
-    "key": "login.jellyfin.administrator.account",
-    "it": "amministratore Jellyfin",
-    "en": "Jellyfin administrator account"
-  },
-  {
-    "key": "login.it.will.become.the.panel.administrator.the.password",
-    "it": ": diventerà l'amministratore del pannello. La password non viene salvata.",
-    "en": ": it will become the panel administrator. The password is not stored."
-  },
-  {
-    "key": "login.jellyfin.server.url",
-    "it": "URL del server Jellyfin",
-    "en": "Jellyfin server URL"
-  },
-  {
-    "key": "login.administrator.username",
-    "it": "Utente amministratore",
-    "en": "Administrator username"
-  },
-  {
-    "key": "login.set.up.and.sign.in",
-    "it": "Configura e accedi",
-    "en": "Set up and sign in"
-  },
-  {
-    "key": "login.continue.without.jellyfin",
-    "it": "Continua senza Jellyfin",
-    "en": "Continue without Jellyfin"
-  },
-  {
-    "key": "login.you.will.use.the.panel.without.signing.in",
-    "it": "Userai il pannello senza login. Potrai collegarlo a Jellyfin in seguito dalle Impostazioni.",
-    "en": "You will use the panel without signing in. You can connect it to Jellyfin later in Settings."
-  },
-  {
-    "key": "login.sign.in",
-    "it": "Accedi",
-    "en": "Sign in"
-  },
-  {
-    "key": "login.use.your.jellyfin.account.credentials",
-    "it": "Usa le credenziali del tuo account Jellyfin.",
-    "en": "Use your Jellyfin account credentials."
-  },
-  {
-    "key": "login.username",
-    "it": "Utente",
-    "en": "Username"
-  },
-  {
-    "key": "login.unable.to.contact.the.panel",
-    "it": "Impossibile contattare il pannello.",
-    "en": "Unable to contact the panel."
-  },
-  {
-    "key": "login.connecting",
-    "it": "Connessione...",
-    "en": "Connecting..."
-  },
-  {
-    "key": "login.setup.failed",
-    "it": "Configurazione fallita.",
-    "en": "Setup failed."
-  },
-  {
-    "key": "login.please.wait",
-    "it": "Attendere...",
-    "en": "Please wait..."
-  },
-  {
-    "key": "login.operation.failed",
-    "it": "Operazione fallita.",
-    "en": "Operation failed."
-  },
-  {
-    "key": "login.signing.in",
-    "it": "Accesso...",
-    "en": "Signing in..."
-  },
-  {
-    "key": "login.sign.in.failed",
-    "it": "Accesso fallito.",
-    "en": "Sign-in failed."
-  },
   {
     "key": "settings.settings",
     "it": "Impostazioni",
@@ -984,16 +814,6 @@
     "en": "Overall panel limit, not per download. If the source returns 503, the panel automatically lowers this value and raises it again when service recovers. Recommended: 8–16."
   },
   {
-    "key": "settings.followed.series.checks",
-    "it": "Controllo serie seguite",
-    "en": "Followed series checks"
-  },
-  {
-    "key": "settings.how.often.to.check.for.new.episodes.recommended",
-    "it": "Ogni quanto cercare nuovi episodi. Suggerito: 240 (4 ore).",
-    "en": "How often to check for new episodes. Recommended: 240 (4 hours)."
-  },
-  {
     "key": "settings.save.performance.settings",
     "it": "Salva performance",
     "en": "Save performance settings"
@@ -1054,44 +874,9 @@
     "en": "Save format"
   },
   {
-    "key": "settings.access.and.users",
-    "it": "Accesso e utenti",
-    "en": "Access and users"
-  },
-  {
-    "key": "settings.the.panel.is.running.without.jellyfin.sign.in",
-    "it": "Il pannello sta funzionando senza Jellyfin: nessun login, nessuna coda richieste, nessuna gestione utenti. Collegalo per abilitarli.",
-    "en": "The panel is running without Jellyfin: sign-in, request queue and user management are disabled. Connect Jellyfin to enable them."
-  },
-  {
-    "key": "settings.jellyfin.server.url",
-    "it": "URL server Jellyfin",
-    "en": "Jellyfin server URL"
-  },
-  {
-    "key": "settings.a.jellyfin.administrator.account.is.required.the.password",
-    "it": "Serve un account amministratore Jellyfin. La password non viene salvata.",
-    "en": "A Jellyfin administrator account is required. The password is not stored."
-  },
-  {
-    "key": "settings.connect.to.jellyfin",
-    "it": "Collega a Jellyfin",
-    "en": "Connect to Jellyfin"
-  },
-  {
     "key": "settings.connected.to",
     "it": "Collegato a",
     "en": "Connected to"
-  },
-  {
-    "key": "settings.change.jellyfin.server",
-    "it": "Cambia server Jellyfin",
-    "en": "Change Jellyfin server"
-  },
-  {
-    "key": "settings.anyone.using.the.panel.without.signing.in.will",
-    "it": "Chi sta usando il pannello senza login dovrà accedere di nuovo dopo l'aggiornamento. Puntare a un server Jellyfin diverso renderà orfani gli utenti già importati.",
-    "en": "Anyone using the panel without signing in will need to sign in after the change. Switching to a different Jellyfin server will leave previously imported users without matching accounts."
   },
   {
     "key": "settings.update.configuration",
@@ -1154,16 +939,6 @@
     "en": "Add channel"
   },
   {
-    "key": "settings.jellyfin.library",
-    "it": "Libreria Jellyfin",
-    "en": "Jellyfin library"
-  },
-  {
-    "key": "settings.after.a.download.the.panel.can.ask.jellyfin",
-    "it": "A fine download il pannello può chiedere a Jellyfin di aggiornare la libreria, invece di aspettare la sua scansione periodica.",
-    "en": "After a download, the panel can ask Jellyfin to refresh the library instead of waiting for its scheduled scan."
-  },
-  {
     "key": "settings.refresh.the.library.after.downloading",
     "it": "Aggiorna la libreria a fine download",
     "en": "Refresh the library after downloading"
@@ -1205,8 +980,8 @@
   },
   {
     "key": "settings.allows.an.ai.agent.claude.code.cursor.to",
-    "it": "Permette a un agente AI (Claude Code, Cursor, …) di cercare titoli, avviare download, seguire serie e gestire le richieste. Il server risponde all’indirizzo del pannello, sotto",
-    "en": "Allows an AI agent (Claude Code, Cursor, …) to search titles, start downloads, follow series and manage requests. The server is available at the panel address under"
+    "it": "Permette a un agente AI (Claude Code, Cursor, …) di cercare titoli, avviare download e gestire le richieste. Il server risponde all’indirizzo del pannello, sotto",
+    "en": "Allows an AI agent (Claude Code, Cursor, …) to search titles, start downloads and manage requests. The server is available at the panel address under"
   },
   {
     "key": "settings.no.extra.port.needs.to.be.opened",
@@ -1447,11 +1222,6 @@
     "key": "settings.cancelled",
     "it": "Annullato",
     "en": "Cancelled"
-  },
-  {
-    "key": "settings.jellyfin.is.not.connected.connect.it.in.access",
-    "it": "Jellyfin non è collegato: collegalo da Accesso e utenti perché questa opzione abbia effetto.",
-    "en": "Jellyfin is not connected: connect it in Access and users for this option to take effect."
   },
   {
     "key": "settings.setting.saved",
@@ -1723,6 +1493,13 @@
     'softether.title': ['SoftEther VPN (opzionale)', 'SoftEther VPN (optional)'],
     'softether.manual': ['Apri il Client Manager installato su questo PC per gestire manualmente la VPN. Il pannello non avvia servizi, driver, profili o connessioni. Dopo aver gestito la connessione in SoftEther, puoi riprovare manualmente l’operazione bloccata.', 'Open the Client Manager installed on this PC to manage the VPN manually. The panel does not start services, drivers, profiles or connections. After managing the connection in SoftEther, you can manually retry the blocked operation.'],
     'softether.open': ['Apri VPN', 'Open VPN'],
+    'softether.openManager': ['Apri gestore VPN', 'Open VPN manager'],
+    'softether.showManager': ['Mostra gestore VPN', 'Show VPN manager'],
+    'softether.closeManager': ['Chiudi gestore VPN', 'Close VPN manager'],
+    'softether.hideManager': ['Nascondi nella tray', 'Hide to tray'],
+    'softether.hidden': ['Gestore VPN riportato nella tray.', 'VPN manager sent back to the tray.'],
+    'softether.notVisible': ['Il gestore VPN non è visibile: è già nella tray.', 'The VPN manager is not visible: it is already in the tray.'],
+    'softether.closeHint': ['Chiude solo la finestra del gestore SoftEther. Una connessione VPN attiva resta attiva.', 'Closes only the SoftEther manager window. An active VPN connection stays up.'],
     'softether.openSequence': ['Se SoftEther è stato chiuso completamente, premi prima Ricontrolla e poi Apri VPN.', 'If SoftEther was completely closed, select Check again first, then Open VPN.'],
     'softether.install': ['Installa VPN Gate', 'Install VPN Gate'],
     'softether.startingInstall': ['Avvio dell’installer SoftEther… Conferma l’installazione nella finestra di Windows.', 'Starting the SoftEther installer… Confirm installation in the Windows dialog.'],
@@ -1735,14 +1512,43 @@
     'softether.installerMissing': ['Installer SoftEther incluso non trovato.', 'Bundled SoftEther installer not found.'],
     'softether.installFailed': ['Impossibile avviare l’installer SoftEther.', 'Unable to start the SoftEther installer.'],
     'softether.bundledHint': ['Scarica il pacchetto ufficiale VPN Gate quando necessario.', 'Download the official VPN Gate package when needed.'],
-    'softether.blockDetectedSettings': ['La sorgente sembra bloccata. Puoi installare il pacchetto ufficiale VPN Gate qui sotto.', 'The source appears to be blocked. You can install the official VPN Gate package below.'],
+    'softether.blockNotice': ['La sorgente ha bloccato le richieste da questo IP. Puoi cambiare IP usando la VPN: apri il gestore VPN e scegli un profilo.', 'The source has blocked requests from this IP. You can change IP using the VPN: open the VPN manager and choose a profile.'],
+    'softether.checkPublicIp': ['Controlla IP pubblico', 'Check public IP'],
+    'softether.checkingPublicIp': ['Lettura dell’IP pubblico…', 'Reading the public IP…'],
     'softether.remoteHint': ['Questo pulsante scarica l’ultima release ufficiale da GitHub.', 'This button downloads the latest official release from GitHub.'],
     'softether.vpngate': ['Mostra server VPN Gate', 'Show VPN Gate servers'],
     'softether.vpngateChecking': ['Caricamento server VPN Gate…', 'Loading VPN Gate servers…'],
     'softether.vpngateEmpty': ['Nessun server VPN Gate disponibile.', 'No VPN Gate servers available.'],
     'softether.vpngateNotice': ['Server pubblici di terze parti: verifica il gestore prima dell’uso.', 'Public third-party servers: verify the operator before use.'],
     'softether.vpngateCreate': ['Crea profilo', 'Create profile'],
-    'softether.vpngateCreated': ['Profilo VPN Gate creato. Apri la VPN per collegarti manualmente.', 'VPN Gate profile created. Open the VPN client to connect manually.'],
+    'softether.vpngateCreated': ['Profilo VPN Gate creato e connesso.', 'VPN Gate profile created and connected.'],
+    'softether.createdNotConnected': ['Profilo «{name}» creato ma non ancora connesso. Premi Connetti per provarlo.', 'Profile “{name}” created but not connected yet. Select Connect to try it.'],
+    'softether.serverUnreachable': ['Il server non risponde più sulla porta VPN: profilo non creato.', 'The server no longer answers on the VPN port: profile not created.'],
+    'softether.reachablePort': ['Porta aperta (VPN non verificata)', 'Port open (VPN not verified)'],
+    'softether.serverRegistered': ['Registrato', 'Registered'],
+    'softether.profilesTitle': ['Profili registrati', 'Registered profiles'],
+    'softether.serversTitle': ['Server pubblici VPN Gate', 'Public VPN Gate servers'],
+    'softether.profileConnected': ['Connesso', 'Connected'],
+    'softether.profileOffline': ['Registrato, non connesso', 'Registered, not connected'],
+    'softether.profileStateUnknown': ['Stato sconosciuto', 'Unknown state'],
+    'softether.profileNoHost': ['server non indicato', 'server not set'],
+    'softether.profilePing': ['{ms} ms', '{ms} ms'],
+    'softether.sessions': ['{count} sessioni', '{count} sessions'],
+    'softether.profileConnect': ['Connetti', 'Connect'],
+    'softether.profileDisconnect': ['Disconnetti', 'Disconnect'],
+    'softether.profileDelete': ['Elimina', 'Delete'],
+    'softether.profileDeleteHint': ['Disponibile solo per un profilo non connesso.', 'Available only for a profile that is not connected.'],
+    'softether.profileDeleteConfirm': ['Conferma eliminazione', 'Confirm deletion'],
+    'softether.profileDeleteAsk': ['Premi di nuovo per eliminare il profilo «{name}».', 'Select again to delete the profile “{name}”.'],
+    'softether.profileDeleted': ['Profilo «{name}» eliminato.', 'Profile “{name}” deleted.'],
+    'softether.profileConnecting': ['Connessione in corso…', 'Connecting…'],
+    'softether.profileDisconnecting': ['Disconnessione in corso…', 'Disconnecting…'],
+    'softether.profileConnectedIp': ['Connesso. Aggiornamento IP in corso…', 'Connected. Refreshing IP…'],
+    'softether.profileConnectUnconfirmed': ['Connessione non confermata.', 'Connection not confirmed.'],
+    'softether.profileDisconnected': ['Disconnesso.', 'Disconnected.'],
+    'softether.publicIp': ['IP pubblico', 'Public IP'],
+    'softether.ipChanged': ['originale: {original} · uscita VPN rilevata', 'original: {original} · VPN exit detected'],
+    'softether.ipUnchanged': ['nessuna variazione rilevata', 'no change detected'],
     'softether.invalidServer': ['Server VPN non valido.', 'Invalid VPN server.'],
     'softether.invalidProfileName': ['Nome profilo non valido.', 'Invalid profile name.'],
     'softether.profileFailed': ['Impossibile creare il profilo VPN Gate.', 'Unable to create the VPN Gate profile.'],
@@ -1757,7 +1563,7 @@
     'softether.downloadStarted': ['Installer scaricato e avviato. Completa l’installazione nella finestra di Windows.', 'Installer downloaded and started. Complete the installation in the Windows dialog.'],
     'softether.downloadFailed': ['Download dell’installer SoftEther non riuscito.', 'SoftEther installer download failed.'],
     'softether.invalidAsset': ['Asset SoftEther non valido.', 'Invalid SoftEther asset.'],
-    'softether.blockDetected': ['La sorgente sembra bloccata. Puoi verificare e installare SoftEther dalle Impostazioni.', 'The source appears to be blocked. You can check and install SoftEther from Settings.'],
+    'softether.blockDetected': ['La sorgente ha bloccato le richieste da questo IP. Puoi cambiare IP con la VPN dalle Impostazioni.', 'The source has blocked requests from this IP. You can change IP with the VPN from Settings.'],
     'softether.openSettings': ['Apri Impostazioni', 'Open Settings'],
     'softether.checking': ['Verifica del Client Manager…', 'Checking for Client Manager…'],
     'softether.ready': ['Client Manager disponibile su questo PC.', 'Client Manager is available on this PC.'],
@@ -1791,40 +1597,16 @@
     'settings.notification.downloadFailed': ['Download fallito', 'Download failed'],
     'settings.notification.batchCompleted': ['Stagione o serie completata', 'Season or series completed'],
     'settings.notification.batchFailed': ['Stagione o serie fallita', 'Season or series failed'],
-    'settings.notification.watchApproval': ['Serie seguita da approvare', 'Followed series awaiting approval'],
-    'settings.notification.watchApproved': ['Serie approvata', 'Series approved'],
-    'settings.notification.watchLanguages': ['Lingue diverse su una serie seguita', 'Different languages on a followed series'],
     'settings.notification.domainFound': ['Nuovo dominio trovato', 'New domain found'],
     'settings.notification.domainApplied': ['Dominio aggiornato', 'Domain updated'],
     'settings.notification.hookFailed': ['Hook fallito', 'Hook failed'],
     'settings.notification.requests': ['Richieste', 'Requests'],
     'settings.notification.directDownloads': ['Download diretti', 'Direct downloads'],
-    'settings.notification.watches': ['Serie seguite', 'Followed series'],
-    'login.invalidCredentials': ['Credenziali Jellyfin non valide', 'Invalid Jellyfin credentials'],
-    'login.adminRequired': ['Solo un amministratore Jellyfin può configurare il pannello', 'Only a Jellyfin administrator can configure the panel'],
-    'login.configured': ['Il pannello è già configurato', 'The panel is already configured'],
-    'login.denied': ['Permesso negato', 'Permission denied'],
-    'login.connected': ['Il pannello è già stato collegato a Jellyfin', 'The panel is already connected to Jellyfin'],
-    'login.notConfigured': ['Pannello non ancora configurato', 'The panel has not been configured yet'],
-    'login.disabled': ['Account disabilitato sul pannello', 'Account disabled on the panel'],
-    'login.expired': ['Sessione Jellyfin non valida o scaduta', 'Invalid or expired Jellyfin session'],
-    'login.rateLimited': ['Troppi tentativi falliti. Riprova tra {seconds} secondi.', 'Too many failed attempts. Try again in {seconds} seconds.'],
-    'login.apiKeyFailed': ['Creazione API key fallita: {reason}', 'API key creation failed: {reason}'],
     'settings.folderUnavailable': ['Cartella download non utilizzabile: {reason}', 'Download folder cannot be used: {reason}'],
     'settings.windowsOnly': ['La scelta cartella nativa è disponibile solo su Windows.', 'The native folder picker is available only on Windows.'],
     'settings.domainEmpty': ['Il dominio non può essere vuoto', 'Domain cannot be empty'],
     'settings.genericError': ['Errore', 'Error'],
     'settings.backend.validation': ['Valore non valido: {reason}', 'Invalid value: {reason}'],
-    'login.notImported': ['Utente Jellyfin non abilitato sul pannello. Chiedi a un amministratore di importarlo.', 'Jellyfin user not enabled on the panel. Ask an administrator to import it.'],
-    'login.urlMissing': ['URL Jellyfin mancante', 'Jellyfin URL is missing'],
-    'login.urlScheme': ["L'URL Jellyfin deve iniziare con http:// o https://", 'The Jellyfin URL must start with http:// or https://'],
-    'login.urlInvalid': ['URL Jellyfin non valido', 'Invalid Jellyfin URL'],
-    'login.unreachable': ['Server Jellyfin non raggiungibile', 'Jellyfin server is unreachable'],
-    'login.unreachableReason': ['Server Jellyfin non raggiungibile: {reason}', 'Jellyfin server is unreachable: {reason}'],
-    'login.httpError': ['Jellyfin ha risposto HTTP {status}', 'Jellyfin returned HTTP {status}'],
-    'login.invalidResponse': ["Risposta non valida dal server Jellyfin (l'URL punta davvero a Jellyfin?)", 'Invalid response from the Jellyfin server (does the URL point to Jellyfin?)'],
-    'login.incompleteResponse': ['Risposta di autenticazione Jellyfin incompleta', 'Incomplete Jellyfin authentication response'],
-    'login.missingApiKey': ["API key creata ma non ritrovata nell'elenco di Jellyfin", 'API key created but not found in the Jellyfin list'],
     'settings.backend.absolutePath': ['Indica un percorso assoluto per la cartella download.', 'Enter an absolute path for the download folder.'],
     'settings.backend.unknownSlot': ['Sezione sconosciuta: {slot}', 'Unknown section: {slot}'],
     'settings.backend.emptyTemplate': ['Il modello non può essere vuoto', 'The template cannot be empty'],

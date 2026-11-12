@@ -1,0 +1,65 @@
+{
+  "title": "RaiPlay - Homepage",
+  "uniquename": "Page-00000000-0000-0000-0000-000000000001",
+  "contents": [
+    {
+      "id": "PublishingBlock-hero", "name": "Hero", "type": "RaiPlay Hero Block",
+      "contents": [
+        {
+          "id": "ContentItem-00000000-0000-0000-0000-0000000000a1",
+          "path_id": "/programmi/serieesempio.json",
+          "rights_management": {"rights": {"offline": {}, "geoprotection": {"italy": true}}},
+          "images": {"landscape": "/dl/img/2026/01/01/0000000000001_2048x1152.jpg", "portrait": "",
+                     "portrait43": "/dl/img/2026/01/01/0000000000002_1536x2048.jpg"},
+          "layout": "multi", "name": "Serie Esempio",
+          "vanity": "Una serie di esempio per i test",
+          "type": "RaiPlay Programma Item", "weblink": "/programmi/serieesempio",
+          "trailer": {"content_url": "https://mediapolisvod.rai.it/relinker/relinkerServlet.htm?cont=FAKE1"},
+          "details": [{"type": "label", "key": "year", "value": "2020"}]
+        }
+      ]
+    },
+    {
+      "id": "PublishingBlock-live", "name": "In Diretta", "type": "RaiPlay Slider Dirette Block",
+      "contents": [
+        {"id": "ContentItem-live", "type": "RaiPlay Diretta Item", "name": "Diretta di Canale Test",
+         "path_id": "/dirette/canaletest.json", "multicast_url": "udp://@239.0.0.1:1234",
+         "video": {"content_url": "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=FAKE2"}}
+      ]
+    },
+    {
+      "id": "PublishingBlock-clips", "name": "Video del momento", "type": "RaiPlay Slider Video Block",
+      "contents": [
+        {"id": "ContentItem-clip", "type": "RaiPlay Video Item", "name": "Clip di esempio",
+         "path_id": "/video/2026/01/Clip-di-esempio-0000.json",
+         "video_url": "https://mediapolisvod.rai.it/relinker/relinkerServlet.htm?cont=FAKE3"}
+      ]
+    },
+    {
+      "id": "PublishingBlock-film", "name": "Film", "type": "RaiPlay Slider Block",
+      "contents": [
+        {
+          "id": "ContentItem-00000000-0000-0000-0000-0000000000b1",
+          "path_id": "/programmi/filmesempio.json",
+          "rights_management": {"rights": {"drm": {"VOD": true}}},
+          "images": {"landscape": "/dl/img/2026/02/02/0000000000003_2048x1152.jpg",
+                     "portrait43": "/dl/img/2026/02/02/0000000000004_1536x2048.jpg"},
+          "layout": "single", "name": "Film Esempio", "vanity": "Un film di esempio",
+          "type": "RaiPlay Programma Item", "weblink": "/programmi/filmesempio"
+        },
+        {"id": "ContentItem-link", "type": "RaiPlay Link Item", "name": "Vedi tutti", "path_id": "/tipologia/film/index.json"},
+        {"id": "ContentItem-broken", "type": "RaiPlay Programma Item", "name": "Percorso non valido", "path_id": "/../../etc/passwd"},
+        {"id": "ContentItem-noname", "type": "RaiPlay Programma Item", "path_id": "/programmi/senzanome.json"}
+      ]
+    },
+    {
+      "id": "PublishingBlock-genres", "name": "Esplora il catalogo", "type": "RaiPlay Slider Generi Block",
+      "contents": [
+        {"id": "ContentItem-g1", "path_id": "/tipologia/film/index.json", "name": "Film", "type": "RaiPlay Genere Item"},
+        {"id": "ContentItem-g2", "path_id": "/tipologia/serieitaliane/index.json", "name": "Serie italiane", "type": "RaiPlay Genere Item"},
+        {"id": "ContentItem-g3", "path_id": "https://evil.example/x.json", "name": "Esterno", "type": "RaiPlay Genere Item"}
+      ]
+    },
+    {"id": "PublishingBlock-empty", "name": "Continua a guardare", "type": "RaiPlay Configuratore Fascia Servizi Utente Item"}
+  ]
+}

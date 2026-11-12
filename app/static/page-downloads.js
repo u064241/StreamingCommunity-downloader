@@ -84,6 +84,9 @@ function connectGlobalStream() {
       case 'domain_candidate':
         loadDomainCandidate();
         break;
+      case 'source_paused':
+        renderSourcePause(msg);
+        break;
       case 'notification':
         // A bare signal: the payload lives behind /api/notifications, which is
         // scoped to the caller, so a shared stream leaks nothing.
@@ -160,7 +163,8 @@ function _buildStepsHtml(jobId, phases, currentPhase, status) {
     let cls = 'jp';
     if (activeIdx === phases.length || i < activeIdx) cls += ' complete';
     else if (i === activeIdx) cls += ' active';
-    return `<span class="${cls}" data-phase="${p}">${_stepLabel(p)}</span>`;
+    // A phase name can carry a language code read off the source's playlist.
+    return `<span class="${cls}" data-phase="${escapeHtml(p)}">${escapeHtml(_stepLabel(p))}</span>`;
   }).join('');
   return `<div class="job-phases" id="job-steps-${jobId}">${items}</div>`;
 }
@@ -252,6 +256,9 @@ function _stopBtnHtml(jobId) {
 // A failed job stays until someone decides about it: run it again, or let it go.
 // "Rimuovi completati" deliberately leaves it alone — it is the only record of
 // what still has to be downloaded.
+//
+// Plain text, like every other *Text helper here: j.error is whatever the
+// source or FFmpeg said. _buildJobCard escapes it where it goes into markup.
 function _retryText(j) {
   const at = new Date(j.retry_at).toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit'});
   return `Nuovo tentativo ${j.retries}/${j.max_retries} alle ${at} · ${j.error || 'errore'}`;
@@ -322,7 +329,7 @@ function _buildJobCard(j) {
       <div class="d-flex align-items-center gap-2">
         <span class="badge ${isMovie?'bg-blue-lt':isAnimeJob?'bg-purple-lt':'bg-green-lt'} flex-shrink-0">${isMovie?'Film':isAnimeJob?'Anime':'TV'}</span>
         <span class="fw-medium text-truncate flex-1" style="min-width:0" title="${escapeHtml(j.title)}">${escapeHtml(j.title)}</span>
-        <span class="badge ${badgeClass} flex-shrink-0" id="job-badge-${j.job_id}">${label}</span>
+        <span class="badge ${badgeClass} flex-shrink-0" id="job-badge-${j.job_id}">${escapeHtml(label)}</span>
         <span id="job-fire-${j.job_id}">${fireBtn}</span>
         ${stopBtn ? `<span id="job-stop-${j.job_id}">${stopBtn}</span>` : `<span id="job-stop-${j.job_id}"></span>`}
       </div>
@@ -331,7 +338,7 @@ function _buildJobCard(j) {
         <div class="progress-bar ${barClass}${animated} job-progress-bar" id="job-bar-${j.job_id}" style="width:${barWidth}%"></div>
       </div>
       <div class="d-flex justify-content-between align-items-center">
-        <small class="text-muted" id="job-info-${j.job_id}"${infoTitle}>${infoStr || (j.status==='error' ? escapeHtml(j.error||window.t("dynamic.ui9")) : (j.status==='done'?window.t("dynamic.ui8"):''))}</small>
+        <small class="text-muted" id="job-info-${j.job_id}"${infoTitle}>${escapeHtml(infoStr) || (j.status==='error' ? escapeHtml(j.error||window.t("dynamic.ui9")) : (j.status==='done'?window.t("dynamic.ui8"):''))}</small>
         <small class="text-muted">${dateLabel}</small>
       </div>
     </div>
@@ -781,12 +788,48 @@ async function cancelAllJobs() {
   } catch (e) { showToast(errText(e, 'Impossibile annullare tutti i processi'), 'danger'); }
 }
 
+// ── Source pause ─────────────────────────────────────────────────────────────
+// While the source is in backoff (after a 403/429/503 or a segment pushback)
+// the queue holds and resumes on its own. The banner shows only while the
+// pause is running: from GET /api/domain/source-protection when the page is
+// opened, and from the source_paused stream event when a new pause starts. A
+// timer hides it when the pause ends, in case no other event arrives.
+let _sourcePauseTimer = null;
+
+function _pauseUntilTime(status) {
+  if (!status || !status.paused) return null;
+  const until = status.until ? Date.parse(status.until) : NaN;
+  if (Number.isFinite(until) && until <= Date.now()) return null;
+  return {hhmm: status.until_hhmm || '', until};
+}
+
+function renderSourcePause(status) {
+  const box = document.getElementById('dl-source-pause');
+  if (!box) return;
+  if (_sourcePauseTimer) { clearTimeout(_sourcePauseTimer); _sourcePauseTimer = null; }
+  const pause = _pauseUntilTime(status);
+  if (!pause) { box.hidden = true; box.innerHTML = ''; return; }
+  const text = `Sorgente in pausa fino alle ${pause.hhmm}, la coda riprenderà automaticamente`;
+  box.innerHTML = `<i class="ti ti-player-pause me-1"></i>${escapeHtml(text)}`;
+  box.hidden = false;
+  if (Number.isFinite(pause.until)) {
+    const wait = Math.min(Math.max(pause.until - Date.now(), 0) + 1000, 2 ** 31 - 1);
+    _sourcePauseTimer = setTimeout(() => loadSourcePause(), wait);
+  }
+}
+
+async function loadSourcePause() {
+  try { renderSourcePause(await api.get('/api/domain/source-protection')); }
+  catch (e) { renderSourcePause(null); /* informational: no banner on error */ }
+}
+
 // The list is normally kept current by the event stream. This re-reads it from
 // the server for the times that is not enough — a laptop coming back from
 // sleep, a proxy that closed the connection, a tab that fell far behind.
 async function refreshJobs() {
   const btn = document.getElementById('dl-refresh-btn');
   if (btn) btn.disabled = true;
+  loadSourcePause();
   try {
     const jobs = await api.get('/api/jobs');
     _jobs.clear();

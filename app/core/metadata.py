@@ -21,29 +21,37 @@ nineteen of which nobody will read.
 """
 
 import logging
-import threading
 import time
 
 from app.config import configured_domain
+from app.core import source_budget
 
 logger = logging.getLogger(__name__)
 
-# Cache lifetimes. A hit is stable — a film's plot does not change — while a
-# miss is usually a title the source has no metadata for, and re-asking on every
-# modal open would make a broken title the most expensive one in the panel.
-_TTL_HIT = 6 * 60 * 60
+# Cache lifetimes, each stretched or shrunk by up to 20% (source_budget.JITTER).
+# A hit is stable — a film's plot does not change, and a series' new season is
+# a once-a-week event — so a title card lives a day. A new deploy of the site
+# (its version changes) expires it early. A miss is usually a title the source
+# has no metadata for, and re-asking on every modal open would make a broken
+# title the most expensive one in the panel.
+_TTL_HIT = 24 * 60 * 60
 _TTL_MISS = 10 * 60
 _MAX_ENTRIES = 512
-
-# In memory, which is the same bet the rest of the panel makes: JobManager holds
-# download state the same way and the process is single by design.
-_cache: dict[tuple, tuple[float, dict]] = {}
-_cache_lock = threading.Lock()
 
 
 def _now() -> float:
     """Wall clock, indirected so tests can expire an entry without sleeping."""
     return time.time()
+
+
+# In memory, which is the same bet the rest of the panel makes: JobManager holds
+# download state the same way and the process is single by design.
+_cache = source_budget.SourceCache("metadata", _TTL_HIT, max_entries=_MAX_ENTRIES,
+                                   clock=lambda: _now())
+
+
+class _LookupFailed(Exception):
+    """The title page could not be read (as opposed to: it has no metadata)."""
 
 
 EMPTY: dict = {
@@ -89,33 +97,24 @@ def _cache_key(media_type: str, title_id, source: str = "streamingcommunity") ->
     return (source, configured_domain(), media_type, str(title_id))
 
 
+def _ttl(value: dict) -> float:
+    return _TTL_HIT if value.get("source") != "none" else _TTL_MISS
+
+
 def _cached(key: tuple) -> dict | None:
-    with _cache_lock:
-        entry = _cache.get(key)
-        if entry is None:
-            return None
-        expires_at, value = entry
-        if expires_at < _now():
-            _cache.pop(key, None)
-            return None
-        return value
+    """The cached value while fresh; None when absent or expired."""
+    entry = _cache.entry(key)
+    if entry is None or not _cache.is_fresh(entry, key[1]):
+        return None
+    return entry.value
 
 
 def _store(key: tuple, value: dict) -> None:
-    ttl = _TTL_HIT if value.get("source") != "none" else _TTL_MISS
-    with _cache_lock:
-        if len(_cache) >= _MAX_ENTRIES:
-            now = _now()
-            for stale in [k for k, (exp, _) in _cache.items() if exp < now]:
-                _cache.pop(stale, None)
-            if len(_cache) >= _MAX_ENTRIES:
-                _cache.pop(next(iter(_cache)), None)
-        _cache[key] = (_now() + ttl, value)
+    _cache.put(key, value, host=key[1], ttl=_ttl(value))
 
 
 def clear_cache() -> None:
-    with _cache_lock:
-        _cache.clear()
+    _cache.clear()
 
 
 def cached_tmdb_id(media_type: str, title_id, *, source: str = "streamingcommunity") -> int | None:
@@ -238,13 +237,23 @@ def title_metadata(media_type: str, title_id, slug: str, version: str,
     if source != "streamingcommunity":
         raise ValueError(f"Metadata non disponibili per la fonte {source!r}")
     key = _cache_key(media_type, title_id, source)
-    hit = _cached(key)
-    if hit is not None:
-        return hit
+    identity = {"provider": source, "external_id": str(title_id)}
 
-    result = {**_resolve(title_id, slug, version), "provider": source,
-              "external_id": str(title_id)}
-    _store(key, result)
+    def load():
+        return {**_resolve(title_id, slug, version), **identity}
+
+    try:
+        result, _ = source_budget.get_or_load(
+            _cache, key, load, host=key[1], label="metadata", ttl_for=_ttl)
+    except source_budget.SourceUnavailable as exc:
+        # Nothing was asked, so nothing is learnt: not cached as a miss.
+        logger.info("Title %s not looked up: %s", title_id, exc)
+        return {**EMPTY, **identity}
+    except _LookupFailed:
+        # The page could not be read and there is no older copy to fall back
+        # on: remembered as a miss, as it always was.
+        result = {**EMPTY, **identity}
+        _store(key, result)
     return result
 
 
@@ -257,8 +266,10 @@ def _resolve(title_id, slug: str, version: str) -> dict:
         from app.core.tv import get_title_props
 
         props = get_title_props(title_id, slug, version or "", domain) or {}
+    except source_budget.SourceUnavailable:
+        raise
     except Exception as exc:
         logger.info("Cannot read title props for %s: %s", title_id, exc)
-        return dict(EMPTY)
+        raise _LookupFailed(str(exc)) from exc
 
     return _from_props(props) if props else dict(EMPTY)

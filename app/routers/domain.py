@@ -2,15 +2,17 @@ import asyncio
 import json
 import logging
 import importlib.util
+import os
 import platform
 import shutil
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app import config
 from app.auth.deps import require
@@ -253,7 +255,13 @@ class SettingsUpdate(BaseModel):
 
     max_concurrent_downloads: int | None = None
     max_segment_workers: int | None = None
-    series_watch_interval_minutes: int | None = None
+    # Global cap on segment requests to the source (app/core/m3u8.py) and the
+    # hourly page-request budget (app/core/source_budget.py). Both apply at
+    # once (the cap from the next segment request); SC_SOURCE_MAX_CONNECTIONS /
+    # SC_SOURCE_REQUESTS_PER_HOUR win when set. Never above the ceilings in
+    # app.config.
+    source_max_connections: int | None = None
+    source_requests_per_hour: int | None = None
     naming_templates: dict[str, str] | None = None
     domain_auto_check_enabled: bool | None = None
     domain_auto_apply: bool | None = None
@@ -268,10 +276,6 @@ class SettingsUpdate(BaseModel):
     video_encoder: Literal["auto", "nvenc", "qsv", "amf", "cpu"] | None = None
     video_quality: Literal["high", "balanced", "compact"] | None = None
     video_cpu_fallback: bool | None = None
-    # Declared late. It was in SETTINGS_DEFAULTS, read by downloads_hooks and
-    # PUT by the settings page, but missing here — and pydantic ignores unknown
-    # fields, so the switch reported "Salvato." and saved nothing.
-    jellyfin_refresh_on_download: bool | None = None
     mcp_enabled: bool | None = None
     confirmations_enabled: bool | None = None
 
@@ -347,21 +351,147 @@ def export_settings_backup():
     return JSONResponse(payload, headers={"Content-Disposition": 'attachment; filename="streamingcommunity-settings.json"'})
 
 
+def _restored_settings(raw) -> dict:
+    """The ``settings`` section of a backup, through the checks of PUT /settings."""
+    if not isinstance(raw, dict):
+        raise ValueError("deve essere un oggetto")
+    # A backup taken by an older version may still carry a setting that has
+    # since been removed: skipped, not a reason to refuse the whole section.
+    raw = {k: v for k, v in raw.items() if k not in config.RETIRED_SETTINGS}
+    unknown = sorted(set(raw) - set(SettingsUpdate.model_fields))
+    if unknown:
+        raise ValueError(f"chiavi non supportate: {', '.join(unknown)}")
+    try:
+        parsed = SettingsUpdate.model_validate(raw)
+    except ValidationError as exc:
+        fields = sorted({".".join(str(p) for p in error["loc"]) or "?" for error in exc.errors()})
+        raise ValueError(f"valori non validi: {', '.join(fields)}") from exc
+    provided = {k: v for k, v in parsed.model_dump().items() if v is not None}
+    # A backup from before the ceilings may carry 6 connections: lowered to
+    # the ceiling rather than refusing the whole section. Never raised.
+    for field, ceiling in _SOURCE_CEILINGS:
+        value = provided.get(field)
+        if value is not None and value > ceiling:
+            provided[field] = ceiling
+    for field, low, high in _SETTING_RANGES:
+        value = provided.get(field)
+        if value is not None and not low <= value <= high:
+            raise ValueError(f"{field} deve essere tra {low} e {high}")
+    if provided.get("video_conversion", "copy") != "copy":
+        from app.core.transcode import select_backend, TranscodeError
+        try:
+            select_backend({**config.SETTINGS_DEFAULTS, **provided})
+        except (TranscodeError, OSError) as exc:
+            raise ValueError(str(exc)) from exc
+    return provided
+
+
+def _restored_host(verify):
+    def check(raw) -> str:
+        if not isinstance(raw, str):
+            raise ValueError("deve essere una stringa")
+        if not raw.strip():
+            return ""  # same meaning as in PUT /hosts: back to automatic
+        try:
+            host = hosts.normalize_host(raw)
+            verify(host)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
+        return host
+    return check
+
+
+def _restored_domain(raw) -> str:
+    if not isinstance(raw, str):
+        raise ValueError("deve essere una stringa")
+    if not raw.strip():
+        return ""
+    try:
+        return _domain_host(raw)
+    except HTTPException as exc:
+        raise ValueError(str(exc.detail)) from exc
+
+
+def _restored_download_dir(raw) -> str:
+    if not isinstance(raw, str):
+        raise ValueError("deve essere una stringa")
+    if not raw.strip():
+        return ""  # falls back to VIDEOS_DIR, see config.download_dir()
+    return str(_confined_download_dir(raw))
+
+
+def _restored_libraries(raw) -> list[dict]:
+    if not isinstance(raw, list):
+        raise ValueError("deve essere un elenco")
+    seen: dict[str, dict] = {}
+    for entry in raw:
+        try:
+            lib = LibraryItem.model_validate(entry)
+        except ValidationError as exc:
+            raise ValueError("voce di libreria non valida") from exc
+        seen[lib.type] = {"type": lib.type, "path": validate_library_path(lib.path)}
+    return list(seen.values())
+
+
+def _restored_excluded_folders(raw) -> list[str]:
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ValueError("deve essere un elenco di nomi")
+    return raw
+
+
+# One validator per backup key, each the same check its own PUT endpoint
+# applies. A key in _BACKUP_KEYS with no entry here cannot be restored.
+_RESTORE_VALIDATORS = {
+    "domain": _restored_domain,
+    "animeunity_domain": _restored_host(lambda host: hosts.verify_animeunity(host)),
+    "video_host": _restored_host(lambda host: hosts.verify_video_host(host)),
+    "download_dir": _restored_download_dir,
+    "libraries": _restored_libraries,
+    "excluded_folders": _restored_excluded_folders,
+    "settings": _restored_settings,
+}
+
+
 @router.post("/settings/restore", dependencies=CAN_MANAGE)
 def restore_settings_backup(body: SettingsBackup):
+    """Restore a settings backup.
+
+    A backup is a file somebody uploads, so it is input like any other: every
+    value goes through the validator of the endpoint that normally sets it.
+    All of them run before anything is written, and one rejected field
+    rejects the whole file — a half-applied backup is worse than none.
+    """
     if not isinstance(body.data, dict):
         raise HTTPException(status_code=400, detail="Backup non valido")
     unknown = set(body.data) - _BACKUP_KEYS
     if unknown:
         raise HTTPException(status_code=400, detail="Il backup contiene campi non supportati")
-    if not isinstance(body.data.get("settings", {}), dict):
-        raise HTTPException(status_code=400, detail="La sezione settings non è valida")
-    restored = {key: value for key, value in body.data.items() if key in _BACKUP_KEYS}
+
+    restored, rejected = {}, {}
+    for key, value in body.data.items():
+        validator = _RESTORE_VALIDATORS.get(key)
+        try:
+            if validator is None:
+                raise ValueError("campo non ripristinabile")
+            restored[key] = validator(value)
+        except ValueError as exc:
+            rejected[key] = str(exc)
+    if rejected:
+        logger.warning("Settings restore refused, invalid fields: %s", sorted(rejected))
+        raise HTTPException(
+            status_code=400,
+            detail="Backup non valido. Campi rifiutati: "
+                   + "; ".join(f"{key} ({reason})" for key, reason in sorted(rejected.items())),
+        )
+
     # Merge, so a backup from an older version cannot erase unrelated state.
     config.update_data(restored)
     if "animeunity_domain" in restored:
         animeunity.forget_csrf()
         home.clear_cache("animeunity")
+    if "download_dir" in restored:
+        from app.routers.files import _disk_usage_cache
+        _disk_usage_cache["data"] = None
     metadata.clear_cache()
     return {"ok": True, "restored": sorted(restored)}
 
@@ -408,11 +538,16 @@ def get_app_settings():
 _SETTING_RANGES = (
     ("max_concurrent_downloads", 1, 32),
     ("max_segment_workers", 1, 128),
-    ("series_watch_interval_minutes", 15, 1440),
+    ("source_max_connections", 1, config.SOURCE_MAX_CONNECTIONS_CEILING),
+    ("source_requests_per_hour", 1, config.SOURCE_REQUESTS_PER_HOUR_CEILING),
     # Floored well above the throttle in domain_recovery: a check any more often
     # than this is hammering somebody else's page for a domain that rotates
     # every few weeks.
     ("domain_check_interval_minutes", 1, 1440),
+)
+_SOURCE_CEILINGS = (
+    ("source_max_connections", config.SOURCE_MAX_CONNECTIONS_CEILING),
+    ("source_requests_per_hour", config.SOURCE_REQUESTS_PER_HOUR_CEILING),
 )
 
 
@@ -442,8 +577,7 @@ def set_app_settings(body: SettingsUpdate):
         except (TranscodeError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_settings(new_settings)
-    from app.jobs import job_manager
-    job_manager.update_max_concurrent(new_settings["max_concurrent_downloads"])
+    _sync_job_limit(new_settings)
     return new_settings
 
 
@@ -479,6 +613,67 @@ class DownloadDirectoryUpdate(BaseModel):
     path: str
 
 
+# The download folder is the root of the file manager: whatever is under it can
+# be listed, streamed, renamed and deleted from the browser. Pointed at the
+# folder that holds panel.db it served the hook and notification secrets to
+# anyone allowed to browse; pointed at a system folder it offered that for deletion.
+_POSIX_SYSTEM_DIRS = (
+    "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/sbin", "/sys", "/usr",
+)
+
+
+def _system_dirs() -> list[Path]:
+    if os.name != "nt":
+        return [Path(p) for p in _POSIX_SYSTEM_DIRS]
+    drive = os.environ.get("SystemDrive") or "C:"
+    candidates = [
+        os.environ.get("SystemRoot") or os.environ.get("windir") or f"{drive}\\Windows",
+        os.environ.get("ProgramFiles") or f"{drive}\\Program Files",
+        os.environ.get("ProgramFiles(x86)") or f"{drive}\\Program Files (x86)",
+        os.environ.get("ProgramW6432") or f"{drive}\\Program Files",
+    ]
+    return [Path(c) for c in candidates if c]
+
+
+def _same_or_inside(path: Path, parent: Path) -> bool:
+    """``path`` is ``parent`` or below it. Case-insensitive where the OS is."""
+    child = os.path.normcase(str(path))
+    root = os.path.normcase(str(parent))
+    return child == root or child.startswith(root.rstrip("\\/") + os.sep)
+
+
+def _confined_download_dir(raw: str) -> Path:
+    """Validate a download folder; return it resolved, or raise ValueError.
+
+    Has no side effects — nothing is created — so settings/restore can run it
+    before deciding whether to write anything.
+    """
+    from app import db
+
+    path = Path(validate_library_path(raw)).expanduser()
+    if not path.is_absolute():
+        raise ValueError("Indica un percorso assoluto per la cartella download.")
+    path = path.resolve()
+
+    if path.parent == path:
+        raise ValueError("La radice di un disco non può essere la cartella download.")
+    for system_dir in _system_dirs():
+        if _same_or_inside(path, system_dir.resolve()):
+            raise ValueError("Una cartella di sistema non può essere la cartella download.")
+
+    # The panel's own state must be neither the folder, nor inside it.
+    for protected in (db.current_path(), config.DB_FILE, config.DATA_FILE, config.SCHEDULE_FILE):
+        protected = Path(protected).resolve()
+        if _same_or_inside(protected, path) or _same_or_inside(path, protected):
+            raise ValueError(
+                "La cartella download non può contenere i file di configurazione del pannello."
+            )
+    app_dir = Path(config.__file__).resolve().parent
+    if _same_or_inside(path, app_dir) or _same_or_inside(app_dir, path):
+        raise ValueError("La cartella download non può coincidere con la cartella dell'applicazione.")
+    return path
+
+
 @router.get("/download-directory", dependencies=CAN_MANAGE)
 def get_download_directory():
     from app.windows_folder_picker import available
@@ -487,12 +682,9 @@ def get_download_directory():
 
 @router.put("/download-directory", dependencies=CAN_MANAGE)
 def set_download_directory(body: DownloadDirectoryUpdate):
-    from pathlib import Path
     import tempfile
     try:
-        path = Path(validate_library_path(body.path)).expanduser()
-        if not path.is_absolute():
-            raise ValueError("Indica un percorso assoluto per la cartella download.")
+        path = _confined_download_dir(body.path)
         path.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryFile(dir=path):
             pass
@@ -528,6 +720,60 @@ async def browse_download_directory(body: DownloadDirectoryUpdate):
 async def hardware():
     from app.core.hardware_probe import probe
     return await asyncio.to_thread(probe)
+
+
+def _sync_job_limit(settings: dict) -> None:
+    """Make the running queue and the source gate follow the stored settings."""
+    from app.jobs import job_manager
+    job_manager.update_max_concurrent(settings["max_concurrent_downloads"])
+    from app.core import m3u8
+    m3u8.apply_source_cap()
+
+
+def _source_limits() -> dict:
+    """The source limits in force and whether an env override set them."""
+    from app.core import m3u8, source_budget
+    cap_env = m3u8.source_cap_env()
+    budget_env = source_budget.env_limit()
+    return {
+        "source_cap_from_env": cap_env is not None,
+        "effective_source_max_connections": m3u8._SOURCE_MAX_CONNECTIONS,
+        "budget_from_env": budget_env is not None,
+        "effective_requests_per_hour": source_budget.limit(),
+    }
+
+
+@router.post("/hardware/diagnose", dependencies=CAN_MANAGE)
+async def diagnose_hardware():
+    """Run the diagnosis and apply the preset it chooses (performance only)."""
+    from app.core.hardware_probe import diagnose
+    result = await asyncio.to_thread(diagnose, True)
+    _sync_job_limit(config.get_settings())
+    return result
+
+
+class PresetRequest(BaseModel):
+    preset: Literal["conservative", "balanced", "fast"] = "conservative"
+
+
+@router.post("/performance-preset", dependencies=CAN_MANAGE)
+def set_performance_preset(body: PresetRequest):
+    """Write one preset's values as they are ("Ripristina Conservativo")."""
+    settings = config.apply_performance_preset(body.preset)
+    _sync_job_limit(settings)
+    return {"preset": body.preset, "label": config.PERFORMANCE_PRESETS[body.preset]["label"],
+            "settings": {key: settings.get(key) for key in config.PERFORMANCE_KEYS}}
+
+
+@router.get("/source-protection", dependencies=CAN_MANAGE)
+def source_protection():
+    """The automatic protection: is the queue held, until when, and the preset."""
+    from app.jobs import job_manager
+    settings = config.get_settings()
+    return {**job_manager.protection_status(),
+            "preset": config.matching_preset(settings),
+            "settings": {key: settings.get(key) for key in config.PERFORMANCE_KEYS},
+            **_source_limits()}
 
 
 @router.get("/video-encoders", dependencies=CAN_MANAGE)

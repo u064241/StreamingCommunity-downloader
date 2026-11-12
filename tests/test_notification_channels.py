@@ -4,7 +4,7 @@ import pytest
 
 from app.auth.permissions import ALL_PERMISSIONS, Permission
 from app.requests import apprise_channel, notify
-from tests.conftest import do_setup, make_user, session_for
+from tests.conftest import do_setup, make_user, restrict_local_user, session_for
 
 
 DISCORD_URL = "discord://123456789/abcdefghijklmnop"
@@ -69,11 +69,9 @@ def test_an_unparseable_url_is_refused(client, admin, sent):
     assert client.get("/api/notification-channels").json()["channels"] == []
 
 
-def test_only_settings_managers_reach_the_channels(client, admin_credentials, sent):
+def test_only_settings_managers_reach_the_channels(client, admin_credentials, sent, monkeypatch):
     do_setup(client, admin_credentials)
-    bob = make_user("bob", "jf-bob-id", int(Permission.REQUEST))
-    client.cookies.clear()
-    session_for(client, bob.id)
+    restrict_local_user(monkeypatch, Permission.REQUEST)
 
     assert client.get("/api/notification-channels").status_code == 403
 

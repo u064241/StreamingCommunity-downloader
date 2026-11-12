@@ -1,4 +1,4 @@
-"""SQLite store for panel users, sessions, requests and notifications.
+"""SQLite store for the local user, requests, notifications and settings.
 
 Deliberately stdlib-only: the panel is self-hosted by non-experts, so adding an
 ORM or a separate database service would be a maintenance cost with no payoff at
@@ -92,7 +92,11 @@ def tx():
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
-    except Exception:
+    except BaseException:
+        # BaseException, not Exception: a KeyboardInterrupt, a SystemExit or a
+        # cancelled task leaving the block must not leave this thread's
+        # connection inside an open write transaction, holding the write lock
+        # against every other thread until the process ends.
         conn.execute("ROLLBACK")
         raise
     else:
@@ -303,6 +307,10 @@ _V4_SERIES_WATCH = [
 # child tables with it, in this order. Dropping the old parent while children
 # still pointed at it would cascade their rows away; by the time it is dropped,
 # the copies already reference the new one and the originals are gone.
+#
+# jf_request.watch_id points at the table too (ON DELETE SET NULL) and is not
+# rebuilt: run_migrations switches foreign key enforcement off around every
+# migration, or the DROP below would null it on every request.
 _V5_WATCHES_WITHOUT_ACCOUNTS = [
     """
     CREATE TABLE jf_series_watch_v5 (
@@ -507,6 +515,51 @@ _V10_LIBRARY_FOLDERS = [
 ]
 
 
+_V11_WATCH_EPISODE_ATTEMPTS = [
+    # Why an episode was written off: NULL for the ordinary cases (seeded,
+    # queued, downloaded), "gave_up" when its download could not even be
+    # submitted after every attempt allowed.
+    "ALTER TABLE jf_watch_seen_episode ADD COLUMN reason TEXT",
+    # A new episode whose download could not be submitted is tried again at
+    # the next poll instead of being marked seen and lost; this counts the
+    # tries so a permanently broken one stops after a few.
+    """
+    CREATE TABLE jf_watch_episode_attempt (
+        watch_id    INTEGER NOT NULL REFERENCES jf_series_watch(id) ON DELETE CASCADE,
+        episode_key TEXT    NOT NULL,
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        updated_at  TEXT    NOT NULL,
+        PRIMARY KEY (watch_id, episode_key)
+    )
+    """,
+]
+
+
+# The panel is single-user and local: the one person using it is both the
+# requester and the approver. The request queue references its requester and
+# approver in jf_user (requested_by NOT NULL, decided_by, subscribers,
+# notifications), so the local user needs a real row there for the queue to
+# work. One row, keyed by the stable jellyfin_user_id 'local' (the column is
+# the table's identity key and UNIQUE), holding every permission bit
+# (app/auth/permissions.py ALL_PERMISSIONS = 127).
+#
+# Additive only: an INSERT, no column or table changed or dropped. OR IGNORE
+# keeps it idempotent for a database where the row is already there; legacy
+# account rows, if any, are left untouched. app/auth/deps.py resolves the
+# local user to this row by its key, never by a hard-coded id, since the id is
+# whatever AUTOINCREMENT hands out next.
+LOCAL_USER_KEY = "local"
+
+_V12_LOCAL_USER = [
+    f"""
+    INSERT OR IGNORE INTO jf_user(jellyfin_user_id, username, is_jellyfin_admin, permissions,
+                                  enabled, device_id, created_at)
+    VALUES('{LOCAL_USER_KEY}', 'Pannello', 0, 127, 1, '',
+           strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'))
+    """,
+]
+
+
 Migration = list[str] | Callable[[sqlite3.Connection, bool], None]
 
 MIGRATIONS: list[Migration] = [
@@ -520,31 +573,105 @@ MIGRATIONS: list[Migration] = [
     _v8_carry_over_open_mode,
     _V9_FOLLOWER_LANGUAGES,
     _V10_LIBRARY_FOLDERS,
+    _V11_WATCH_EPISODE_ATTEMPTS,
+    _V12_LOCAL_USER,
 ]
+
+
+class SchemaTooNew(RuntimeError):
+    """The database was written by a newer version of the panel."""
+
+
+def _foreign_key_violations(conn: sqlite3.Connection) -> dict[tuple, int]:
+    """Violations per (child table, parent table), as foreign_key_check sees them."""
+    counts: dict[tuple, int] = {}
+    for row in conn.execute("PRAGMA foreign_key_check").fetchall():
+        key = (row[0], row[2])
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _backup_before_migrating(conn: sqlite3.Connection, version: int):
+    """Keep a copy of the database as it was before its schema is changed.
+
+    ``VACUUM INTO`` rather than a file copy: it is a consistent snapshot even
+    with the WAL not checkpointed. One copy per starting version, and an
+    existing one is kept - it is the older, and so the more valuable, of the
+    two. A failure here stops the upgrade: migrating without the copy is the
+    case the copy exists for.
+    """
+    if not _path.exists():
+        return
+    backup = _path.with_name(f"{_path.name}.bak-v{version}")
+    if backup.exists():
+        logger.info("Database backup %s already exists; kept", backup)
+        return
+    conn.execute("VACUUM INTO '" + str(backup).replace("'", "''") + "'")
+    logger.info("Database backed up to %s before migrating from schema v%d", backup, version)
 
 
 def run_migrations():
     conn = get_conn()
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version >= len(MIGRATIONS):
+    if version > len(MIGRATIONS):
+        # Not "nothing to do": this code does not know the schema it is about
+        # to read and write, and carrying on would corrupt it quietly.
+        raise SchemaTooNew(
+            f"Il database {_path} ha schema v{version}, ma questa versione del pannello "
+            f"conosce solo fino a v{len(MIGRATIONS)}: è stato creato da una versione più "
+            "recente. Aggiorna il pannello oppure ripristina un backup del database "
+            "(panel.db.bak-v<N>)."
+        )
+    if version == len(MIGRATIONS):
         return
     # Told to the migrations that need it: at this point nothing has been
     # applied yet, so version 0 means the file is being created right now.
     fresh = version == 0
-    for index in range(version, len(MIGRATIONS)):
-        migration = MIGRATIONS[index]
-        logger.info("Applying database migration %d", index + 1)
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            if callable(migration):
-                migration(conn, fresh)
-            else:
-                for statement in migration:
-                    conn.execute(statement)
-            # PRAGMA cannot be parameterised.
-            conn.execute(f"PRAGMA user_version = {index + 1}")
-        except Exception:
-            conn.execute("ROLLBACK")
-            raise
-        conn.execute("COMMIT")
+    if not fresh:
+        _backup_before_migrating(conn, version)
+
+    # Off for the whole run, as SQLite's own procedure for rebuilding a table
+    # asks: with enforcement on, DROP TABLE deletes the parent's rows first,
+    # and every ON DELETE action fires - migration 5 dropped jf_series_watch
+    # and so set jf_request.watch_id to NULL on every request. The pragma is a
+    # no-op inside a transaction, hence here; integrity is checked by hand
+    # before each commit instead.
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        known_violations = _foreign_key_violations(conn)
+        if known_violations:
+            logger.warning("Foreign key violations already in the database: %s", known_violations)
+        while True:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Read again now that the write lock is held: another process
+                # may have applied this very migration while we waited for it.
+                index = conn.execute("PRAGMA user_version").fetchone()[0]
+                if index >= len(MIGRATIONS):
+                    conn.execute("ROLLBACK")
+                    break
+                migration = MIGRATIONS[index]
+                logger.info("Applying database migration %d", index + 1)
+                if callable(migration):
+                    migration(conn, fresh)
+                else:
+                    for statement in migration:
+                        conn.execute(statement)
+                # PRAGMA cannot be parameterised.
+                conn.execute(f"PRAGMA user_version = {index + 1}")
+                # Before the commit, so a migration that breaks a reference is
+                # rolled back instead of discovered later.
+                violations = _foreign_key_violations(conn)
+                broken = {key: n for key, n in violations.items()
+                          if n > known_violations.get(key, 0)}
+                if broken:
+                    raise sqlite3.IntegrityError(
+                        f"Migration {index + 1} left foreign key violations: {broken}")
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+            conn.execute("COMMIT")
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
     logger.info("Database ready at %s (schema v%d)", _path, len(MIGRATIONS))
