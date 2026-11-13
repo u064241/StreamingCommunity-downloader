@@ -496,7 +496,10 @@ async function showStartPage() {
     // A 409 with no domain configured throws like any other refusal, and
     // lands in the catch below, which leaves the same bare search box.
     let stamp = null;
-    const body = await api.get('/api/home', {source}, {signal: _homeAbort.signal,
+    // "Tutte le fonti" is a search mode, not a catalogue: its start page is the
+    // StreamingCommunity front page (/api/home has no "all" provider).
+    const homeSource = source === 'all' ? 'streamingcommunity' : source;
+    const body = await api.get('/api/home', {source: homeSource}, {signal: _homeAbort.signal,
                                                        onHeaders: h => { stamp = _cacheStamp(h); }});
     _homeCache[cacheKey] = {shelves: body.shelves || [], genres: body.genres || [], stamp,
                             expires: Date.now() + 900000};
@@ -889,7 +892,7 @@ registerPageHash('search', {
   read: () => ({
     params: {
       q: document.getElementById('search-input')?.value.trim() || null,
-      src: ['animeunity', 'raiplay'].includes(currentSource) ? currentSource : null,
+      src: currentSource,
       type: _kindFilter || null,
       dub: _dubOnly ? '1' : null,
       section: _catalogSection?.section || null,
@@ -904,7 +907,10 @@ registerPageHash('search', {
     if (input) input.value = params.q || '';
     // Not setSource(): that clears the grid and re-runs the search, which is
     // the opposite of restoring one. Only the parts that are state.
-    currentSource = !_catalogSection && ['all', 'animeunity', 'raiplay'].includes(params.src) ? params.src : 'streamingcommunity';
+    // The catalogue browse is StreamingCommunity only; otherwise the address
+    // names the source, and an address without one opens "Tutte le fonti".
+    currentSource = _catalogSection ? 'streamingcommunity'
+      : (['all', 'streamingcommunity', 'animeunity', 'raiplay'].includes(params.src) ? params.src : 'all');
     document.getElementById('src-all')?.classList.toggle('active', currentSource === 'all');
     document.getElementById('src-sc')?.classList.toggle('active', currentSource === 'streamingcommunity');
     document.getElementById('src-au')?.classList.toggle('active', currentSource === 'animeunity');

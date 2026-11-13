@@ -95,5 +95,5 @@ test('RaiPlay is in the source selector and sends no type filter', () => {
   const search = fs.readFileSync('app/static/page-search.js', 'utf8');
   assert.match(search, /raiplay: \[\['', 'catalog\.all'\]\]/);
   assert.match(search, /media_type: \(currentSource !== 'raiplay' && _kindFilter\) \|\| undefined/);
-  assert.match(search, /\['all', 'animeunity', 'raiplay'\]\.includes\(params\.src\)/);
+  assert.match(search, /\['all', 'streamingcommunity', 'animeunity', 'raiplay'\]\.includes\(params\.src\)/);
 });
