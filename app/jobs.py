@@ -470,8 +470,6 @@ class JobManager:
                                    PROTECTION_MAX_BACKOFFS)
             except Exception:
                 logger.exception("Could not switch to the conservative preset")
-        self._broadcast({"type": "source_paused", **self.protection_status(),
-                         "reason": reason, "downgraded": downgraded})
 
     def protection_status(self) -> dict:
         """What the interface shows about the automatic protection."""

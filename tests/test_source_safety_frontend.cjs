@@ -1,4 +1,4 @@
-// The downloads page's source-pause banner, and RaiPlay's read-only title page.
+// RaiPlay's read-only title page.
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,68 +15,6 @@ function slice(source, start, end) {
   assert.ok(from >= 0 && to > from, `markers not found: ${start} … ${end}`);
   return source.slice(from, to);
 }
-
-// ── Downloads: "Sorgente in pausa fino alle HH:MM" ───────────────────────────
-
-const downloads = fs.readFileSync('app/static/page-downloads.js', 'utf8');
-const pauseCode = slice(downloads, '// ── Source pause', '// The list is normally kept current');
-
-function pauseSetup(get = async () => ({paused: false})) {
-  const box = {hidden: true, innerHTML: ''};
-  const timers = [];
-  const context = vm.createContext({
-    document: {getElementById: id => (id === 'dl-source-pause' ? box : null)},
-    api: {get}, escapeHtml, Date, Number, Math,
-    setTimeout: (fn, ms) => { timers.push({fn, ms}); return timers.length; },
-    clearTimeout: () => {},
-  });
-  vm.runInContext(pauseCode, context);
-  return {context, box, timers};
-}
-
-test('the stream event source_paused is handled on the downloads page', () => {
-  assert.match(downloads, /case 'source_paused':\s*\n\s*renderSourcePause\(msg\)/);
-  // Opening the page reads the current state as well.
-  assert.match(downloads, /loadSourcePause\(\);\s*\n\s*try \{\s*\n\s*const jobs = await api\.get\('\/api\/jobs'\)/);
-});
-
-test('a running pause shows when the queue resumes, escaped', () => {
-  const app = pauseSetup();
-  const until = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  app.context.status = {paused: true, until, until_hhmm: '14:35<img src=x onerror=alert(1)>'};
-  vm.runInContext('renderSourcePause(status)', app.context);
-  assert.equal(app.box.hidden, false);
-  assert.match(app.box.innerHTML, /Sorgente in pausa fino alle 14:35/);
-  assert.match(app.box.innerHTML, /la coda riprenderà automaticamente/);
-  assert.doesNotMatch(app.box.innerHTML, /<img/);
-  assert.match(app.box.innerHTML, /&lt;img/);
-  // A timer re-reads the state when the pause is due to end.
-  assert.equal(app.timers.length, 1);
-  assert.ok(app.timers[0].ms > 9 * 60 * 1000);
-});
-
-test('no pause, an ended pause or an error show nothing', async () => {
-  const app = pauseSetup();
-  for (const status of [null, {paused: false, until: null, until_hhmm: null},
-    {paused: true, until: new Date(Date.now() - 1000).toISOString(), until_hhmm: '09:00'}]) {
-    app.box.hidden = false; app.box.innerHTML = 'old';
-    app.context.status = status;
-    vm.runInContext('renderSourcePause(status)', app.context);
-    assert.equal(app.box.hidden, true);
-    assert.equal(app.box.innerHTML, '');
-  }
-  const failing = pauseSetup(async () => { throw new Error('403'); });
-  failing.box.hidden = false;
-  await vm.runInContext('loadSourcePause()', failing.context);
-  assert.equal(failing.box.hidden, true);
-});
-
-test('the page asks the protection endpoint for the state', async () => {
-  const paths = [];
-  const app = pauseSetup(async path => { paths.push(path); return {paused: false}; });
-  await vm.runInContext('loadSourcePause()', app.context);
-  assert.deepEqual(paths, ['/api/domain/source-protection']);
-});
 
 // ── Title page: RaiPlay is read-only ─────────────────────────────────────────
 

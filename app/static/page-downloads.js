@@ -84,9 +84,6 @@ function connectGlobalStream() {
       case 'domain_candidate':
         loadDomainCandidate();
         break;
-      case 'source_paused':
-        renderSourcePause(msg);
-        break;
       case 'notification':
         // A bare signal: the payload lives behind /api/notifications, which is
         // scoped to the caller, so a shared stream leaks nothing.
@@ -788,48 +785,12 @@ async function cancelAllJobs() {
   } catch (e) { showToast(errText(e, 'Impossibile annullare tutti i processi'), 'danger'); }
 }
 
-// ── Source pause ─────────────────────────────────────────────────────────────
-// While the source is in backoff (after a 403/429/503 or a segment pushback)
-// the queue holds and resumes on its own. The banner shows only while the
-// pause is running: from GET /api/domain/source-protection when the page is
-// opened, and from the source_paused stream event when a new pause starts. A
-// timer hides it when the pause ends, in case no other event arrives.
-let _sourcePauseTimer = null;
-
-function _pauseUntilTime(status) {
-  if (!status || !status.paused) return null;
-  const until = status.until ? Date.parse(status.until) : NaN;
-  if (Number.isFinite(until) && until <= Date.now()) return null;
-  return {hhmm: status.until_hhmm || '', until};
-}
-
-function renderSourcePause(status) {
-  const box = document.getElementById('dl-source-pause');
-  if (!box) return;
-  if (_sourcePauseTimer) { clearTimeout(_sourcePauseTimer); _sourcePauseTimer = null; }
-  const pause = _pauseUntilTime(status);
-  if (!pause) { box.hidden = true; box.innerHTML = ''; return; }
-  const text = `Sorgente in pausa fino alle ${pause.hhmm}, la coda riprenderà automaticamente`;
-  box.innerHTML = `<i class="ti ti-player-pause me-1"></i>${escapeHtml(text)}`;
-  box.hidden = false;
-  if (Number.isFinite(pause.until)) {
-    const wait = Math.min(Math.max(pause.until - Date.now(), 0) + 1000, 2 ** 31 - 1);
-    _sourcePauseTimer = setTimeout(() => loadSourcePause(), wait);
-  }
-}
-
-async function loadSourcePause() {
-  try { renderSourcePause(await api.get('/api/domain/source-protection')); }
-  catch (e) { renderSourcePause(null); /* informational: no banner on error */ }
-}
-
 // The list is normally kept current by the event stream. This re-reads it from
 // the server for the times that is not enough — a laptop coming back from
 // sleep, a proxy that closed the connection, a tab that fell far behind.
 async function refreshJobs() {
   const btn = document.getElementById('dl-refresh-btn');
   if (btn) btn.disabled = true;
-  loadSourcePause();
   try {
     const jobs = await api.get('/api/jobs');
     _jobs.clear();

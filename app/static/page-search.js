@@ -223,13 +223,12 @@ function renderResultCards(items, container, baseIndex,
       ? ''
       : `<div class="status-ribbon" data-ribbon-for="${escapeHtml(String(item.id))}"></div>`;
     card.innerHTML = `${rankHtml}
-      <div class="result-card" ${options?.action ? `data-action="${escapeHtml(options.action)}"` : 'data-action="search:open"'} data-idx="${idx}"${options?.noPreview ? ' data-preview-disabled="1"' : ''}
+      <div class="result-card" ${options?.action ? `data-action="${escapeHtml(options.action)}"` : 'data-action="search:open"'} data-idx="${idx}"
            role="button" tabindex="0" aria-label="Apri ${escapeHtml(item.name)}">
         <div class="poster-wrap ${item.backdrop ? 'has-backdrop' : 'poster-fallback'}">
           ${posterHtml}
           <div class="poster-noimg" style="${posterUrl?'display:none':''}">&#127916;</div>
           <div class="poster-overlay"></div>
-          <div class="card-preview" aria-hidden="true"></div>
           ${ribbonHtml}
           <div class="poster-play"><i class="ti ti-player-play-filled" style="font-size:16px"></i></div>
         </div>
@@ -284,78 +283,8 @@ async function hydrateShelfArtwork(card, item) {
   } catch (_) { /* the poster remains a valid fallback */ }
 }
 
-// Card previews are deliberately lazy: the catalogue can contain hundreds of
-// titles and only the card under the pointer is allowed to request metadata.
-const _cardPreviewCache = new Map();
-const _cardArtworkCache = new Map();
-const _cardPreviewTimers = new WeakMap();
-
-function youtubeId(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1).split('/')[0];
-    if (parsed.hostname.endsWith('youtube.com')) {
-      if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
-      const match = parsed.pathname.match(/^\/(?:embed|shorts)\/([^/?]+)/);
-      return match ? match[1] : null;
-    }
-  } catch (_) { /* invalid trailer URL */ }
-  return null;
-}
-
-function stopCardPreview(card) {
-  const timer = _cardPreviewTimers.get(card);
-  if (timer) { clearTimeout(timer); _cardPreviewTimers.delete(card); }
-  const frame = card.querySelector('.card-preview iframe');
-  if (frame) frame.remove();
-  card.classList.remove('preview-visible');
-}
-
-async function startCardPreview(card) {
-  if (card.dataset.previewDisabled === '1') return;
-  const item = _searchResults[Number(card.dataset.idx)];
-  if (!item || String(item.type).toLowerCase() === 'anime' || !_isStreamingItem(item)) return;
-  const key = `${item.type}:${item.id}`;
-  let url = _cardPreviewCache.get(key);
-  if (url === undefined) {
-    _cardPreviewCache.set(key, null);
-    try {
-      const meta = await api.get(`/api/metadata/${item.type}/${item.id}`,
-        {slug: item.slug || '', version: currentVersion || ''});
-      const backdrop = meta?.backdrop || null;
-      if (backdrop && !_cardArtworkCache.has(key)) {
-        const src = (backdrop.startsWith('http') || backdrop.startsWith('/'))
-          ? backdrop : imageUrl(backdrop);
-        _cardArtworkCache.set(key, src);
-        const image = card.querySelector('.poster-main');
-        if (image) {
-          image.src = src;
-          const wrap = image.closest('.poster-wrap');
-          wrap.querySelector('.poster-backdrop')?.remove();
-          wrap.classList.remove('poster-fallback');
-        }
-      }
-      url = meta?.trailer_url || null;
-      _cardPreviewCache.set(key, url);
-    } catch (_) { url = null; }
-  }
-  if (!url || !card.matches(':hover')) {
-    if (!url) card.dataset.previewDisabled = '1';
-    return;
-  }
-  const id = youtubeId(url);
-  if (!id || card.querySelector('.card-preview iframe')) return;
-  const frame = document.createElement('iframe');
-  frame.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&mute=1&controls=0&loop=1&playlist=${encodeURIComponent(id)}&playsinline=1&rel=0`;
-  frame.title = t('catalog.preview');
-  frame.setAttribute('aria-hidden', 'true');
-  frame.tabIndex = -1;
-  frame.allow = 'autoplay; encrypted-media';
-  card.querySelector('.card-preview').appendChild(frame);
-  card.classList.add('preview-visible');
-}
-
-// Hover previews. Guarded so the file also loads under a minimal DOM (the
+// Hover: the card grows (zoom) and keeps its growth inside the rail. No trailer,
+// no metadata request on hover. Guarded so the file also loads under a minimal DOM (the
 // Node tests in tests/*.cjs give `document` no addEventListener); a browser
 // always has it, so nothing changes there.
 function _onCardPointerOver(event) {
@@ -370,19 +299,10 @@ function _onCardPointerOver(event) {
     card.style.transformOrigin = rect.left - growth < edge.left ? 'left 18%'
       : rect.right + growth > edge.right ? 'right 18%' : 'center 18%';
   }
-  const timer = setTimeout(() => startCardPreview(card), 380);
-  _cardPreviewTimers.set(card, timer);
-}
-
-function _onCardPointerOut(event) {
-  const card = event.target.closest?.('.result-card');
-  if (!card || card.contains(event.relatedTarget)) return;
-  stopCardPreview(card);
 }
 
 if (typeof document.addEventListener === 'function') {
   document.addEventListener('pointerover', _onCardPointerOver);
-  document.addEventListener('pointerout', _onCardPointerOut);
 }
 
 async function doSearch(options) {
@@ -1056,7 +976,6 @@ window.addEventListener('sc:language-changed', () => {
   root.querySelectorAll('[data-catalog-label]').forEach(node => {
     node.textContent = catalogLabel(node.dataset.catalogLabel);
   });
-  root.querySelectorAll('.card-preview iframe').forEach(frame => { frame.title = t('catalog.preview'); });
 });
 
 // Only StreamingCommunity titles have numeric ids on /api/metadata. RaiPlay
