@@ -58,6 +58,12 @@
             <span class="form-check-label">Conferme e notifiche del pannello</span>
           </label>
           <div class="form-text">Disattivandola, le azioni non chiedono conferma e il pannello non registra né inoltra notifiche nel campanellino.</div>
+          <label class="form-label mt-3" for="setting-theme">Tema dell’interfaccia</label>
+          <select class="form-select form-select-sm" id="setting-theme">
+            <option value="dark">Scuro</option><option value="blue">Blu</option>
+            <option value="graphite">Grafite</option><option value="contrast">Contrasto elevato</option>
+          </select>
+          <div class="form-text">Il tema cambia colori, sfondi e pulsanti senza modificare le impostazioni del server.</div>
           <button class="btn btn-primary btn-sm mt-3" data-action="cfg:saveGeneral" id="save-general-btn">Salva</button>
           <div id="general-settings-feedback" class="form-text"></div>
         </div>
@@ -415,10 +421,15 @@
         <div id="source-protection-status" class="alert alert-warning py-2 px-3 small" role="status" aria-live="polite" hidden></div>
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-outline-secondary btn-sm" id="probe-hardware" data-action="cfg:probeHardware" data-i18n="settings.hardware.scan">Analizza hardware</button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="reset-conservative" data-action="cfg:resetConservative" data-i18n="settings.hardware.resetConservative" hidden>Ripristina Conservativo</button>
+          <button type="button" class="btn btn-warning btn-sm" id="reset-conservative" data-action="cfg:resetConservative" data-i18n="settings.hardware.resetConservative" hidden>Imposta Conservativo</button>
         </div>
         <div id="hardware-preset-feedback" class="form-text mt-2" role="status" aria-live="polite"></div>
         <div id="hardware-results" class="form-text mt-2" role="status" aria-live="polite"></div>
+        <div class="settings-actions mt-2">
+          <button type="button" class="btn btn-info btn-sm" data-action="cfg:updateFfmpeg">Aggiorna FFmpeg</button>
+          <span class="form-text">Disponibile indipendentemente dal profilo hardware: aggiorna il fallback FFmpeg verificato.</span>
+          <div id="ffmpeg-update-feedback" class="form-text"></div>
+        </div>
       </div>
       <div class="settings-section">
         <p class="settings-section-label" data-i18n="settings.video.conversion.after.download">Conversione video dopo il download</p>
@@ -460,6 +471,25 @@
       <!-- ── Performance download ──────────────────────────────────────── -->
       <div class="settings-section">
         <p class="settings-section-label">Download</p>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="setting-performance-profile">Profilo sorgente</label>
+            <select id="setting-performance-profile" class="form-select" data-change="cfg:performanceProfile">
+              <option value="conservative">Conservativo</option><option value="balanced">Bilanciato</option>
+              <option value="fast">Veloce</option><option value="free">Libero</option>
+            </select>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="setting-source-requests">Richieste alla sorgente / ora</label>
+            <input type="number" id="setting-source-requests" class="form-control" min="0" max="120" value="60">
+            <div class="form-text">0 = nessun limite applicativo. Il backoff per errori della sorgente resta attivo.</div>
+          </div>
+        </div>
+        <div id="free-profile-disclaimer" class="alert alert-warning py-2 px-3 small" hidden>
+          Il profilo Libero disattiva il budget orario applicativo e può aumentare il rischio di rate limit, blocchi IP o Cloudflare. Proseguendo accetti questo rischio.
+          <label class="form-check mt-2"><input type="checkbox" id="free-profile-ack" class="form-check-input">
+            <span class="form-check-label">Ho compreso e accetto il rischio.</span></label>
+        </div>
         <div class="row g-3">
           <div class="col-sm-6">
             <label class="form-label" for="setting-max-concurrent">

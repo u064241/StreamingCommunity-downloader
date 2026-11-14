@@ -20,6 +20,20 @@ function itemYear(item) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   if (!await initAuth()) return;
+  const theme = document.getElementById('setting-theme');
+  if (theme) {
+    theme.value = document.documentElement.dataset.theme || 'dark';
+    theme.addEventListener('change', () => {
+      const value = theme.value || 'dark';
+      document.documentElement.dataset.theme = value;
+      try { localStorage.setItem('sc-panel-theme', value); } catch (_) { /* session-only */ }
+    });
+  }
+
+  // Load the General notification preference before any page can emit a
+  // toast. This keeps Download and the other pages on the same switch even
+  // when Settings has not been opened during this session.
+  if (typeof _loadAppSettings === 'function') await _loadAppSettings();
 
   // Routing happens here, not at the end. It needs the permissions and
   // nothing else, and everything below used to run first — for an
@@ -213,9 +227,10 @@ function showPage(page, params = null) {
     const el = document.getElementById(`page-${p}`);
     if (el) el.style.display = p === page ? '' : 'none';
   });
-  document.getElementById('page-title').textContent = {
-    search:'Cerca', archive:'Archivio', downloads:'Download', files:'File',
-    requests:'Coda richieste', 'my-requests':'Le mie richieste',
+  const pageTitle = document.getElementById('page-title');
+  if (pageTitle) pageTitle.textContent = {
+    search: t('nav.search'), archive:'', downloads:'', files:'',
+    requests:'', 'my-requests':'Le mie richieste',
     detail:'', settings:'Impostazioni',
   }[page] ?? 'Cerca';
   document.querySelectorAll('.nav-link[data-page]').forEach(el =>

@@ -87,10 +87,10 @@ def assert_no_stream(value):
 
 # ── capabilities ─────────────────────────────────────────────────────────────
 
-def test_capabilities_are_metadata_only():
+def test_capabilities_include_episodes_and_non_drm_downloads():
     caps = RaiPlayProvider.capabilities
     assert caps.search and caps.home and caps.details
-    assert not caps.download and not caps.tracks and not caps.episodes and not caps.dubbed_filter
+    assert caps.download and caps.episodes and not caps.tracks and not caps.dubbed_filter
 
 
 def test_stream_is_explicitly_refused(provider, transport):
@@ -101,11 +101,11 @@ def test_stream_is_explicitly_refused(provider, transport):
     assert transport.calls == []
 
 
-def test_raiplay_is_registered_by_default_and_never_downloadable():
+def test_raiplay_is_registered_by_default_with_its_own_download_engine():
     registry = create_default_registry()
     assert registry.sources() == ("streamingcommunity", "animeunity", "raiplay")
     assert get_registry().sources() == ("streamingcommunity", "animeunity", "raiplay")
-    assert registry.is_downloadable("raiplay") is False
+    assert registry.is_downloadable("raiplay") is True
     assert registry.is_downloadable("streamingcommunity") is True
     assert registry.is_downloadable("animeunity") is True
     # Fail-closed for anything else.
@@ -130,7 +130,7 @@ assert 'requests' not in sys.modules
 
 # ── search ───────────────────────────────────────────────────────────────────
 
-def test_search_returns_minimal_cards_marked_not_downloadable(provider):
+def test_search_returns_minimal_cards_with_download_checked_at_runtime(provider):
     rows = [r.to_legacy() for r in provider.search("esempio")]
     assert [r["id"] for r in rows] == ["programmi:serieesempio", "collezioni:raccoltaesempio"]
     first = rows[0]
@@ -139,8 +139,8 @@ def test_search_returns_minimal_cards_marked_not_downloadable(provider):
     assert first["type"] == "tv"
     assert first["poster"] == "https://www.raiplay.it/dl/img/2026/01/01/0000000000002_1536x2048_label.jpg"
     assert first["page_url"] == "https://www.raiplay.it/programmi/serieesempio"
-    assert first["downloadable"] is False
-    assert first["download_disabled_reason"] == "Contenuto non scaricabile dal pannello"
+    assert first["downloadable"] is True
+    assert first["download_disabled_reason"] is None
     assert rows[1]["name"] == "Raccolta Esempio"
     assert_no_stream(rows)
 
@@ -178,14 +178,14 @@ def test_invalid_search_is_refused(provider, transport, query, page):
 def test_home_keeps_only_catalogue_cards_and_safe_genres(provider):
     home = provider.home().to_legacy()
     assert home["source"] == "raiplay"
-    assert [s["title"] for s in home["shelves"]] == ["Hero", "Film"]
-    hero, film = (s["items"] for s in home["shelves"])
+    # The film fixture explicitly declares DRM: it is hidden from shelves.
+    assert [s["title"] for s in home["shelves"]] == ["Hero"]
+    hero = home["shelves"][0]["items"]
     assert [i["id"] for i in hero] == ["programmi:serieesempio"]
-    assert [i["id"] for i in film] == ["programmi:filmesempio"]
-    assert film[0]["type"] == "movie" and hero[0]["type"] == "tv"
+    assert hero[0]["type"] == "tv"
     assert hero[0]["year"] == "2020"
     assert hero[0]["backdrop"].startswith("https://www.raiplay.it/dl/img/")
-    assert all(i["downloadable"] is False for s in home["shelves"] for i in s["items"])
+    assert all(i["downloadable"] is True for s in home["shelves"] for i in s["items"])
     assert home["genres"] == [{"id": "film", "name": "Film"}, {"id": "serieitaliane", "name": "Serie italiane"}]
     assert_no_stream(home)
 
@@ -204,10 +204,10 @@ def test_series_details_have_the_minimum_card_fields(provider):
     assert card["duration"] is None
     assert card["poster"] == "https://www.raiplay.it/dl/img/2026/01/01/0000000000002_1536x2048.jpg"
     assert card["backdrop"] == "https://www.raiplay.it/dl/img/2026/01/01/0000000000001_2048x1152.jpg"
-    assert card["seasons"] == [{"name": "Stagione 2", "episodes": 12}, {"name": "Stagione 1", "episodes": 16}]
+    assert card["seasons"] == [{"name": "Stagione 1", "episodes": 16}, {"name": "Stagione 2", "episodes": 12}]
     assert card["typology"] == "Fiction" and card["subgenres"] == ["medical"]
-    assert card["downloadable"] is False
-    assert card["download_disabled_reason"] == "Contenuto non scaricabile dal pannello"
+    assert card["downloadable"] is True
+    assert card["download_disabled_reason"] is None
     assert_no_stream(card)
 
 
@@ -359,7 +359,7 @@ def test_search_and_home_routes_serve_raiplay_cards(client, raiplay_registry):
     response = client.get("/api/search", params={"q": "esempio", "source": "raiplay"})
     assert response.status_code == 200
     rows = response.json()
-    assert rows[0]["source"] == "raiplay" and rows[0]["downloadable"] is False
+    assert rows[0]["source"] == "raiplay" and rows[0]["downloadable"] is True
     assert_no_stream(rows)
 
     response = client.get("/api/home", params={"source": "raiplay"})

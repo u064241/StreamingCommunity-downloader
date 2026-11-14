@@ -318,10 +318,13 @@ def _worth_retrying(exc: Exception) -> bool:
     away. Never all of OSError: ``requests.ConnectionError`` is one too.
     """
     from app.core._shared import MissingAudioTrackError
+    from app.core.raiplay import RaiPlayDownloadError
     from app.core.transcode import TranscodeError
     if isinstance(exc, TranscodeError):
         return False
     if isinstance(exc, MissingAudioTrackError):
+        return False
+    if isinstance(exc, RaiPlayDownloadError):
         return False
     if isinstance(exc, PermissionError) and getattr(exc, "winerror", None) is None:
         return False
@@ -1245,6 +1248,29 @@ class JobManager:
             strict_audio=strict_audio,
             tmdb_id=tmdb_id,
             source=job.source,
+        )
+
+    def submit_raiplay(self, url: str, title: str, year: str = None,
+                       user_id: int = None, *, season: int = None,
+                       episode_number: str = None, episode_title: str = None,
+                       external_id: str = None, batch_id: str = None,
+                       batch_kind: str = None, batch_label: str = None) -> str:
+        from app.core.raiplay import download
+        is_episode = season is not None
+        label = (f"{title} S{season:02d}E{int(episode_number):02d}" if is_episode and episode_number else title)
+        if episode_title:
+            label += f" - {episode_title}"
+        job = self._make_job(label, "episode" if is_episode else "film",
+                             phases=["downloading"], user_id=user_id,
+                             media_label=title, year=year, external_id=external_id or url,
+                             season=season, episode_number=episode_number, source="raiplay",
+                             batch_id=batch_id, batch_kind=batch_kind, batch_label=batch_label)
+        return self._submit_job(
+            job, download, url, title, _get_library_path("tv" if is_episode else "film"),
+            temp_dir=str(TMP_DIR / job.job_id),
+            progress_factory=self._make_progress_factory(job),
+            cancel_event=job.cancel_event, year=year, season=season,
+            episode_number=episode_number, episode_title=episode_title,
         )
 
     def submit_episode(self, tv_id: int, eps: list[dict], ep_index: int, domain: str,

@@ -36,6 +36,13 @@ function _feedback(id, message = '', kind = 'muted') {
   el.className = 'form-text' + (message ? ` text-${kind}` : '');
 }
 
+let _ffmpegFeedbackTimer = null;
+
+function _clearFfmpegFeedbackLater(delay = 8000) {
+  clearTimeout(_ffmpegFeedbackTimer);
+  _ffmpegFeedbackTimer = setTimeout(() => _feedback('ffmpeg-update-feedback'), delay);
+}
+
 let _softetherBusy = false;
 let _softetherBlockDetected = false;
 let _softetherIpRefreshTimer = null;
@@ -907,6 +914,35 @@ async function loadPerfSettings() {
   if (!data) return;
   document.getElementById('setting-max-concurrent').value = data.max_concurrent_downloads ?? 3;
   document.getElementById('setting-max-workers').value = data.max_segment_workers ?? 16;
+  const requests = document.getElementById('setting-source-requests');
+  if (requests) requests.value = data.source_requests_per_hour ?? 60;
+  const profile = document.getElementById('setting-performance-profile');
+  if (profile) profile.value = Number(data.source_requests_per_hour) === 0 ? 'free' : (Number(data.source_requests_per_hour) <= 60 ? 'conservative' : (Number(data.source_requests_per_hour) <= 90 ? 'balanced' : 'fast'));
+  const ack = document.getElementById('free-profile-ack');
+  if (ack) ack.checked = data.free_profile_acknowledged === true;
+  selectPerformanceProfile(profile?.value || 'conservative');
+}
+
+function selectPerformanceProfile(profile) {
+  const disclaimer = document.getElementById('free-profile-disclaimer');
+  if (disclaimer) disclaimer.hidden = profile !== 'free';
+  const values = {
+    conservative: [1, 4, 60], balanced: [1, 6, 90],
+    fast: [2, 8, 120], free: [4, 16, 0],
+  }[profile];
+  if (!values) return;
+  const concurrent = document.getElementById('setting-max-concurrent');
+  const workers = document.getElementById('setting-max-workers');
+  const requests = document.getElementById('setting-source-requests');
+  if (concurrent) concurrent.value = values[0];
+  if (workers) workers.value = values[1];
+  if (requests) requests.value = values[2];
+}
+
+async function saveFreeAcknowledgement() {
+  await api.put('/api/domain/settings', {
+    free_profile_acknowledged: document.getElementById('free-profile-ack')?.checked === true,
+  });
 }
 
 // ── Output format ─────────────────────────────────────────────
@@ -1265,8 +1301,16 @@ async function savePerfSettings() {
   const btn = document.getElementById('save-perf-btn');
   const concurrent = parseInt(document.getElementById('setting-max-concurrent').value, 10);
   const workers = parseInt(document.getElementById('setting-max-workers').value, 10);
+  const requests = parseInt(document.getElementById('setting-source-requests').value, 10);
+  const profile = document.getElementById('setting-performance-profile')?.value || 'conservative';
   if (!concurrent || !workers) {
     _feedback('perf-settings-feedback', t('settings.invalid.values'), 'danger'); return;
+  }
+  if (Number.isNaN(requests) || requests < 0 || requests > 120) {
+    _feedback('perf-settings-feedback', 'Le richieste/ora devono essere comprese tra 0 e 120.', 'danger'); return;
+  }
+  if (profile === 'free' && !document.getElementById('free-profile-ack')?.checked) {
+    _feedback('perf-settings-feedback', 'Per usare il profilo Libero devi accettare il disclaimer.', 'danger'); return;
   }
   btn.disabled = true;
   _feedback('perf-settings-feedback', t('settings.saving'));
@@ -1274,6 +1318,8 @@ async function savePerfSettings() {
     await api.put('/api/domain/settings', {
       max_concurrent_downloads: concurrent,
       max_segment_workers: workers,
+      source_requests_per_hour: requests,
+      free_profile_acknowledged: document.getElementById('free-profile-ack')?.checked === true,
     });
     _feedback('perf-settings-feedback', t('settings.saved'), 'success');
     showToast(t('settings.performance.settings.saved'), 'success');
@@ -1482,6 +1528,8 @@ async function _copyWithToast(text, what) {
 
 registerActions({
   'cfg:probeHardware': () => probeHardware(),
+  'cfg:updateFfmpeg': () => updateFfmpeg(),
+  'cfg:performanceProfile': (d, el) => selectPerformanceProfile(el.value),
   'cfg:resetConservative': () => resetConservativePreset(),
   'cfg:softetherStatus': () => loadSoftEtherStatus(),
   'cfg:softetherOpen': () => openSoftEtherManager(),
@@ -1534,6 +1582,23 @@ registerActions({
   'cfg:regenerateMcpToken': () => regenerateMcpToken(),
   'cfg:revokeMcpToken':   () => revokeMcpToken(),
 });
+
+async function updateFfmpeg() {
+  if (!await scConfirm('Scaricare e installare la versione FFmpeg inclusa nel wheel PyPI verificato con SHA-256?')) return;
+  const button = document.querySelector('[data-action="cfg:updateFfmpeg"]');
+  if (button) button.disabled = true;
+  _feedback('ffmpeg-update-feedback', 'Download e verifica FFmpeg in corso…');
+  try {
+    const result = await api.post('/api/domain/ffmpeg/update', {});
+    _feedback('ffmpeg-update-feedback', `FFmpeg ${result.version} installato. Rileva nuovamente gli encoder.`, 'success');
+    await loadVideoEncoders(true);
+    _clearFfmpegFeedbackLater();
+  } catch (e) {
+    _feedback('ffmpeg-update-feedback', _settingsError(e, 'Aggiornamento FFmpeg non riuscito.'), 'danger');
+    _clearFfmpegFeedbackLater();
+  }
+  finally { if (button) button.disabled = false; }
+}
 
 
 // The tab is a path segment, not a query parameter: it names which page of
@@ -1688,7 +1753,11 @@ async function probeHardware() {
         reason: (applied.reasons || []).join(' '),
       }), 'success');
       const reset = document.getElementById('reset-conservative');
-      if (reset) reset.hidden = false;
+      if (reset) {
+        // If the diagnosis already chose Conservative, there is nothing to
+        // restore. Showing the button in that state made the UI sound broken.
+        reset.hidden = (applied.preset || applied.key || applied.name) === 'conservative';
+      }
     }
     renderHardwareResults(_hardwareData);
   } catch (e) { _settingsText(target, t('settings.hardware.failed')); }

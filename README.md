@@ -126,7 +126,7 @@
 - Prominent panel version badges and highlighted **Browse all** buttons on catalogue shelves
 - Higher-contrast secondary text and placeholders throughout the dark interface
 - Floating up/down arrows for quick navigation through long card lists
-- Portable ZIP distribution with a dedicated updater helper
+- Portable mode inside the Windows setup wizard
 - Update badge, release notes and manual update check from the panel
 - Portable updates with manifest validation, SHA-256 verification, backup and rollback
 - Release artifacts for this fork are published independently from the upstream project
@@ -135,28 +135,23 @@
 
 ## Quick Start
 
-### Windows installer and portable release
+### Windows installer and portable mode
 
 Download the latest release from the
 [u064241 releases page](https://github.com/u064241/StreamingCommunity-downloader/releases/latest).
 
 - `StreamingCommunityDownloader-Setup-v<version>.exe` opens a wizard where you can choose **Install** or
   **Portable only**.
-- `StreamingCommunityDownloader-<version>-Portable.zip` is the ready-to-extract portable package.
-- Portable mode selected in Setup registers **StreamingCommunity Downloader**
-  entry in Windows Installed apps. It does not replace the installed edition's uninstall entry.
-- An extracted portable ZIP registers itself on first launch for the current user, without admin
-  rights. Its uninstaller preserves settings, databases and downloads. If the folder is moved,
-  uninstall the old copy before moving it and launch the new copy at its final location.
-- The installed version receives update notices and release notes in the panel. The portable
-  version can download and verify a newer portable package, keep the previous EXE as a backup,
-  and roll back if replacement verification fails.
+- The setup wizard contains both modes: normal **Install** and **Portable only**.
+- No separate portable ZIP is published; both modes are delivered by
+  `StreamingCommunityDownloader-Setup-v<version>.exe`.
+- The installed version receives update notices and release notes in the panel. Updates are
+  user-confirmed and guided by Inno Setup.
 - Updates are read only from this fork's releases. The upstream repository is used by the
   maintainer for reviewing changes, not as an update source for end users.
 
-The release also contains `update-manifest.json` and `SHA256SUMS.txt`. They are used to validate
-the package before a portable update. The installer update remains user-confirmed and guided by
-Inno Setup.
+The release also contains `update-manifest.json` and `SHA256SUMS.txt`, which identify and verify
+the published setup package.
 
 ### Building a Windows release from source
 
@@ -191,15 +186,15 @@ Add `-Commit` to create the version commit automatically after the template is g
 Review the generated `releases\v<version>.md` and update the Features above if needed, then build
 and publish the release with the command below.
 
-To publish the four final artifacts to the fork, authenticate GitHub CLI first with `gh auth login`
+To publish the final artifacts to the fork, authenticate GitHub CLI first with `gh auth login`
 and run:
 
 ```powershell
 .\build.ps1 -Release -CleanReleaseArtifacts -PublishRelease
 ```
 
-The command publishes a `v<version>` release and uploads the installer, portable ZIP, manifest and
-checksums. It does not overwrite the upstream repository.
+The command publishes a `v<version>` release and uploads the installer, manifest and checksums.
+It does not overwrite the upstream repository.
 Before compiling and again before publishing, it checks for uncommitted changes, existing release
 tags and the correct fork remote. Release notes are taken from `releases/v<version>.md` rather than
 generated from commit titles. A GitHub or network error stops publication without assuming the tag
@@ -503,7 +498,7 @@ On Windows, `build.ps1 -IncludeSoftEtherInstaller` bundles the verified official
 SoftEther client setup under `tools/softether` in the Inno Setup distribution.
 It checks the pinned SHA256, size and Authenticode signer before building.
 It does not run the VPN setup; installation remains a separate guided action.
-The separate portable ZIP does not include this optional bundle.
+The setup's portable mode does not include this optional bundle.
 See [bundle preparation and limitations](tools/softether/README.md) and the
 [VPN update-check design](tools/softether/UPDATE-DESIGN.md).
 SoftEther and its dependencies retain their own licenses and notices.

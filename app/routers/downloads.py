@@ -13,7 +13,8 @@ from app.auth.deps import current_user, is_local_user, require
 from app.auth.permissions import Permission
 from app.config import configured_domain
 from app.jobs import job_manager
-from app.routers._providers import require_downloadable_source
+from app.routers._providers import require_downloadable_source, call_provider
+from app.providers import get_registry, ProviderRegistry
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/download", tags=["downloads"])
@@ -69,6 +70,17 @@ class StreamingCommunityRequest(BaseModel):
 
 class AnimeUnityRequest(BaseModel):
     source: Literal["animeunity"] = "animeunity"
+
+
+class RaiPlayDownloadRequest(BaseModel):
+    source: Literal["raiplay"] = "raiplay"
+    url: str = Field(min_length=1, max_length=2048)
+    title: str = Field(min_length=1, max_length=300)
+    year: str | None = None
+    scope: Literal["auto", "film", "episode", "season", "series"] = "auto"
+    season_number: int | None = Field(default=None, ge=1, le=999)
+    episode_number: str | None = Field(default=None, max_length=20, pattern=r"^\d+$")
+    external_id: str | None = Field(default=None, max_length=200)
 
 
 class FilmDownloadRequest(StreamingCommunityRequest):
@@ -383,6 +395,101 @@ def download_film(body: FilmDownloadRequest, http_request: HttpRequest):
         tmdb_id=_tmdb_id("movie", body.id),
     )
     return {"job_id": job_id, "status": "queued"}
+
+
+@router.post("/raiplay", status_code=202, dependencies=CAN_DOWNLOAD)
+async def download_raiplay(body: RaiPlayDownloadRequest, http_request: HttpRequest,
+                           registry: ProviderRegistry = Depends(get_registry)):
+    """Expand a programme with the same resolver used by episode previews.
+
+    yt-dlp's programme playlist includes Extra and duplicates. Each job here
+    receives exactly one public video page instead, including for films.
+    """
+    from urllib.parse import urlsplit
+    from app.providers.raiplay import parser
+
+    parsed = urlsplit(body.url)
+    if (parsed.scheme != "https" or parsed.netloc not in {"www.raiplay.it", "raiplay.it"}
+            or parsed.query or parsed.fragment):
+        raise HTTPException(422, "URL RaiPlay non valido")
+    page = parser.video_page(parser.BASE_URL + parsed.path)
+    user_id = _acting_user_id(http_request)
+    if page:
+        if body.scope not in {"auto", "film", "episode"}:
+            raise HTTPException(422, "Per la serie o la stagione serve il link del programma RaiPlay")
+        job_id = job_manager.submit_raiplay(
+            page, body.title, year=body.year, user_id=user_id,
+            season=body.season_number, episode_number=body.episode_number,
+            external_id=body.external_id,
+        )
+        return {"job_id": job_id, "count": 1, "status": "queued"}
+    path = parsed.path.rstrip("/")
+    segments = path.strip("/").split("/")
+    external_id = parser.external_id_from_path("/" + "/".join(segments[:2]))
+    if external_id is None or len(segments) not in (2, 4):
+        raise HTTPException(422, "Link programma RaiPlay non valido")
+
+    def enumerate_items():
+        provider = registry.get("raiplay")
+        details = provider.details(external_id)
+        if not details.downloadable:
+            raise HTTPException(409, details.download_disabled_reason)
+        if details.ref.media_type == "movie":
+            if body.scope in {"series", "season", "episode"}:
+                raise HTTPException(422, "Il titolo RaiPlay è un film")
+            video = details.extra.get("video_page_url")
+            if not video:
+                raise HTTPException(409, "RaiPlay non ha fornito il video del film")
+            return details, "film", [{"page_url": video}], []
+        if body.scope in {"film", "episode"}:
+            raise HTTPException(422, "Per un episodio serve il link completo del video")
+        number = body.season_number
+        scope = "season" if body.scope == "season" or len(segments) == 4 else "series"
+        if scope == "season" and number is None and len(segments) == 4:
+            number = parser.season_number(segments[-1].replace("-", " "))
+        if scope == "season" and number is None:
+            raise HTTPException(422, "Specificare la stagione RaiPlay")
+        seasons = details.extra.get("season_paths", [])
+        if scope == "season":
+            seasons = [s for s in seasons if s["number"] == number]
+        if not seasons:
+            raise HTTPException(409, "Nessuna stagione disponibile nel catalogo RaiPlay")
+        items, unavailable, seen = [], [], set()
+        for season in seasons:
+            try:
+                rows = provider.episodes(external_id, season_number=season["number"])
+            except Exception:
+                # Continue the series but explicitly tell the caller which
+                # seasons were unavailable; never claim all were queued.
+                if scope == "season":
+                    raise
+                logger.exception("RaiPlay %s: season %s unavailable", external_id, season["number"])
+                rows = []
+            if not rows:
+                unavailable.append(season["number"])
+            for ep in rows:
+                if ep["page_url"] not in seen:
+                    seen.add(ep["page_url"])
+                    items.append(ep)
+        _check_size(len(items))
+        return details, scope, items, unavailable
+
+    details, scope, items, unavailable = await call_provider(enumerate_items)
+    if scope == "film":
+        job_id = job_manager.submit_raiplay(items[0]["page_url"], details.title,
+            year=details.year, user_id=user_id, external_id=external_id)
+        return {"job_id": job_id, "count": 1, "scope": scope, "status": "queued"}
+    label = details.title + (f" — Stagione {items[0]['season']}" if scope == "season" else "")
+
+    def make(ep):
+        return lambda batch_id: job_manager.submit_raiplay(
+            ep["page_url"], details.title, year=details.year, user_id=user_id,
+            season=int(ep["season"]), episode_number=ep["n"],
+            episode_title=ep.get("name"), external_id=external_id,
+            batch_id=batch_id, batch_kind=scope, batch_label=label,
+        )
+    result = _run_batch(scope, label, user_id, [make(ep) for ep in items])
+    return {**result, "status": "queued", "scope": scope, "unavailable_seasons": unavailable}
 
 
 @router.post("/episode", status_code=202, dependencies=CAN_DOWNLOAD)

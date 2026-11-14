@@ -187,6 +187,9 @@ document.addEventListener('click', (e) => {
 // there: queueing a season used to jump to the downloads page, and the title
 // you were picking seasons from was gone (#20).
 function showToast(message, type = 'info', link = null) {
+  // The General preference is the single switch for panel confirmations and
+  // notifications, including transient download feedback.
+  if (window._confirmationsEnabled === false) return;
   const colors = { success:'bg-success', danger:'bg-danger', info:'bg-info', warning:'bg-warning' };
   const toast = document.createElement('div');
   toast.className = 'sc-toast-wrap';

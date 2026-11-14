@@ -278,6 +278,7 @@ class SettingsUpdate(BaseModel):
     video_cpu_fallback: bool | None = None
     mcp_enabled: bool | None = None
     confirmations_enabled: bool | None = None
+    free_profile_acknowledged: bool | None = None
 
     @field_validator("naming_templates")
     @classmethod
@@ -539,7 +540,7 @@ _SETTING_RANGES = (
     ("max_concurrent_downloads", 1, 32),
     ("max_segment_workers", 1, 128),
     ("source_max_connections", 1, config.SOURCE_MAX_CONNECTIONS_CEILING),
-    ("source_requests_per_hour", 1, config.SOURCE_REQUESTS_PER_HOUR_CEILING),
+    ("source_requests_per_hour", 0, config.SOURCE_REQUESTS_PER_HOUR_CEILING),
     # Floored well above the throttle in domain_recovery: a check any more often
     # than this is hammering somebody else's page for a domain that rotates
     # every few weeks.
@@ -753,12 +754,14 @@ async def diagnose_hardware():
 
 
 class PresetRequest(BaseModel):
-    preset: Literal["conservative", "balanced", "fast"] = "conservative"
+    preset: Literal["conservative", "balanced", "fast", "free"] = "conservative"
 
 
 @router.post("/performance-preset", dependencies=CAN_MANAGE)
 def set_performance_preset(body: PresetRequest):
     """Write one preset's values as they are ("Ripristina Conservativo")."""
+    if body.preset == "free" and not config.get_settings().get("free_profile_acknowledged", False):
+        raise HTTPException(409, "free_profile_acknowledgement_required")
     settings = config.apply_performance_preset(body.preset)
     _sync_job_limit(settings)
     return {"preset": body.preset, "label": config.PERFORMANCE_PRESETS[body.preset]["label"],
@@ -792,3 +795,15 @@ async def refresh_video_encoders():
         return await asyncio.to_thread(capabilities, True)
     except (OSError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/ffmpeg/update", dependencies=CAN_MANAGE)
+async def update_ffmpeg():
+    from app.core import ffmpeg_update
+    from app.core.ffmpeg_path import get_ffmpeg_exe
+    try:
+        result = await asyncio.to_thread(ffmpeg_update.update)
+        get_ffmpeg_exe.cache_clear()
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Aggiornamento FFmpeg non riuscito: {exc}") from exc

@@ -60,6 +60,7 @@ class AnimeUnityProvider(_SearchAdapter):
         return search_fn(query, page=page, media_type=media_type, dubbed=dubbed)
 
 
-# Metadata-only catalogue (no download). Importing it loads no HTTP library and
+# RaiPlay catalogue and optional non-DRM download adapter. Importing it loads no
+# HTTP library and makes no request: the client is created on first use.
 # makes no request: the client is created on first use.
 from .raiplay.provider import RaiPlayProvider  # noqa: E402

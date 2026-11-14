@@ -6,7 +6,7 @@ panel's own. A card from a source that cannot be downloaded (RaiPlay) carries
 ``downloadable: false`` and the reason, and holds no stream address (the
 TitleDetails contract has no slot for one).
 """
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.auth.deps import require
 from app.auth.permissions import Permission
@@ -37,3 +37,16 @@ async def title_details(
         card["download_disabled_reason"] = details.download_disabled_reason or card.get(
             "download_disabled_reason") or "Contenuto non scaricabile dal pannello"
     return card
+
+
+@router.get("/{source}/{external_id}/episodes")
+async def title_episodes(source: str, external_id: str,
+                         season_path: str | None = Query(default=None, min_length=1, max_length=400),
+                         season_number: int | None = Query(default=None, ge=1, le=999),
+                         registry: ProviderRegistry = Depends(get_registry)):
+    def read():
+        provider = registry.get(source)
+        if not provider.capabilities.episodes or not callable(getattr(provider, "episodes", None)):
+            raise HTTPException(status_code=422, detail="Episodi non disponibili per questa sorgente")
+        return provider.episodes(external_id, season_path, season_number)
+    return await call_provider(read)

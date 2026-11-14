@@ -25,11 +25,15 @@
     if (closed) {
       clientId = newId(); // A restored BFCache document is a new lease.
       closed = false;
-      timer = setInterval(heartbeat,5000);
+      timer = setInterval(heartbeat,30000);
     }
     heartbeat();
   });
-  document.addEventListener('visibilitychange',heartbeat);
+  // Visibility changes can happen repeatedly while switching windows and
+  // used to create bursts of duplicate heartbeat requests.
+  document.addEventListener('visibilitychange',() => {
+    if (document.visibilityState === 'visible') heartbeat();
+  });
   heartbeat();
-  timer = setInterval(heartbeat,5000);
+  timer = setInterval(heartbeat,30000);
 })();

@@ -199,10 +199,10 @@ def test_registries_are_independent_and_default_capabilities_are_honest():
     assert "pilot" not in second.sources()
     assert first.get("animeunity") is not second.get("animeunity")
     assert first.get("animeunity").capabilities.home
-    # The two download engines say so explicitly; RaiPlay is metadata only.
+    # Every registered engine declares downloads explicitly.
     assert first.get("animeunity").capabilities.download is True
     assert first.get("streamingcommunity").capabilities.download is True
-    assert first.get("raiplay").capabilities.download is False
+    assert first.get("raiplay").capabilities.download is True
 
 
 def test_search_only_provider_has_no_home(client, registry):

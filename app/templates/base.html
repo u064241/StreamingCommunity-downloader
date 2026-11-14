@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>SC Panel</title>
+  <script>(function(){try{document.documentElement.dataset.theme=localStorage.getItem('sc-panel-theme')||'dark';}catch(_){document.documentElement.dataset.theme='dark';}})();</script>
   <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}"/>
   <link rel="stylesheet" href="{{ asset('vendor/fonts/fonts.css') }}"/>
   <link rel="stylesheet" href="{{ asset('vendor/tabler-1.4.0/tabler.min.css') }}"/>
@@ -23,8 +24,6 @@
 
   <!-- ── Main ────────────────────────────────────────────────────── -->
   <div class="page-wrapper">
-{% include 'partials/_header.html' %}
-
     <div class="page-body">
       <div class="container-xl">
 {% block content %}{% endblock %}

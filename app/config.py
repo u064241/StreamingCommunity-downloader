@@ -70,6 +70,9 @@ PERFORMANCE_PRESETS = {
     "fast": {"label": "Veloce", "max_concurrent_downloads": 2,
              "max_segment_workers": 8, "source_max_connections": 4,
              "source_requests_per_hour": 120},
+    "free": {"label": "Libero", "max_concurrent_downloads": 4,
+             "max_segment_workers": 16, "source_max_connections": 4,
+             "source_requests_per_hour": 0},
 }
 # Least aggressive first: what "more aggressive than" is measured against.
 PRESET_ORDER = ("conservative", "balanced", "fast")
@@ -114,7 +117,10 @@ def source_max_connections_setting(settings: dict | None = None) -> int:
 def source_requests_per_hour_setting(settings: dict | None = None) -> int:
     """The hourly request budget the settings ask for, clamped to the ceiling."""
     settings = get_settings() if settings is None else settings
-    return _bounded_int(settings.get("source_requests_per_hour"), SOURCE_REQUESTS_PER_HOUR_CEILING,
+    raw = settings.get("source_requests_per_hour")
+    if raw == 0 or raw == "0":
+        return 0
+    return _bounded_int(raw, SOURCE_REQUESTS_PER_HOUR_CEILING,
                         PERFORMANCE_PRESETS[DEFAULT_PERFORMANCE_PRESET]["source_requests_per_hour"])
 
 
@@ -133,6 +139,7 @@ def matching_preset(settings: dict) -> str | None:
 
 SETTINGS_DEFAULTS = {
     **preset_values(DEFAULT_PERFORMANCE_PRESET),
+    "free_profile_acknowledged": False,
     # Whether to look for a replacement when the source domain stops answering.
     "domain_auto_check_enabled": True,
     # Whether to adopt the replacement without asking. Off: a domain found on a

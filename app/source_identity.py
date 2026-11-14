@@ -9,12 +9,15 @@ LEGACY_SOURCE_BY_KIND = {
     "film": "streamingcommunity",
     "episode": "streamingcommunity",
     "anime": "animeunity",
+    "raiplay": "raiplay",
 }
 
 
 def download_source(kind: str, source: str | None = None) -> str:
     """Validate routing to an existing engine, defaulting only when omitted."""
     expected = LEGACY_SOURCE_BY_KIND.get(kind)
+    if kind in {"film", "episode"} and source == "raiplay":
+        return "raiplay"
     if expected is None or (source is not None and source != expected):
         raise ValueError(f"Fonte {source!r} non supportata per {kind!r}")
     return expected

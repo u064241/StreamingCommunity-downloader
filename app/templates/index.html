@@ -134,23 +134,23 @@
             </div>
             <div class="pg-stats" id="dl-stats"></div>
             <div class="pg-actions">
-              <button class="btn btn-sm btn-outline-secondary" data-action="jobs:refresh"
+              <button class="btn btn-sm btn-download-action btn-download-refresh" data-action="jobs:refresh"
                       id="dl-refresh-btn">
                 <i class="ti ti-refresh me-1"></i><span data-i18n="downloads.refresh">Aggiorna</span>
               </button>
-              <button class="btn btn-sm btn-outline-primary" data-action="jobs:retryFailed"
+              <button class="btn btn-sm btn-download-action btn-download-retry" data-action="jobs:retryFailed"
                       id="dl-retry-btn" style="display:none">
                 <i class="ti ti-reload me-1"></i><span data-i18n="downloads.retryFailed">Riprova falliti</span>
               </button>
-              <button class="btn btn-sm btn-outline-secondary" data-action="jobs:clear"
+              <button class="btn btn-sm btn-download-action btn-download-clear" data-action="jobs:clear"
                       >
                 <i class="ti ti-trash me-1"></i><span data-i18n="downloads.clearDone">Rimuovi completati</span>
               </button>
-              <button class="btn btn-sm btn-outline-warning" data-action="jobs:clearErrors"
+              <button class="btn btn-sm btn-download-action btn-download-errors" data-action="jobs:clearErrors"
                       >
                 <i class="ti ti-trash-x me-1"></i><span data-i18n="downloads.clearErrors">Pulisci errori</span>
               </button>
-              <button class="btn btn-sm btn-outline-danger" data-action="jobs:cancelAll"
+              <button class="btn btn-sm btn-download-action btn-download-cancel" data-action="jobs:cancelAll"
                       >
                 <i class="ti ti-player-stop me-1"></i><span data-i18n="downloads.cancelAll">Annulla tutto</span>
               </button>
@@ -246,23 +246,23 @@
         <div id="page-requests" style="display:none">
           <div class="pg-head">
             <div class="pg-head-main">
-              <h1 class="pg-h1">Coda richieste</h1>
-              <p class="pg-sub">
+              <h1 class="pg-h1" data-i18n="requests.title">Coda richieste</h1>
+              <p class="pg-sub" data-i18n="requests.subtitle">
                 Approvare risolve di nuovo il titolo e verifica le tracce prima di scaricare:
                 una richiesta che non trova l'audio chiesto viene messa da parte, non sostituita.
               </p>
             </div>
             <div class="pg-stats" id="queue-stats"></div>
             <div class="pg-actions">
-              <button class="btn btn-sm btn-outline-secondary" data-action="queue:reload" title="Aggiorna">
-                <i class="ti ti-refresh me-1"></i>Aggiorna
+              <button class="btn btn-sm btn-outline-secondary" data-action="queue:reload" title="Aggiorna" data-i18n-title="common.refresh">
+                <i class="ti ti-refresh me-1"></i><span data-i18n="common.refresh">Aggiorna</span>
               </button>
             </div>
           </div>
           <div class="pg-bar" id="queue-filters">
-            <button class="queue-filter active" data-action="queue:filter" data-filter="action">Da gestire</button>
-            <button class="queue-filter" data-action="queue:filter" data-filter="in_progress">In corso</button>
-            <button class="queue-filter" data-action="queue:filter" data-filter="all">Tutte</button>
+            <button class="queue-filter active" data-action="queue:filter" data-filter="action" data-i18n="requests.toReview">Da gestire</button>
+            <button class="queue-filter" data-action="queue:filter" data-filter="in_progress" data-i18n="requests.inProgress">In corso</button>
+            <button class="queue-filter" data-action="queue:filter" data-filter="all" data-i18n="requests.all">Tutte</button>
           </div>
           <div class="fm-selection-bar" id="queue-selection-bar" style="visibility:hidden">
             <span class="fm-selection-count" id="queue-selection-count">0 selezionate</span>

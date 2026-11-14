@@ -22,6 +22,7 @@ function titleHash(item) {
 function openTitle(idx) {
   const item = _searchResults[idx];
   if (!item) return;
+  sessionStorage.setItem('sc.search.return', JSON.stringify({hash: location.hash, y: window.scrollY}));
   _tpSeed = item;                     // spares the first render a round trip
   location.hash = titleHash(item);
 }
@@ -95,11 +96,11 @@ async function loadTitlePage(route) {
     _tp.name = slug ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Anime';
   }
 
-  // A metadata-only catalogue (RaiPlay): the card comes from
-  // /api/titles/{source}/{id}, read-only. No languages, tracks, episodes or
-  // library lookups are asked for, and the download button stays disabled.
+  // Catalogue adapters have their own title/episode API; they must never
+  // enter StreamingCommunity's token/track endpoints.
   if (_tpIsMetadataOnly(source, seed)) {
     _tp.metadataOnly = true;
+    _tp.episodes = source === 'raiplay' ? null : [];
     _tp.downloadDisabledReason = seed?.download_disabled_reason || TP_NOT_DOWNLOADABLE;
     _tp.tracksLoaded = true;
     _libTitleKey = null;
@@ -182,19 +183,35 @@ async function _tpLoadMetadataOnly(token) {
       `/api/titles/${encodeURIComponent(_tp.source)}/${encodeURIComponent(String(_tp.id))}`);
     if (token !== _tpToken || !card) return;
     _tp.name = card.name || _tp.name;
+    if (['movie', 'tv'].includes(card.type)) _tp.type = card.type;
+    _tp.raiDownloadable = card.downloadable === true;
     _tp.plot = card.description || _tp.plot;
     _tp.genres = Array.isArray(card.genres) && card.genres.length ? card.genres : _tp.genres;
     _tp.poster = card.poster || _tp.poster;
     _tp.year = card.year || _tp.year;
     _tp.pageUrl = card.page_url || null;
+    _tp.seasonPaths = Array.isArray(card.season_paths) ? card.season_paths : [];
+    _tp.seasonsCount = _tp.seasonPaths.length;
+    _tp.seasonNumbers = _tp.seasonPaths.map((s, i) => Number(s.number || (String(s.name).match(/\d+/) || [i + 1])[0]));
+    const requestedSeason = Number(_tp.season || _tp.seasonNumbers[0] || 1);
+    _tp.raiSeasonIndex = Math.max(0, _tp.seasonNumbers.indexOf(requestedSeason));
+    _tp.season = _tp.seasonNumbers[_tp.raiSeasonIndex] || _tp.seasonNumbers[0] || 1;
+    _tp.episodes = _tp.type === 'tv' ? null : [];
     _tp.meta = {backdrop: card.backdrop || null, cast: [], directors: []};
-    // Never re-enabled from here: the card can only make the reason more precise.
-    _tp.downloadDisabledReason = card.download_disabled_reason || _tp.downloadDisabledReason;
+    _tp.downloadDisabledReason = card.download_disabled_reason || null;
+    syncHash('detail');
   } catch (e) {
     if (token !== _tpToken) return;
     _tp.metadataError = e.message || t('title.sourceUnavailable');
   }
-  _tpRender();
+  if (token !== _tpToken) return;
+  if (_tp.source === 'raiplay' && _tp.type === 'tv' && _tp.seasonPaths?.length) {
+    _tpRender();
+    await tpLoadRaiSeason(_tp.season, token);
+  } else {
+    _tp.episodes = [];
+  }
+  if (token === _tpToken) _tpRender();
 }
 
 function _tpApplyMeta(meta) {
@@ -226,6 +243,7 @@ function _tpSeasons() {
 // ── Episodes ──────────────────────────────────────────────────────────────────
 
 async function tpLoadSeason(n, token = _tpToken) {
+  if (_tp.source === 'raiplay') return tpLoadRaiSeason(n, token);
   if (_tp.comingSoon) { _tp.episodes = []; _tpRenderEpisodes(); return; }
   _tp.season = n;
   syncHash('detail');
@@ -327,7 +345,10 @@ function tpSelectTracks(which, enabled) {
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 function _tpTabs() {
-  if (_tp.metadataOnly) return [['about', t('title.about')]];
+  if (_tp.source === 'raiplay') return _tp.type === 'tv'
+    ? [['episodes', t('title.episodes')], ['about', t('title.about')]]
+    : [['about', t('title.about')]];
+  if (_tp.metadataOnly && !(_tp.source === 'raiplay' && _tp.type === 'tv')) return [['about', t('title.about')]];
   const tabs = [];
   if (_tp.type !== 'movie') tabs.push(['episodes', t('title.episodes')]);
   tabs.push(['about', t('title.about')]);
@@ -402,24 +423,19 @@ function _tpRenderHero() {
        <i class="ti ti-arrow-left"></i>${t('search.button')}
      </button>` +
     `<span class="sep">›</span><button class="th-crumb-link" data-action="tp:crumb-kind" data-kind="${_tp.type}" type="button">${escapeHtml(kindLabel)}</button>` +
-    `<span class="sep">›</span><span class="th-crumb-here">${escapeHtml(_tp.name || '—')}</span>` +
-    `<select class="th-title-switcher" id="th-title-switcher" aria-label="${escapeHtml(t('title.switch'))}">
-       <option value="">${escapeHtml(t('title.switch'))}</option>
-     </select>`;
-  const switcher = document.getElementById('th-title-switcher');
-  (_searchResults || []).filter(item => String(item.id) !== String(_tp.id) && item.type === _tp.type)
-    .slice(0, 20).forEach(item => {
-      const option = document.createElement('option');
-      option.value = String(_searchResults.indexOf(item));
-      option.textContent = item.name || t('title.item');
-      switcher.appendChild(option);
-    });
-  switcher.addEventListener('change', () => {
-    const item = _searchResults[Number(switcher.value)];
-    if (item) openTitle(Number(switcher.value));
-  });
+    `<span class="sep">›</span><span class="th-crumb-here">${escapeHtml(_tp.name || '—')}</span>`;
 
   document.getElementById('th-name').textContent = _tp.name || '—';
+  document.getElementById('th-season-hero')?.remove();
+  if (_tp.type === 'tv' && _tp.seasonsCount > 1 && _tp.source !== 'raiplay') {
+    const seasonHost = document.getElementById('th-name');
+    seasonHost.insertAdjacentHTML('afterend', `<label class="th-season-hero" id="th-season-hero" for="th-season-select">
+      <span>Stagione</span>
+      <select class="th-season-select" id="th-season-select" data-change="tp:season" aria-label="Stagione">
+        ${_tpSeasons().map(n => `<option value="${n}"${n === _tp.season ? ' selected' : ''}>${escapeHtml(t('title.season', {season: n}))}</option>`).join('')}
+      </select>
+    </label>`);
+  }
 
   const chips = [['ti-movie', kindLabel]];
   if (_tp.year) chips.push(['ti-calendar', _tp.year]);
@@ -451,14 +467,16 @@ function _tpRenderHero() {
 function _tpRenderCta() {
   if (_tp.metadataOnly) {
     const reason = _tp.downloadDisabledReason || TP_NOT_DOWNLOADABLE;
+    const canRaiDownload = _tp.source === 'raiplay' && _tp.raiDownloadable && can('DOWNLOAD')
+      && typeof _tp.pageUrl === 'string' && !_tp.raiQueueBusy;
     const link = typeof _tp.pageUrl === 'string' && _tp.pageUrl.startsWith('https://www.raiplay.it/')
       ? `<a class="btn btn-outline-secondary" href="${escapeHtml(_tp.pageUrl)}" target="_blank" rel="noopener noreferrer">
            <i class="ti ti-external-link me-1"></i>RaiPlay</a>` : '';
     document.getElementById('th-cta').innerHTML = `
-      <button class="btn btn-primary" type="button" disabled aria-disabled="true" title="${escapeHtml(reason)}">
-        <i class="ti ti-download-off me-1"></i>${escapeHtml(t('title.download'))}
+      <button class="btn btn-primary" type="button" data-action="tp:primary" ${canRaiDownload ? '' : 'disabled aria-disabled="true"'} title="${escapeHtml(canRaiDownload ? 'yt-dlp verifica il DRM prima del download' : reason)}">
+        <i class="ti ti-download${canRaiDownload ? '' : '-off'} me-1"></i>${escapeHtml(_tp.raiQueueBusy ? t('title.raiPreparing') : t('title.download') + (_tp.type === 'tv' ? t('title.scopeSeries') : ''))}
       </button>
-      <span class="small text-muted ms-2">${escapeHtml(reason)}</span>
+      ${_tp.source === 'raiplay' ? '' : `<span class="small text-muted ms-2">${escapeHtml(reason)}</span>`}
       ${link}`;
     return;
   }
@@ -622,13 +640,11 @@ function tpPlayTrailer() {
 
 function _tpRenderEpisodes() {
   const el = document.getElementById('th-pane-episodes');
-  if (!el || _tp.type === 'movie' || _tp.metadataOnly) { if (el) el.innerHTML = ''; return; }
+  if (!el || _tp.type === 'movie' || (_tp.metadataOnly && _tp.source !== 'raiplay')) { if (el) el.innerHTML = ''; return; }
   if (_tp.comingSoon) { el.textContent = t('title.episodesUnavailable'); return; }
 
-  const pills = _tp.type === 'tv' && _tp.seasonsCount > 1
-    ? `<div class="th-season-pills">${_tpSeasons()
-        .map(n => `<button class="th-season-pill${n === _tp.season ? ' active' : ''}"
-          data-action="tp:season" data-n="${n}">S${String(n).padStart(2, '0')}</button>`).join('')}</div>` : '';
+  const seasonSelect = _tp.source === 'raiplay' && _tp.seasonPaths?.length > 1
+    ? `<select class="form-select form-select-sm th-season-select" data-change="tp:raiSeason">${_tp.seasonPaths.map((s, i) => `<option value="${_tp.seasonNumbers[i]}" ${_tp.seasonNumbers[i] === _tp.season ? 'selected' : ''}>${escapeHtml(s.name || t('title.season', {season: _tp.seasonNumbers[i]}))}</option>`).join('')}</select>` : '';
 
   // Batching is a download privilege; a requester asks episode by episode.
   // The verb follows the schedule field, so the button says what will happen.
@@ -640,12 +656,12 @@ function _tpRenderEpisodes() {
       // its episodes arrive flagged in_library. For anime the server decides.
       const owned = _tp.type === 'tv' ? _tp.episodes.filter(e => e.in_library).length : 0;
       const ownedHint = owned ? ` <span class="th-only-missing-n">${t('title.owned', {count: owned})}</span>` : '';
-      batch = `<label class="form-check form-switch th-only-missing"
+      batch = (_tp.source === 'raiplay' ? '' : `<label class="form-check form-switch th-only-missing"
                       title="${escapeHtml(t('title.skipHint'))}">
             <input class="form-check-input" type="checkbox" data-change="tp:onlyMissing"
                    ${_tp.onlyMissing ? 'checked' : ''}>
             <span class="form-check-label">${t('title.onlyMissing')}${ownedHint}</span>
-          </label>` + (_tp.type === 'anime'
+          </label>`) + (_tp.type === 'anime'
         ? `<button class="btn btn-sm btn-outline-primary" data-action="tp:batchAnime">
              <i class="ti ti-download me-1"></i>${verb}${t('title.scopeEpisodes')}</button>`
         : `<button class="btn btn-sm btn-outline-primary" data-action="tp:batchSeason" data-season="${_tp.season}">
@@ -657,8 +673,8 @@ function _tpRenderEpisodes() {
   }
 
   const head = `<div class="th-season-bar">
-      <span class="th-season-label">${_tp.type === 'anime' ? t('title.episodes') : t('title.season', {season: _tp.season})}</span>
-      ${pills}
+      <span class="th-season-label">${_tp.type === 'anime' ? t('title.episodes') : (_tp.seasonsCount > 1 ? '' : t('title.season', {season: _tp.season}))}</span>
+      ${seasonSelect}
       <span class="th-season-batch">${batch}</span>
     </div>`;
 
@@ -690,7 +706,7 @@ function _tpRenderEpisodes() {
     const dur = ep.duration ? `<span class="th-ep-dur">${escapeHtml(String(ep.duration))}m</span>` : '';
     const owned = ep.in_library
       ? `<i class="ti ti-circle-check-filled th-ep-owned" title="${escapeHtml(t('title.alreadyInLibrary'))}"></i>` : '';
-    return `<div class="th-ep">
+    return `<div class="shelf-item th-ep th-episode-item">
         <span class="th-ep-n">${escapeHtml(String(ep.n))}</span>
         ${still}
         <div class="th-ep-body">
@@ -698,14 +714,80 @@ function _tpRenderEpisodes() {
           ${plot}
         </div>
         ${dur}${owned}
-        <button class="btn btn-sm ${wants ? 'btn-outline-primary' : 'btn-primary'}"
-                data-action="tp:episode" data-index="${i}">
+        <button class="btn btn-sm ${wants ? 'btn-outline-primary' : 'btn-primary'} th-ep-action"
+                data-action="${_tp.source === 'raiplay' ? 'tp:raiEpisode' : 'tp:episode'}" data-index="${i}">
           <i class="ti ${wants ? 'ti-send' : 'ti-download'} me-1"></i>${wants ? t('title.request') : t('title.download')}
         </button>
       </div>`;
   }).join('');
 
-  el.innerHTML = head + `<div class="th-eps">${rows}</div>`;
+  el.innerHTML = head + `<div class="shelf-rail-wrap th-episode-rail-wrap">
+      <button class="shelf-arrow shelf-arrow-prev" hidden aria-label="${escapeHtml(t('catalog.previous'))}"><i class="ti ti-chevron-left"></i></button>
+      <div class="shelf-rail th-episode-rail">${rows}</div>
+      <button class="shelf-arrow shelf-arrow-next" hidden aria-label="${escapeHtml(t('catalog.next'))}"><i class="ti ti-chevron-right"></i></button>
+    </div>`;
+  _wireShelfArrows(el.querySelector('.th-episode-rail-wrap'));
+}
+
+async function startRaiEpisodeDownload(index) {
+  const ep = _tp.episodes?.[index];
+  if (!ep?.page_url) return;
+  if (!can('DOWNLOAD')) { showToast('Serve il permesso Download per RaiPlay', 'warning'); return; }
+  try {
+    await api.post('/api/download/raiplay', {source: 'raiplay', scope: 'episode', url: ep.page_url,
+      title: _tp.name, year: _tp.year, external_id: String(_tp.id),
+      season_number: Number(ep.season), episode_number: String(ep.n)});
+    showToast(t('title.started', {title: ep.name || _tp.name}), 'success', DOWNLOADS_LINK);
+  } catch (e) { showToast(errText(e), 'danger'); }
+}
+
+async function tpLoadRaiSeason(number, token = _tpToken) {
+  const selected = _tp.seasonNumbers.indexOf(Number(number));
+  if (selected < 0) return;
+  const state = _tp;
+  const request = (state.raiSeasonRequest || 0) + 1;
+  state.raiSeasonRequest = request;
+  _tp.raiSeasonIndex = selected;
+  _tp.season = Number(number);
+  _tp.episodes = null;
+  _tp.episodesError = null;
+  syncHash('detail');
+  _tpRenderEpisodes();
+  try {
+    const rows = await api.get(`/api/titles/raiplay/${encodeURIComponent(String(state.id))}/episodes`, {season_number: Number(number)});
+    if (token !== _tpToken || state !== _tp || request !== state.raiSeasonRequest) return;
+    _tp.episodes = rows;
+  } catch (e) {
+    if (token !== _tpToken || state !== _tp || request !== state.raiSeasonRequest) return;
+    _tp.episodes = [];
+    _tp.episodesError = e.message || t('title.sourceUnavailable');
+  }
+  _tpRenderEpisodes();
+  _tpRenderHero();
+}
+
+async function tpQueueRai(scope, season = null) {
+  if (!_tp || _tp.raiQueueBusy || !can('DOWNLOAD') || !_tp.raiDownloadable) return;
+  const state = _tp;
+  if (scope !== 'film' && !await scConfirm(t('title.raiConfirm', {
+    title: state.name, scope: scope === 'series' ? t('title.scopeSeries') : t('title.season', {season})
+  }))) return;
+  if (state !== _tp || state.raiQueueBusy) return;
+  state.raiQueueBusy = true;
+  _tpRenderCta();
+  showToast(t('title.raiPreparing'), 'info');
+  try {
+    const result = await api.post('/api/download/raiplay', {source: 'raiplay', scope,
+      url: state.pageUrl, title: state.name, year: state.year, season_number: season});
+    const skipped = result.unavailable_seasons || [];
+    const message = t('title.raiQueued', {count: result.count || 0}) +
+      (skipped.length ? ' ' + t('title.raiUnavailable', {seasons: skipped.join(', ')}) : '');
+    showToast(message, skipped.length || !result.count ? 'warning' : 'success', DOWNLOADS_LINK);
+  } catch (e) { showToast(errText(e), 'danger'); }
+  finally {
+    state.raiQueueBusy = false;
+    if (state === _tp) _tpRenderCta();
+  }
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -713,7 +795,11 @@ function _tpRenderEpisodes() {
 function tpPrimary() {
   // Fail-closed: a metadata-only title has no download path (the server
   // refuses it with 422 as well).
-  if (!_tp || _tp.comingSoon || _tp.metadataOnly) return;
+  if (!_tp || _tp.comingSoon) return;
+  if (_tp.source === 'raiplay') return tpQueueRai(_tp.type === 'movie' ? 'film' : 'series');
+  if (_tp.metadataOnly) {
+    return;
+  }
   // Without DOWNLOAD a season becomes a season's worth of requests, made
   // server-side so dedup and the library check apply to each of them.
   if (!can('DOWNLOAD') && _tp.type === 'tv') { tpRequestSeason(); return; }
@@ -831,7 +917,13 @@ async function submitRequest(payload, label) {
 
 // ── Film download ──────────────────────────────────────────────────────────────
 
-async function startFilmDownload(id, title, year=null, scheduledAt=null, audioLangs=null, subLangs=null, poster=null, source='streamingcommunity') {
+async function startFilmDownload(id, title, year=null, scheduledAt=null, audioLangs=null, subLangs=null, poster=null, source='streamingcommunity', pageUrl=null) {
+  if (source === 'raiplay') {
+    if (!can('DOWNLOAD')) { showToast('Serve il permesso Download per RaiPlay', 'warning'); return; }
+    try { await api.post('/api/download/raiplay', {source, url: pageUrl, title, year}); showToast(t('title.started', {title}), 'success', DOWNLOADS_LINK); }
+    catch(e) { showToast(errText(e), 'danger'); }
+    return;
+  }
   if (!can('DOWNLOAD')) {
     const ok = await submitRequest({
       source, media_type: 'film', external_id: String(id),
@@ -928,6 +1020,7 @@ function _onlyMissing() { return !!_tp?.onlyMissing; }
 function _skipNote() { return _onlyMissing() ? t('title.skipNote') : ''; }
 
 async function downloadWholeSeason(season) {
+  if (_tp.source === 'raiplay') return tpQueueRai('season', Number(season));
   const { tvId, slug, tvName, year, episodes, scheduledAt, audioLangs, subLangs } = _epCtx;
   const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
   // The episode list says which are already there, so the question can name
@@ -951,6 +1044,9 @@ async function downloadWholeSeason(season) {
 }
 
 async function downloadWholeSeries() {
+  if (_tp.source === 'raiplay') {
+    return tpQueueRai('series');
+  }
   const { tvId, slug, tvName, year, scheduledAt, seasonsCount, audioLangs, subLangs } = _epCtx;
   const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
   if (!await scConfirm(t('title.confirmSeries', {action: label, count: seasonsCount, note: _skipNote()}))) return;
@@ -1035,13 +1131,15 @@ registerActions({
   'tp:tracks-none': d => tpSelectTracks(d.which, false),
   'tp:track':         d => tpToggleTrack(d.which, d.code),
   'tp:trailer':       () => tpPlayTrailer(),
-  'tp:season':        d => tpLoadSeason(Number(d.n)),
+  'tp:season':        (d, el) => tpLoadSeason(Number(el?.value ?? d.n)),
+  'tp:raiSeason':     (d, el) => tpLoadRaiSeason(el?.value),
   'tp:schedule':      (d, el) => tpSetSchedule(el.value),
   'tp:onlyMissing':   (d, el) => { _tp.onlyMissing = el.checked; },
   'tp:requestSeason': () => tpRequestSeason(),
   'tp:batchSeason':   d => downloadWholeSeason(Number(d.season)),
   'tp:batchAnime':    () => downloadAllAnime(),
   'tp:episode':       d => (_tp.type === 'anime' ? startAnimeDownload : startEpisodeDownload)(Number(d.index)),
+  'tp:raiEpisode':    d => startRaiEpisodeDownload(Number(d.index)),
   'tp:person':        d => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${d.person} ${t('title.actorQuery')}`)}`, '_blank', 'noopener,noreferrer'),
 });
 

@@ -79,10 +79,10 @@ def _run(operation, *args):
 @router.get("/portable", dependencies=[MANAGE, Depends(_local)])
 def portable_status():
     mode = distribution.mode()
-    # Without an expected signer the update is never applied automatically, so
-    # the panel must not offer it.
+    # Portable mode is delivered through the setup now; standalone portable
+    # ZIP updates are no longer published as release assets.
     signed = portable_updates.signature_check_enabled()
-    return {"mode": mode, "available": mode == "portable" and signed,
+    return {"mode": mode, "available": False,
             "signature_verification": signed, "token": _local_token}
 
 

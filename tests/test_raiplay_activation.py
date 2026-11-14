@@ -1,10 +1,4 @@
-"""RaiPlay switched on as a metadata-only source, with the download gate closed.
-
-RaiPlay is in the default registry (search, home, title cards) and is never
-downloadable: every download and request entry point refuses it with 422
-before a job or a request exists. No test reaches the network: RaiPlay gets a
-fake transport, the other sources fake search functions.
-"""
+"""RaiPlay catalogue activation and separation from SC/AnimeUnity endpoints."""
 import asyncio
 
 import pytest
@@ -57,11 +51,11 @@ def _rp(transport=None):
 
 # ── registry ─────────────────────────────────────────────────────────────────
 
-def test_raiplay_is_in_the_default_registry_and_not_downloadable():
+def test_raiplay_is_in_the_default_registry_and_downloadable():
     registry = get_registry()
     assert "raiplay" in registry.sources()
-    assert registry.get("raiplay").capabilities.download is False
-    assert registry.is_downloadable("raiplay") is False
+    assert registry.get("raiplay").capabilities.download is True
+    assert registry.is_downloadable("raiplay") is True
     assert registry.is_downloadable("streamingcommunity") is True
     assert registry.is_downloadable("animeunity") is True
 
@@ -86,7 +80,7 @@ DOWNLOAD_BODIES = [
 def test_a_raiplay_download_is_refused_with_422_and_no_job(client, no_jobs, path, body):
     response = client.post(path, json={**body, "source": "raiplay"})
     assert response.status_code == 422, response.text
-    assert NOT_DOWNLOADABLE_REASON in response.json()["detail"]
+    assert any(error["loc"] == ["body", "source"] for error in response.json()["detail"])
 
 
 @pytest.mark.parametrize("source", ["pilot", "RaiPlay", "", None, 1, ["raiplay"], {"x": 1}])
@@ -124,14 +118,15 @@ def test_a_raiplay_request_is_refused_with_422_and_nothing_stored(client, no_job
     before = _request_rows()
     response = client.post(path, json={**body, "source": "raiplay"})
     assert response.status_code == 422, response.text
-    assert NOT_DOWNLOADABLE_REASON in response.json()["detail"]
+    assert any(error["loc"] == ["body", "source"] for error in response.json()["detail"])
     assert _request_rows() == before
 
 
-def test_the_request_handler_refuses_on_its_own(no_jobs):
+def test_the_request_handler_refuses_a_disabled_provider_on_its_own(no_jobs, monkeypatch):
     """The MCP tools call the handler directly, past the HTTP dependencies."""
     from fastapi import HTTPException
     from app.requests import router as requests_router
+    monkeypatch.setattr(type(get_registry()), "is_downloadable", lambda self, source: False)
 
     body = requests_router.CreateRequest.model_construct(
         source="raiplay", media_type="film", external_id="programmi:x", title="X",
@@ -156,14 +151,14 @@ def registry(client):
     client.app.dependency_overrides.pop(get_registry, None)
 
 
-def test_a_raiplay_title_card_has_no_stream_and_says_why(client, registry, no_jobs):
+def test_a_raiplay_title_card_has_no_stream_but_can_download(client, registry, no_jobs):
     response = client.get("/api/titles/raiplay/programmi%3Aserieesempio")
     assert response.status_code == 200, response.text
     card = response.json()
     assert card["source"] == "raiplay"
     assert card["id"] == "programmi:serieesempio"
-    assert card["downloadable"] is False
-    assert card["download_disabled_reason"] == NOT_DOWNLOADABLE_REASON
+    assert card["downloadable"] is True
+    assert card["download_disabled_reason"] is None
     assert_no_stream(card)
     # Only the public metadata JSON was read.
     assert [c["url"] for c in registry.transport.calls] == [
@@ -233,7 +228,7 @@ def test_all_sources_includes_raiplay_and_passes_the_type_only_where_supported(c
     assert "X-Source-Errors" not in response.headers
     for row in rows:
         if row["source"] == "raiplay":
-            assert row["downloadable"] is False
+            assert row["downloadable"] is True
     assert_no_stream([r for r in rows if r["source"] == "raiplay"])
 
 

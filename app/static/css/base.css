@@ -24,6 +24,46 @@
       color: var(--text-muted) !important;
     }
     .text-body-tertiary { color: var(--text-dim) !important; }
+
+    /* All action buttons keep a coloured, high-contrast surface. Outlined
+       controls were too faint on the dark panel and looked disabled. */
+    .btn-outline-secondary, .btn-ghost-secondary {
+      color: #eef4ff !important; background: #26334b !important;
+      border-color: #58739d !important;
+    }
+    .btn-outline-secondary:hover, .btn-ghost-secondary:hover {
+      color: #fff !important; background: #38557e !important;
+    }
+    .btn-outline-primary { color: #eaf3ff !important; background: #164f83 !important; border-color: #4d9fe8 !important; }
+    .btn-outline-success { color: #eafff2 !important; background: #155d43 !important; border-color: #45c98d !important; }
+    .btn-outline-warning { color: #fff8df !important; background: #765516 !important; border-color: #e7bd55 !important; }
+    .btn-outline-danger { color: #ffecef !important; background: #762b3b !important; border-color: #ee7184 !important; }
+    .btn-outline-dark, .btn-secondary { color: #eef4ff !important; background: #303b50 !important; border-color: #7185a6 !important; }
+    .btn-info { color: #071521 !important; background: #57c7e8 !important; border-color: #8ee5fb !important; }
+    .btn-info:hover { color: #041018 !important; background: #83def2 !important; }
+    .btn-primary { color: #fff !important; background: #1268a8 !important; border-color: #52a9e5 !important; }
+    .btn-primary:hover { background: #1986cf !important; }
+    .btn-success { color: #fff !important; background: #16734e !important; border-color: #5ad09b !important; }
+    .btn-warning { color: #171006 !important; background: #e1ad3c !important; border-color: #f4d27a !important; }
+    .btn-danger { color: #fff !important; background: #a82d43 !important; border-color: #f18494 !important; }
+    .btn-light { color: #162033 !important; background: #d7e4f5 !important; border-color: #fff !important; }
+    .btn-dark { color: #fff !important; background: #35445c !important; border-color: #8295b5 !important; }
+    .btn-outline-light { color: #f5f8ff !important; background: #344158 !important; border-color: #aebbd0 !important; }
+    .btn-outline-light:hover { background: #526887 !important; }
+    .btn-ghost-primary { color: #dce9ff !important; background: #1c3e78 !important; border-color: #426fb5 !important; }
+    .btn-ghost-primary:hover { background: #2c5ca5 !important; }
+    .btn-ghost-danger { color: #ffe3e8 !important; background: #742b3c !important; border-color: #b85769 !important; }
+    .btn-ghost-danger:hover { background: #9c3b51 !important; }
+
+    /* Icon and navigation controls are buttons too: keep them visible on the
+       dark shell while preserving their compact shape. */
+    .header-icon-btn, .btn-icon-mobile, .th-icon-btn {
+      color: #e7f0ff !important; background: #26364f !important;
+      border-color: #58749d !important;
+    }
+    .header-icon-btn:hover, .btn-icon-mobile:hover, .th-icon-btn:hover { background: #3b5880 !important; }
+    .btn-link-sm { color: #b9d9ff !important; background: #1d3e62 !important; border: 1px solid #416b98 !important; border-radius: 4px; padding: 2px 6px; }
+    .btn-link-danger { color: #ffd5dc !important; background: #632638 !important; border-color: #a64d62 !important; }
     input::placeholder, textarea::placeholder {
       color: var(--text-muted) !important;
       opacity: 1;

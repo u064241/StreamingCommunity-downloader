@@ -522,3 +522,8 @@
       font-size: 9.5px; color: var(--text-dim);
       font-variant-numeric: tabular-nums;
     }
+.btn-sidebar-help {
+  width: 100%; display: flex; align-items: center; gap: .5rem; padding: .45rem .7rem;
+  border: 1px solid #4d7197; border-radius: .4rem; color: #e9f4ff; background: #214b70;
+}
+.btn-sidebar-help:hover { color: #fff; background: #2c6b9d; }

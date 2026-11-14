@@ -1,8 +1,7 @@
-"""RaiPlay as a metadata-only provider: search, front page and title cards.
+"""RaiPlay catalogue provider and yt-dlp download entry point.
 
-RaiPlay video is DRM-protected (Widevine/PlayReady). This provider therefore
-declares ``download=False``, never resolves a stream, and marks every card
-``downloadable: False`` with a reason the UI can show next to a disabled button.
+yt-dlp performs the final format/DRM check at download time; it never handles
+licences or keys.
 """
 from __future__ import annotations
 
@@ -24,7 +23,7 @@ class RaiPlayProvider:
     # No media-type filter: the search service does not say film vs series.
     capabilities = ProviderCapabilities(
         search=True, media_types=(), dubbed_filter=False,
-        details=True, episodes=False, tracks=False, download=False, home=True,
+        details=True, episodes=True, tracks=False, download=True, home=True,
     )
 
     def __init__(self, *, client: RaiPlayClient | None = None):
@@ -82,6 +81,32 @@ class RaiPlayProvider:
             raise self._error(ProviderErrorCode.UPSTREAM, "Risposta RaiPlay non valida", exc) from exc
 
     def stream(self, *_args, **_kwargs):
-        """Explicit refusal: there is no download or playback path for RaiPlay."""
+        """Streaming is deliberately not exposed; downloads use yt-dlp."""
         raise self._error(ProviderErrorCode.UNSUPPORTED, NOT_DOWNLOADABLE_REASON)
+
+    def episodes(self, external_id, season_path=None, season_number=None):
+        title_path = parser.path_for_id(external_id)
+        root = title_path.removesuffix(".json") + "/" if title_path else None
+        if (root is None or (season_path is not None and
+                            (not isinstance(season_path, str) or not season_path.startswith(root)))
+                or (season_number is not None and (type(season_number) is not int or season_number < 1))):
+            raise self._error(ProviderErrorCode.INVALID_REQUEST, "Stagione RaiPlay non valida")
+        try:
+            # Resolve legacy callers by a known catalogue path or label, never
+            # by array position. New clients need only the numeric season.
+            if season_number is None:
+                entries = parser.season_entries(self.client.title(title_path).get("blocks"))
+                season_number = next((entry["number"] for entry in entries
+                                      if season_path == entry["path"]), None)
+                if season_number is None and season_path:
+                    season_number = parser.season_number(season_path.rsplit("/", 1)[-1].replace("-", " "))
+                if season_number is None:
+                    raise ValueError("Numero stagione RaiPlay mancante")
+            if season_path and (".." in season_path or "?" in season_path or "#" in season_path):
+                raise ValueError("Percorso stagione RaiPlay non valido")
+            return self.client.season_episodes(title_path, season_number, season_path)
+        except RaiPlayUnavailable as exc:
+            raise self._error(ProviderErrorCode.UPSTREAM, "RaiPlay non raggiungibile", exc) from exc
+        except (ValueError, TypeError) as exc:
+            raise self._error(ProviderErrorCode.INVALID_REQUEST, "Percorso stagione RaiPlay non valido", exc) from exc
 

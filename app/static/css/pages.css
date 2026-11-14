@@ -65,7 +65,7 @@
       padding: 5px 16px;
       border-radius: 20px;
       border: 1px solid var(--border-mid);
-      background: transparent;
+      background: #1d3049;
       color: var(--text-muted);
       font-family: var(--font-ui);
       font-size: 12px;
@@ -77,12 +77,12 @@
       gap: 5px;
     }
     .source-btn.active {
-      background: var(--accent-dim);
+      background: #1e6391;
       color: var(--accent);
       border-color: var(--accent-ring);
     }
     .source-btn:hover:not(.active) {
-      background: var(--bg-hover);
+      background: #315274;
       color: var(--text-sub);
       border-color: var(--border-strong);
     }
@@ -175,7 +175,9 @@
       justify-content: center;
       padding: 0;
       border: 0;
-      z-index: 2;
+      /* Hovered cards rise to z-index 5 and scale beyond the rail. Keep the
+         controls above the enlarged artwork so they remain clickable. */
+      z-index: 10;
       cursor: pointer;
       color: var(--text);
       font-size: 26px;
@@ -207,11 +209,11 @@
        ends. Inset by a few pixels they read as part of the rail and get lost
        against the posters. */
     .shelf-arrow-prev {
-      left: 0;
+      left: -4px;
       background: linear-gradient(to right, var(--bg-base) 45%, rgba(7,10,18,0));
     }
     .shelf-arrow-next {
-      right: 0;
+      right: -4px;
       background: linear-gradient(to left, var(--bg-base) 45%, rgba(7,10,18,0));
     }
     .shelf-arrow:hover { color: var(--accent); }
@@ -888,16 +890,30 @@
       margin-bottom: 14px; flex-wrap: wrap;
     }
     .queue-filter {
-      background: var(--bg-surface); border: 1px solid var(--border);
+      background: #26364e; border: 1px solid #597394;
       color: var(--text-sub); border-radius: 20px;
       padding: 5px 13px; font-size: 12px; cursor: pointer;
       transition: all .15s ease;
     }
     .queue-filter:hover { background: var(--bg-hover); color: var(--text); }
     .queue-filter.active {
-      background: var(--accent-dim); border-color: var(--accent);
+      background: #1e6391; border-color: #76c7f2;
       color: var(--accent-text); font-weight: 600;
     }
+    #dl-filters .queue-filter { color:#f5f8ff; border-color:#6f86a6; }
+    #dl-filters .queue-filter[data-filter="all"] { background:#126b96; }
+    #dl-filters .queue-filter[data-filter="running"] { background:#176b58; }
+    #dl-filters .queue-filter[data-filter="waiting"] { background:#66501a; }
+    #dl-filters .queue-filter[data-filter="scheduled"] { background:#4b3d83; }
+    #dl-filters .queue-filter[data-filter="done"] { background:#28633c; }
+    #dl-filters .queue-filter[data-filter="error"] { background:#7a2934; }
+    #dl-filters .queue-filter.active { box-shadow:0 0 0 2px rgba(255,255,255,.28); color:#fff; }
+    .btn-download-action { border:1px solid transparent !important; color:#fff !important; font-weight:600; }
+    .btn-download-refresh { background:#176b8f !important; border-color:#55b6df !important; }
+    .btn-download-retry { background:#275f9e !important; border-color:#70a9e8 !important; }
+    .btn-download-clear { background:#3b536f !important; border-color:#8da4bd !important; }
+    .btn-download-errors { background:#76551b !important; border-color:#d7a43d !important; }
+    .btn-download-cancel { background:#772b3c !important; border-color:#e16b83 !important; }
 
     .req-row {
       display: flex; gap: 13px; align-items: flex-start;
@@ -1140,10 +1156,24 @@
       cursor: pointer; font: inherit; text-decoration: none;
     }
     .th-crumb-link:hover { color: var(--text); text-decoration: underline; }
+    .th-title-switcher-wrap {
+      display: inline-flex; align-items: center; gap: 7px;
+      margin-left: auto; padding: 4px 7px 4px 10px;
+      color: var(--text-muted); background: rgba(255,255,255,.04);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 11px; white-space: nowrap;
+    }
     .th-title-switcher {
-      max-width: 210px; margin-left: auto; padding: 4px 8px;
+      width: min(240px, 30vw); padding: 4px 8px;
       color: var(--text-sub); background: var(--bg-raised);
       border: 1px solid var(--border-mid); border-radius: var(--radius-sm);
+      font-size: 12px;
+    }
+    .th-season-hero {
+      display: inline-flex; align-items: center; gap: 9px;
+      margin: 0 0 14px; padding: 5px 8px 5px 11px;
+      color: var(--text-muted); background: rgba(255,255,255,.05);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
       font-size: 12px;
     }
     .th-related { margin-top: 24px; }
@@ -1254,6 +1284,12 @@
       gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
     }
     .th-season-label { font-size: 14px; font-weight: 600; color: var(--text); }
+    .th-season-select {
+      min-width: 145px; padding: 6px 30px 6px 10px;
+      color: var(--text); background: var(--bg-raised);
+      border: 1px solid var(--border-mid); border-radius: var(--radius-sm);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+    }
     .th-season-pills { display: flex; gap: 6px; flex-wrap: wrap; }
     .th-season-pill {
       padding: 4px 12px;
@@ -1329,6 +1365,32 @@
     }
     .th-ep-owned { position: absolute; top: 9px; right: 9px; color: var(--green); font-size: 18px; }
     .th-ep > .btn { align-self: stretch; margin: 0 10px 10px; }
+
+    /* Episode preview rail: the title page uses the same horizontal browse
+       pattern as the home page, while keeping the episode action inside each
+       preview card. */
+    .th-episode-rail-wrap { margin-inline: -12px; }
+    .th-episode-rail {
+      /* The arrows overlay the ends; keep the first and last card fully
+         inside the viewport instead of presenting a half card at the edge. */
+      padding-inline: 84px;
+      scroll-padding-inline: 84px;
+    }
+    .th-episode-item {
+      flex: 0 0 276px;
+      width: 276px;
+      scroll-snap-align: start;
+    }
+    @media (min-width: 992px) {
+      .th-episode-item { flex-basis: 304px; width: 304px; }
+    }
+    @media (max-width: 575.98px) {
+      .th-episode-rail-wrap { margin-inline: -6px; }
+      .th-episode-rail { padding-inline: 58px; scroll-padding-inline: 58px; }
+      .th-episode-item { flex-basis: 245px; width: 245px; }
+      .th-title-switcher-wrap { width: 100%; margin-left: 0; justify-content: space-between; }
+      .th-title-switcher { width: min(240px, 62vw); }
+    }
 
     /* ── Track picker ───────────────────────────────────────
        Was a wall of checkboxes. Toggling a chip is the same
@@ -1541,3 +1603,66 @@
     }
     .settings-page .nav-tabs::-webkit-scrollbar { display: none; }
     .settings-page .nav-tabs .nav-link { white-space: nowrap; }
+ .help-card { height: 100%; border: 1px solid rgba(128,164,214,.22); background: rgba(22,30,46,.82); }
+ .help-card h3 { font-size: 1.05rem; color: #eaf2ff; }
+ .help-card h3 i { color: #68c8ed; margin-right: .35rem; }
+ .help-card p { color: var(--text-muted); min-height: 3.4rem; }
+ .help-mock { display: flex; gap: .55rem; align-items: center; min-height: 52px; padding: .7rem; border-radius: .55rem; background: #0e1625; border: 1px solid #304463; color: #dfeaff; }
+ .help-pill, .help-select { padding: .35rem .55rem; border-radius: .35rem; background: #263f66; font-size: .78rem; }
+ .help-input { flex: 1; color: #8fa4c3; font-size: .82rem; }
+ .help-button { padding: .35rem .65rem; border-radius: .35rem; background: #147fbd; color: #fff; font-weight: 600; }
+ .help-thumb { width: 58px; height: 34px; border-radius: .3rem; background: linear-gradient(135deg,#28456d,#8c4764); }
+ .help-lines { flex: 1; height: 28px; background: linear-gradient(#6f86a8 25%,transparent 25% 48%,#405474 48% 70%,transparent 70%); }
+ .help-download { color: #73d5f0; font-size: 1.6rem; }
+ .help-queue { justify-content: space-between; font-size: .84rem; }
+ .help-queue b { color: #7bcaf0; letter-spacing: .12rem; }.help-queue .ok { color: #65d69d; font-size: 1.3rem; }
+ .help-setting { color: #a7b9d2; font-size: .78rem; }.help-select { margin-right: auto; }
+ .help-source-note { display:flex; gap:.7rem; align-items:flex-start; padding:1rem 1.1rem; border:1px solid #b58a32; border-left:4px solid #e1ad3c; border-radius:.55rem; color:#fff3c4; background:#3c2d12; }
+ .help-source-note i { color:#ffd66b; font-size:1.35rem; flex:0 0 auto; }.help-source-note strong { display:block; color:#ffe29a; margin-bottom:.2rem; }
+
+/* Final text pass: component rules loaded before this file must not turn a
+   coloured action into low-contrast grey text. */
+ .btn, .source-btn, .queue-filter { color: #f5f8ff !important; }
+ .btn-primary, .btn-success, .btn-danger, .btn-dark { color:#fff !important; }
+ .btn-warning { color:#211805 !important; }.btn-info, .btn-light { color:#102033 !important; }
+ .source-btn.active { color:#f5fbff !important; }.source-btn:not(.active) { color:#dce9f8 !important; }
+ .queue-filter.active { color:#fff !important; }
+
+html[data-theme="blue"] { --bg-base:#071a2c; --bg-surface:#0d2943; --bg-raised:#123b5e; --bg-hover:#1b527c; --accent:#74d4ff; --accent-dim:#154e73; --accent-ring:#3da4d5; }
+html[data-theme="graphite"] { --bg-base:#17191d; --bg-surface:#24272d; --bg-raised:#30343b; --bg-hover:#3b414a; --accent:#d2d8e2; --accent-dim:#46505d; --accent-ring:#8996a8; }
+html[data-theme="contrast"] { --bg-base:#000; --bg-surface:#101010; --bg-raised:#202020; --bg-hover:#343434; --accent:#7edcff; --accent-dim:#164b64; --accent-ring:#9be8ff; --text:#fff; --text-sub:#fff; --text-muted:#e0e0e0; }
+
+/* Blu e Grafite usano accenti chiari per testi e bordi. Non usarli come
+   superficie dei pulsanti primari: con testo bianco diventerebbero
+   fluorescenti e poco leggibili. */
+html[data-theme="blue"] .btn-primary,
+html[data-theme="blue"] .btn-ghost-primary {
+  color: #f5fbff !important;
+  background: #176a9d !important;
+  border-color: #4ba9d8 !important;
+  box-shadow: 0 2px 10px rgba(23,106,157,.38) !important;
+}
+html[data-theme="blue"] .btn-primary:hover,
+html[data-theme="blue"] .btn-ghost-primary:hover { background: #2084bf !important; }
+html[data-theme="graphite"] .btn-primary,
+html[data-theme="graphite"] .btn-ghost-primary {
+  color: #ffffff !important;
+  background: #58636f !important;
+  border-color: #aab5c2 !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.32) !important;
+}
+html[data-theme="graphite"] .btn-primary:hover,
+html[data-theme="graphite"] .btn-ghost-primary:hover { background: #6e7b89 !important; }
+html[data-theme="blue"] .source-btn, html[data-theme="blue"] .queue-filter { background:#174b70; }
+html[data-theme="graphite"] .source-btn, html[data-theme="graphite"] .queue-filter { background:#3a414b; }
+html[data-theme="contrast"] .source-btn, html[data-theme="contrast"] .queue-filter { background:#252525; border-color:#aaa; }
+
+/* Settings controls called out in the UI review. They intentionally use
+   separate hues so the action remains recognisable even without its text. */
+ #images-refresh { color:#eaf5ff !important; background:#245b86 !important; border-color:#6db9e8 !important; }
+ #softether-close, #softether-hide { color:#fff5df !important; background:#76531b !important; border-color:#e4ba5c !important; }
+ #probe-hardware, #refresh-video-encoders { color:#e9fff4 !important; background:#176146 !important; border-color:#57c89b !important; }
+ #notif-channel-add-btn, #hook-add-btn { color:#f1eaff !important; background:#4b347e !important; border-color:#a48ade !important; }
+ #setting-mcp-enabled + .form-check-label { color:#dff5ff !important; background:#174b63; border:1px solid #4fa5c5; border-radius:.4rem; padding:.35rem .65rem; }
+ #mcp-regen-btn { color:#fff7dd !important; background:#785719 !important; border-color:#e6c05d !important; }
+ #mcp-token-once .input-group .btn, [data-action="cfg:copyMcpSnippet"] { color:#e6f4ff !important; background:#255275 !important; border-color:#67a6c9 !important; }

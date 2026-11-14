@@ -50,17 +50,17 @@ def test_foreign_manifest_is_refused(key, value):
         portable_updates.portable_record(data, VERSION)
 
 
-def test_build_publishes_the_portable_zip_everywhere():
+def test_build_publishes_only_the_installer_package():
     build = (ROOT / "build.ps1").read_text("utf-8")
-    assert "$assets = @($outputPath, $portablePath)" in build
+    assert "$assets = @($outputPath)" in build
     assert "New-UpdateManifest -Version $Version -AssetPaths $assets" in build
     # SHA256SUMS is derived from the same records as the manifest.
     assert "$checksums = $manifest.assets | ForEach-Object" in build
     release_files = build[build.index("$releaseFiles = @("):build.index("foreach ($releaseFile in $releaseFiles)")]
-    for expected in ('Setup-v$Version.exe', "$portablePath", "update-manifest.json", "SHA256SUMS.txt"):
+    for expected in ('Setup-v$Version.exe', "update-manifest.json", "SHA256SUMS.txt"):
         assert expected in release_files
-    # The ZIP is deleted after packaging only for a non-release build.
-    assert "if (-not $Release -and (Test-Path -LiteralPath $portablePath -PathType Leaf))" in build
+    # The ZIP is an intermediate only and is removed after packaging.
+    assert "if (Test-Path -LiteralPath $portablePath -PathType Leaf)" in build
     assert re.search(r"pyinstaller==\$PyInstallerVersion", build)
     assert re.search(r"\$PyInstallerVersion = '\d+\.\d+\.\d+'", build)
 

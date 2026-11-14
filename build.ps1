@@ -1,4 +1,4 @@
-# Compila l'app Windows, il helper updater, il portable ZIP e l'installer Inno Setup.
+# Compila l'app Windows, il helper updater e l'installer Inno Setup.
 # Per preparare una release: .\build.ps1 -PrepareRelease
 # Per pubblicarla: .\build.ps1 -PublishPreparedRelease
 # L'installer viene ricreato e sovrascritto a ogni compilazione quando Inno Setup è disponibile.
@@ -47,10 +47,10 @@ $AppName = 'StreamingCommunityDownloader'
 $PyInstallerVersion = '6.22.3'
 
 function New-UpdateManifest {
-    # update-manifest.json: one record per published asset. The in-app portable
-    # update (app/portable_updates.py) looks its ZIP up here by exact name, so
-    # every asset of the release must be listed. tests/test_fix_ops_manifest.py
-    # runs this function in isolation.
+    # update-manifest.json: one record per published asset. The setup is the
+    # only separately published Windows package; it already offers install and
+    # portable modes. tests/test_fix_ops_manifest.py runs this function in
+    # isolation.
     param(
         [Parameter(Mandatory)][string]$Version,
         [Parameter(Mandatory)][string[]]$AssetPaths
@@ -578,9 +578,9 @@ end;
                     Remove-Item -LiteralPath $intermediate -Force
                 }
             }
-            # A release publishes the portable ZIP: the in-app update of the
-            # portable mode downloads exactly that asset.
-            if (-not $Release -and (Test-Path -LiteralPath $portablePath -PathType Leaf)) {
+            # The setup already contains both Install and Portable modes, so
+            # the standalone ZIP is only a build intermediate.
+            if (Test-Path -LiteralPath $portablePath -PathType Leaf) {
                 Remove-Item -LiteralPath $portablePath -Force
             }
         } else {
@@ -589,12 +589,12 @@ end;
     }
 
     if ($Release) {
-        # Installer and portable ZIP are both release assets: the manifest and
-        # SHA256SUMS must describe every file the release publishes.
-        if (-not (Test-Path -LiteralPath $portablePath -PathType Leaf)) {
-            throw "Pacchetto portable mancante: $portablePath"
+        # The installer is the only release asset. It contains both the normal
+        # installation and the portable mode selected in its wizard.
+        if (Test-Path -LiteralPath $portablePath -PathType Leaf) {
+            Remove-Item -LiteralPath $portablePath -Force
         }
-        $assets = @($outputPath, $portablePath)
+        $assets = @($outputPath)
         $manifest = New-UpdateManifest -Version $Version -AssetPaths $assets
         $manifestPath = Join-Path $DistDir 'update-manifest.json'
         $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
@@ -608,7 +608,6 @@ end;
                 }
             }
             Get-ChildItem -LiteralPath $DistDir -Filter "$AppName-*-Portable.zip" -File |
-                Where-Object { $_.FullName -ne $portablePath } |
                 Remove-Item -Force
             Write-Host 'Artefatti intermedi rimossi: EXE principale e helper separato.' -ForegroundColor DarkGray
         }
@@ -635,7 +634,6 @@ end;
                 if ($LASTEXITCODE -ne 0) { throw "Push del branch release fallito: $releaseBranch" }
                 $releaseFiles = @(
                     (Join-Path $DistDir "$AppName-Setup-v$Version.exe"),
-                    $portablePath,
                     (Join-Path $DistDir 'update-manifest.json'),
                     (Join-Path $DistDir 'SHA256SUMS.txt')
                 )

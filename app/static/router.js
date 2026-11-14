@@ -114,7 +114,8 @@ function routeFromHash() {
     // Re-entering the same title must not refetch it.
     if (_tp && _tp.type === type && String(_tp.id) === id && _tp.source === source) {
       showPage('detail');
-      if (season > 0 && season !== _tp.season) tpLoadSeason(season);
+      const selectedSeason = season > 0 ? season : (_tp.seasonNumbers?.[0] || 1);
+      if (selectedSeason !== _tp.season) tpLoadSeason(selectedSeason);
       return;
     }
     loadTitlePage({ page: 'detail', type, id, slug: slug || '',

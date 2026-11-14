@@ -63,6 +63,11 @@ let _searchDebounceTimer = null;
 function setupSearchDebounce() {
   const input = document.getElementById('search-input');
   if (!input) return;
+  input.addEventListener('keydown', event => {
+    // Holding Backspace on an empty search field must not bubble into the
+    // browser history shortcut and navigate away from the portal.
+    if (event.key === 'Backspace' && input.value === '') event.preventDefault();
+  });
   input.addEventListener('input', () => {
     _catalogSection = null;
     _cancelCatalogWork();
@@ -97,6 +102,12 @@ let _searchExhausted = false;
 let _loadingMore = false;
 let _kindFilter = '';   // '' | movie | tv | ova | ona | special
 let _dubOnly = false;
+
+// The server keeps its request budget as a safety brake, but that internal
+// state must not paint a loud pink operational error into the catalogue.
+function _quietSourceLimit(message) {
+  return /budget .*richieste alla sorgente|source request budget|sorgente in pausa/i.test(String(message || ''));
+}
 
 // Each source classifies its catalogue in its own vocabulary, so the chips are
 // rebuilt when the source changes rather than offering one of them a filter the
@@ -250,6 +261,19 @@ function renderResultCards(items, container, baseIndex,
   });
 }
 
+// A source may return an artwork URL that later expires or responds with 404.
+// Keep the card layout intact and show the same intentional placeholder used
+// when the source supplied no artwork at all.
+function posterError(image) {
+  if (!image) return;
+  const wrap = image.closest('.poster-wrap');
+  image.remove();
+  wrap?.querySelector('.poster-backdrop')?.remove();
+  const placeholder = wrap?.querySelector('.poster-noimg');
+  if (placeholder) placeholder.style.display = 'flex';
+  wrap?.classList.add('poster-fallback');
+}
+
 async function hydrateShelfArtwork(card, item) {
   const key = `${item.type}:${item.id}`;
   const cached = _cardArtworkCache.get(key);
@@ -359,9 +383,9 @@ async function doSearch(options) {
                               append ? {onHeaders} : {signal: _searchAbort.signal, onHeaders});
     } catch (e) {
       if (e.name === 'AbortError') throw e;   // handled by the catch below
-      const detail = escapeHtml(errText(e));
-      if (append) showToast(detail, 'danger');
-      else container.innerHTML = `<div class="col-12"><div class="alert alert-danger">${detail}</div></div>`;
+      const detail = errText(e);
+      if (append) { if (!_quietSourceLimit(detail)) showToast(escapeHtml(detail), 'danger'); }
+      else container.innerHTML = _quietSourceLimit(detail) ? '' : `<div class="col-12"><div class="alert alert-danger">${escapeHtml(detail)}</div></div>`;
       return;
     }
     if (!append) {
@@ -594,11 +618,22 @@ function _wireShelfArrows(section) {
   const next = section.querySelector('.shelf-arrow-next');
 
   function step() {
-    const card = rail.querySelector('.shelf-item:not(.d-none)');
-    const one = (card ? card.offsetWidth : 132) + 12;   // the rail's gap
-    // Three cards, unless the rail is too narrow to show three — then as many
-    // as fit, and never less than one.
-    return Math.max(one, Math.min(one * 3, Math.floor(rail.clientWidth / one) * one));
+    const cards = [...rail.querySelectorAll('.shelf-item:not(.d-none)')];
+    if (!cards.length) return 132;
+    const current = rail.scrollLeft + 4;
+    const firstVisible = cards.findIndex(card => card.offsetLeft >= current);
+    const index = Math.max(0, firstVisible < 0 ? cards.length - 1 : firstVisible);
+    const visible = Math.max(1, Math.floor(rail.clientWidth / Math.max(1, cards[0].offsetWidth + 12)));
+    return { cards, index, count: Math.max(1, Math.min(3, visible)) };
+  }
+
+  function scrollByCards(direction) {
+    const plan = step();
+    if (!plan.cards) { rail.scrollBy({left: direction * plan, behavior: 'smooth'}); return; }
+    const target = plan.cards[Math.max(0, Math.min(plan.cards.length - 1,
+      plan.index + direction * plan.count))];
+    const inset = parseFloat(getComputedStyle(rail).paddingLeft) || 0;
+    if (target) rail.scrollTo({left: Math.max(0, target.offsetLeft - inset), behavior: 'smooth'});
   }
 
   function sync() {
@@ -608,8 +643,8 @@ function _wireShelfArrows(section) {
     next.hidden = !scrollable || rail.scrollLeft >= max - 2;
   }
 
-  prev.addEventListener('click', () => rail.scrollBy({left: -step(), behavior: 'smooth'}));
-  next.addEventListener('click', () => rail.scrollBy({left: step(), behavior: 'smooth'}));
+  prev.addEventListener('click', () => scrollByCards(-1));
+  next.addEventListener('click', () => scrollByCards(1));
   rail.addEventListener('scroll', sync, {passive: true});
   // A rail is measured before its posters have loaded and while the page is
   // still laying out, so the arrows of later rows were left hidden. Measure
@@ -881,8 +916,9 @@ async function loadCatalog(append = false) {
     loadRequestStatuses(data.items.filter(i => i.type !== 'movie').map(i => String(i.id)));
   } catch (error) {
     if (error.name === 'AbortError' || generation !== _catalogGeneration) return;
-    if (!append) document.getElementById('search-results').textContent = errText(error, t('catalog.unavailable'));
-    else showToast(errText(error), 'danger');
+    const detail = errText(error, t('catalog.unavailable'));
+    if (!append) document.getElementById('search-results').textContent = _quietSourceLimit(detail) ? '' : detail;
+    else if (!_quietSourceLimit(detail)) showToast(detail, 'danger');
   } finally {
     if (generation === _catalogGeneration) { _loadingMore = false; more.disabled = false; }
   }
@@ -923,6 +959,11 @@ registerPageHash('search', {
     _searchPage = 1;
     _searchExhausted = false;
     renderSearchFilters();
+    const saved = sessionStorage.getItem('sc.search.return');
+    if (saved) {
+      sessionStorage.removeItem('sc.search.return');
+      try { const state = JSON.parse(saved); setTimeout(() => window.scrollTo(0, Number(state.y) || 0), 0); } catch (_) {}
+    }
   },
 });
 

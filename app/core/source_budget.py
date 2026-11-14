@@ -231,7 +231,8 @@ def blocked() -> str | None:
         if now < _backoff_until:
             return "backoff"
         _prune(now)
-        if len(_sent) >= limit():
+        cap = limit()
+        if cap > 0 and len(_sent) >= cap:
             return "budget"
         return None
 
@@ -248,7 +249,7 @@ def acquire(what: str = "") -> None:
             if not _budget_warned:
                 _budget_warned = True
                 logger.warning("Source request budget spent (%d/h): serving caches "
-                               "until %s", limit(), _hhmm(refill))
+                               "until %s", cap, _hhmm(refill))
             raise SourceUnavailable("budget", refill)
         _budget_warned = False
         _sent.append(_now())
