@@ -54,12 +54,6 @@
               <span class="nav-link-title" data-i18n="nav.files">File</span>
             </a>
           </li>
-          <li class="nav-item" data-perm="REQUEST|DOWNLOAD">
-            <a class="nav-link" href="#" data-page="help" data-action="nav">
-              <span class="nav-link-icon"><i class="ti ti-help-circle"></i></span>
-              <span class="nav-link-title" data-i18n="help.title">Come si usa?</span>
-            </a>
-          </li>
         </ul>
         <div class="sidebar-footer">
           <!-- Same permissions the stream itself requires (progress.py). Without
@@ -81,6 +75,11 @@
           <button class="btn-sidebar-settings" data-perm="MANAGE_SETTINGS" data-action="settings:open">
             <i class="ti ti-settings" style="font-size:15px;flex-shrink:0"></i>
             <span data-i18n="nav.settings">Impostazioni</span>
+          </button>
+          <button class="btn-sidebar-settings btn-sidebar-help" data-perm="REQUEST|DOWNLOAD"
+                  data-action="nav" data-page="help">
+            <i class="ti ti-help-circle" style="font-size:15px;flex-shrink:0"></i>
+            <span data-i18n="help.title">Come si usa?</span>
           </button>
           <span id="app-version" class="sidebar-version" title="Versione del pannello">SC Panel v{{ app_version }}</span>
           <button id="update-badge" class="badge bg-yellow border-0 mt-1" style="display:none;cursor:pointer"
