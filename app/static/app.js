@@ -223,7 +223,7 @@ function closeMobileMenu() {
 function showPage(page, params = null) {
   closeMobileMenu();
   if (params) PAGE_HASH[page]?.apply?.(params);
-  ['search','archive','downloads','files','requests','my-requests','detail','settings'].forEach(p => {
+  ['search','archive','help','downloads','files','requests','my-requests','detail','settings'].forEach(p => {
     const el = document.getElementById(`page-${p}`);
     if (el) el.style.display = p === page ? '' : 'none';
   });
@@ -240,6 +240,7 @@ function showPage(page, params = null) {
   _routePage = page;
   if (page === 'search') searchPageEnter();
   if (page === 'archive') archivePageEnter();
+  if (page === 'help') helpPageEnter();
   if (page === 'downloads') refreshJobs();
   if (page === 'files') loadFiles();
   if (page === 'requests') loadRequestQueue();
