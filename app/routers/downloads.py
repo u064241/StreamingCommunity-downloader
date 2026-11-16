@@ -75,13 +75,17 @@ class AnimeUnityRequest(BaseModel):
 class LA7DownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["la7"] = "la7"
-    url: str = Field(min_length=1, max_length=2048)
+    url: str = Field(default="", max_length=2048)
     title: str = Field(min_length=1, max_length=300)
-    scope: Literal["single"] = "single"
+    scope: Literal["single", "season", "series"] = "single"
+    external_id: str | None = Field(default=None, max_length=300)
+    season_number: int | None = Field(default=None, ge=1, le=999)
 
     @field_validator("url")
     @classmethod
     def official_episode_url(cls, value):
+        if not value:
+            return value
         from app.core.la7 import validate_episode_url
         validate_episode_url(value)
         return value
@@ -99,9 +103,44 @@ def download_la7(body: LA7DownloadRequest, http_request: HttpRequest,
                  registry: ProviderRegistry = Depends(get_registry)):
     if not registry.is_downloadable("la7"):
         raise HTTPException(status_code=422, detail="Download LA7 non disponibile")
-    job_id = job_manager.submit_la7(body.url, body.title,
-                                   user_id=_acting_user_id(http_request))
-    return {"job_id": job_id, "status": "queued", "scope": "single"}
+    user_id = _acting_user_id(http_request)
+    if body.scope == "single":
+        if not body.url:
+            raise HTTPException(422, "Per una puntata LA7 serve il link ufficiale")
+        job_id = job_manager.submit_la7(body.url, body.title, user_id=user_id)
+        return {"job_id": job_id, "status": "queued", "scope": "single"}
+    if not body.external_id:
+        raise HTTPException(422, "Per una serie LA7 serve l'identificativo del titolo")
+    provider = registry.get("la7")
+    try:
+        details = provider.details(body.external_id)
+        if details.ref.media_type != "tv":
+            raise HTTPException(422, "Il titolo LA7 non è una serie")
+        if body.scope == "season" and body.season_number is None:
+            raise HTTPException(422, "Specificare la stagione LA7")
+        seasons = [s["number"] for s in details.seasons]
+        if body.scope == "season":
+            seasons = [s for s in seasons if s == body.season_number]
+        if not seasons:
+            raise HTTPException(409, "Nessuna stagione LA7 disponibile")
+        episodes = []
+        for season in seasons:
+            episodes.extend(provider.episodes(body.external_id, season_number=season))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"Impossibile elencare gli episodi LA7: {exc}") from exc
+    if not episodes:
+        raise HTTPException(409, "Nessun episodio LA7 disponibile")
+    batch_id = str(uuid.uuid4())
+    jobs = []
+    for ep in episodes[:MAX_BATCH_JOBS]:
+        jobs.append(job_manager.submit_la7(ep["page_url"],
+                     f"{body.title} S{ep['season']:02d}E{ep['n']}", user_id=user_id,
+                     batch_id=batch_id, batch_kind=body.scope,
+                     batch_label=body.title))
+    return {"job_id": batch_id, "job_ids": jobs, "status": "queued",
+            "scope": body.scope, "count": len(jobs)}
 
 
 class RaiPlayDownloadRequest(BaseModel):

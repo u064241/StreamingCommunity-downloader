@@ -185,6 +185,7 @@ async function _tpLoadMetadataOnly(token) {
     _tp.name = card.name || _tp.name;
     if (['movie', 'tv'].includes(card.type)) _tp.type = card.type;
     _tp.raiDownloadable = card.downloadable === true;
+    _tp.downloadable = card.downloadable !== false;
     _tp.plot = card.description || _tp.plot;
     _tp.genres = Array.isArray(card.genres) && card.genres.length ? card.genres : _tp.genres;
     _tp.poster = card.poster || _tp.poster;
@@ -205,7 +206,10 @@ async function _tpLoadMetadataOnly(token) {
     _tp.metadataError = e.message || t('title.sourceUnavailable');
   }
   if (token !== _tpToken) return;
-  if (_tp.source === 'raiplay' && _tp.type === 'tv' && _tp.seasonPaths?.length) {
+  if (_tp.source === 'la7' && _tp.type === 'tv' && _tp.seasonsCount) {
+    _tpRender();
+    await tpLoadLa7Season(_tp.season, token);
+  } else if (_tp.source === 'raiplay' && _tp.type === 'tv' && _tp.seasonPaths?.length) {
     _tpRender();
     await tpLoadRaiSeason(_tp.season, token);
   } else {
@@ -244,6 +248,7 @@ function _tpSeasons() {
 
 async function tpLoadSeason(n, token = _tpToken) {
   if (_tp.source === 'raiplay') return tpLoadRaiSeason(n, token);
+  if (_tp.source === 'la7') return tpLoadLa7Season(n, token);
   if (_tp.comingSoon) { _tp.episodes = []; _tpRenderEpisodes(); return; }
   _tp.season = n;
   syncHash('detail');
@@ -467,14 +472,17 @@ function _tpRenderHero() {
 function _tpRenderCta() {
   if (_tp.metadataOnly) {
     const reason = _tp.downloadDisabledReason || TP_NOT_DOWNLOADABLE;
-    const canRaiDownload = _tp.source === 'raiplay' && _tp.raiDownloadable && can('DOWNLOAD')
+    const canCatalogueDownload = ((_tp.source === 'raiplay' && _tp.raiDownloadable)
+      || (_tp.source === 'la7' && _tp.downloadable !== false)) && can('DOWNLOAD')
       && typeof _tp.pageUrl === 'string' && !_tp.raiQueueBusy;
-    const link = typeof _tp.pageUrl === 'string' && _tp.pageUrl.startsWith('https://www.raiplay.it/')
+    const canDownload = canCatalogueDownload && (_tp.source !== 'la7' || _tp.type === 'movie' || _tp.seasonsCount > 0);
+    const linkHost = _tp.source === 'la7' ? 'la7play.it' : 'raiplay.it';
+    const link = typeof _tp.pageUrl === 'string' && _tp.pageUrl.includes(linkHost)
       ? `<a class="btn btn-outline-secondary" href="${escapeHtml(_tp.pageUrl)}" target="_blank" rel="noopener noreferrer">
-           <i class="ti ti-external-link me-1"></i>RaiPlay</a>` : '';
+           <i class="ti ti-external-link me-1"></i>${_tp.source === 'la7' ? 'LA7 Play' : 'RaiPlay'}</a>` : '';
     document.getElementById('th-cta').innerHTML = `
-      <button class="btn btn-primary" type="button" data-action="tp:primary" ${canRaiDownload ? '' : 'disabled aria-disabled="true"'} title="${escapeHtml(canRaiDownload ? 'yt-dlp verifica il DRM prima del download' : reason)}">
-        <i class="ti ti-download${canRaiDownload ? '' : '-off'} me-1"></i>${escapeHtml(_tp.raiQueueBusy ? t('title.raiPreparing') : t('title.download') + (_tp.type === 'tv' ? t('title.scopeSeries') : ''))}
+      <button class="btn btn-primary" type="button" data-action="tp:primary" ${canDownload ? '' : 'disabled aria-disabled="true"'} title="${escapeHtml(canDownload ? '' : reason)}">
+        <i class="ti ti-download${canDownload ? '' : '-off'} me-1"></i>${escapeHtml(_tp.raiQueueBusy ? t('title.raiPreparing') : t('title.download') + (_tp.type === 'tv' ? t('title.scopeSeries') : ''))}
       </button>
       ${_tp.source === 'raiplay' ? '' : `<span class="small text-muted ms-2">${escapeHtml(reason)}</span>`}
       ${link}`;
@@ -640,7 +648,7 @@ function tpPlayTrailer() {
 
 function _tpRenderEpisodes() {
   const el = document.getElementById('th-pane-episodes');
-  if (!el || _tp.type === 'movie' || (_tp.metadataOnly && _tp.source !== 'raiplay')) { if (el) el.innerHTML = ''; return; }
+  if (!el || _tp.type === 'movie' || (_tp.metadataOnly && !['raiplay', 'la7'].includes(_tp.source))) { if (el) el.innerHTML = ''; return; }
   if (_tp.comingSoon) { el.textContent = t('title.episodesUnavailable'); return; }
 
   const seasonSelect = _tp.source === 'raiplay' && _tp.seasonPaths?.length > 1
@@ -715,7 +723,7 @@ function _tpRenderEpisodes() {
         </div>
         ${dur}${owned}
         <button class="btn btn-sm ${wants ? 'btn-outline-primary' : 'btn-primary'} th-ep-action"
-                data-action="${_tp.source === 'raiplay' ? 'tp:raiEpisode' : 'tp:episode'}" data-index="${i}">
+                data-action="${['raiplay', 'la7'].includes(_tp.source) ? `tp:${_tp.source}Episode` : 'tp:episode'}" data-index="${i}">
           <i class="ti ${wants ? 'ti-send' : 'ti-download'} me-1"></i>${wants ? t('title.request') : t('title.download')}
         </button>
       </div>`;
@@ -738,6 +746,41 @@ async function startRaiEpisodeDownload(index) {
       title: _tp.name, year: _tp.year, external_id: String(_tp.id),
       season_number: Number(ep.season), episode_number: String(ep.n)});
     showToast(t('title.started', {title: ep.name || _tp.name}), 'success', DOWNLOADS_LINK);
+  } catch (e) { showToast(errText(e), 'danger'); }
+}
+
+async function startLa7EpisodeDownload(index) {
+  const ep = _tp.episodes?.[index];
+  if (!ep?.page_url || !can('DOWNLOAD')) return showToast('Serve il permesso Download per LA7', 'warning');
+  try {
+    await api.post('/api/download/la7', {source: 'la7', scope: 'single', url: ep.page_url,
+      title: `${_tp.name} S${String(ep.season).padStart(2, '0')}E${ep.n}`});
+    showToast(t('title.started', {title: ep.name || _tp.name}), 'success', DOWNLOADS_LINK);
+  } catch (e) { showToast(errText(e), 'danger'); }
+}
+
+async function tpLoadLa7Season(number, token = _tpToken) {
+  const season = Number(number);
+  if (!_tp?.seasonNumbers?.includes(season)) return;
+  _tp.season = season; _tp.episodes = null; _tpRenderEpisodes();
+  try {
+    const rows = await api.get(`/api/titles/la7/${encodeURIComponent(String(_tp.id))}/episodes`, {season_number: season});
+    if (token !== _tpToken) return;
+    _tp.episodes = rows || [];
+  } catch (e) {
+    if (token !== _tpToken) return;
+    _tp.episodes = []; _tp.episodesError = e.message || t('title.sourceUnavailable');
+  }
+  if (token === _tpToken) { _tpRenderEpisodes(); _tpRenderHero(); }
+}
+
+async function tpQueueLa7(scope, season = null) {
+  if (!_tp || !can('DOWNLOAD') || !_tp.downloadable) return;
+  try {
+    const result = await api.post('/api/download/la7', {source: 'la7', scope,
+      url: _tp.pageUrl || '', external_id: String(_tp.id), title: _tp.name,
+      season_number: season});
+    showToast(t('title.raiQueued', {count: result.count || 0}), 'success', DOWNLOADS_LINK);
   } catch (e) { showToast(errText(e), 'danger'); }
 }
 
@@ -797,6 +840,7 @@ function tpPrimary() {
   // refuses it with 422 as well).
   if (!_tp || _tp.comingSoon) return;
   if (_tp.source === 'raiplay') return tpQueueRai(_tp.type === 'movie' ? 'film' : 'series');
+  if (_tp.source === 'la7') return tpQueueLa7(_tp.type === 'movie' ? 'single' : 'series', _tp.season);
   if (_tp.metadataOnly) {
     return;
   }
@@ -1140,6 +1184,7 @@ registerActions({
   'tp:batchAnime':    () => downloadAllAnime(),
   'tp:episode':       d => (_tp.type === 'anime' ? startAnimeDownload : startEpisodeDownload)(Number(d.index)),
   'tp:raiEpisode':    d => startRaiEpisodeDownload(Number(d.index)),
+  'tp:la7Episode':    d => startLa7EpisodeDownload(Number(d.index)),
   'tp:person':        d => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${d.person} ${t('title.actorQuery')}`)}`, '_blank', 'noopener,noreferrer'),
 });
 

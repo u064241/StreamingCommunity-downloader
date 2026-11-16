@@ -1253,12 +1253,16 @@ class JobManager:
             source=job.source,
         )
 
-    def submit_la7(self, url: str, title: str, user_id: int = None) -> str:
+    def submit_la7(self, url: str, title: str, user_id: int = None, *,
+                   batch_id: str = None, batch_kind: str = None,
+                   batch_label: str = None) -> str:
         from app.core.la7 import download, validate_episode_url
 
         external_id = validate_episode_url(url)
         job = self._make_job(title, "la7", source="la7", external_id=external_id,
-                             phases=["downloading"], user_id=user_id, media_label=title)
+                             phases=["downloading"], user_id=user_id, media_label=title,
+                             batch_id=batch_id, batch_kind=batch_kind,
+                             batch_label=batch_label)
         return self._submit_job(
             job, download, url, title, _get_library_path("film"),
             temp_dir=str(TMP_DIR / job.job_id),
