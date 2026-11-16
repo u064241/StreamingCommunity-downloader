@@ -1,0 +1,18 @@
+{
+  "props": {
+    "related": {
+      "id": "111111",
+      "title": "Contenuto correlato",
+      "drm": true,
+      "uploadVideo": {"cf_remote_url": "/nk/content/related.mp4"}
+    },
+    "episode": {
+      "id": "399460",
+      "title": "Puntata di prova & ospiti",
+      "drm": false,
+      "uploadVideo": {
+        "cf_remote_url": "/nk/content/entry/data/0/408/test_720.mp4,/nk/content/entry/data/0/408/test_sd.mp4"
+      }
+    }
+  }
+}

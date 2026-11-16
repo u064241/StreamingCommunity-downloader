@@ -16,11 +16,11 @@ const HELP_SECTIONS = [
 ];
 
 function helpMock(kind, icon) {
-  if (kind === 'search') return `<div class="help-mock"><span class="help-pill">StreamingCommunity</span><span class="help-input">Film, serie TV...</span><span class="help-button">${escapeHtml(t('search.button'))}</span></div>`;
-  if (kind === 'download') return `<div class="help-mock"><span class="help-thumb"></span><span class="help-lines"></span><i class="ti ti-download help-download"></i></div>`;
-  if (kind === 'queue') return `<div class="help-mock help-queue"><b>S01E01</b><span>${escapeHtml(t('downloads.running'))}</span><i class="ti ti-circle-check help-queue-ok"></i></div>`;
+  if (kind === 'search') return `<div class="help-mock help-search-demo"><span class="help-pill">StreamingCommunity</span><span class="help-input">Film, serie TV...</span><span class="help-button">${escapeHtml(t('search.button'))}</span><div class="help-demo-cards"><span></span><span></span><span></span></div></div>`;
+  if (kind === 'download') return `<div class="help-mock help-download-demo"><span class="help-thumb"></span><span class="help-lines"></span><span class="help-action"><i class="ti ti-download"></i></span><span class="help-action help-action-muted"><i class="ti ti-check"></i></span></div>`;
+  if (kind === 'queue') return `<div class="help-mock help-queue"><b>S01E01</b><span>${escapeHtml(t('downloads.running'))}</span><span class="help-progress"><i></i></span><i class="ti ti-circle-check help-queue-ok"></i></div>`;
   if (kind === 'settings') return `<div class="help-mock"><i class="ti ${icon}"></i><span class="help-setting">${escapeHtml(t('nav.settings'))}</span><span class="help-select">FFmpeg · Profilo sorgente</span></div>`;
-  if (kind === 'seasons') return `<div class="help-mock"><span class="help-select">${escapeHtml(t('title.season', {season: 1}))}</span><i class="ti ti-chevron-down"></i><i class="ti ti-chevron-right help-download"></i></div>`;
+  if (kind === 'seasons') return `<div class="help-mock help-season-demo"><span class="help-select">${escapeHtml(t('title.season', {season: 1}))}</span><i class="ti ti-chevron-down"></i><span class="help-episode">S01E01</span><span class="help-episode">S01E02</span><i class="ti ti-chevron-right help-download"></i></div>`;
   return `<div class="help-mock"><i class="ti ${icon} help-download"></i><span class="help-lines"></span></div>`;
 }
 

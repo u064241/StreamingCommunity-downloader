@@ -245,6 +245,7 @@ def acquire(what: str = "") -> None:
         if reason == "backoff":
             raise SourceUnavailable("backoff", _backoff_until)
         if reason == "budget":
+            cap = limit()
             refill = _sent[0] + WINDOW if _sent else None
             if not _budget_warned:
                 _budget_warned = True

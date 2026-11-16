@@ -1607,18 +1607,20 @@
  .help-card h3 { font-size: 1.05rem; color: #eaf2ff; }
  .help-card h3 i { color: #68c8ed; margin-right: .35rem; }
  .help-card p { color: var(--text-muted); min-height: 3.4rem; }
- .help-mock { display: flex; gap: .55rem; align-items: center; min-height: 52px; padding: .7rem; border-radius: .55rem; background: #0e1625; border: 1px solid #304463; color: #dfeaff; }
+ .help-mock { display: flex; gap: .55rem; align-items: center; min-height: 52px; padding: .7rem; border-radius: .55rem; background: #0e1625; border: 1px solid #304463; color: #dfeaff; position: relative; overflow: hidden; }
  .help-pill, .help-select { padding: .35rem .55rem; border-radius: .35rem; background: #263f66; font-size: .78rem; }
  .help-input { flex: 1; color: #8fa4c3; font-size: .82rem; }
  .help-button { padding: .35rem .65rem; border-radius: .35rem; background: #147fbd; color: #fff; font-weight: 600; }
  .help-thumb { width: 58px; height: 34px; border-radius: .3rem; background: linear-gradient(135deg,#28456d,#8c4764); }
  .help-lines { flex: 1; height: 28px; background: linear-gradient(#6f86a8 25%,transparent 25% 48%,#405474 48% 70%,transparent 70%); }
  .help-download { color: #73d5f0; font-size: 1.6rem; }
- .help-queue { justify-content: space-between; font-size: .84rem; }
+ .help-queue { justify-content: space-between; font-size: .84rem; flex-wrap: wrap; }.help-progress { flex: 1 1 100%; height: 4px; background: #263b58; border-radius: 99px; overflow: hidden; }.help-progress i { display:block; width:62%; height:100%; background:#55c7ed; animation: help-progress 2.8s ease-in-out infinite alternate; }.help-queue-ok { color: #65d69d; font-size: 1.3rem; }.help-action { color:#72d6f5; font-size:1.25rem; }.help-action-muted { color:#6ee0a5; }.help-episode { padding:.25rem .4rem; border-radius:.3rem; background:#263f66; font-size:.72rem; }.help-demo-cards { position:absolute; left:.7rem; right:.7rem; bottom:.35rem; display:flex; gap:.3rem; }.help-demo-cards span { height:3px; flex:1; border-radius:99px; background:#3f6d9d; }.help-demo-cards span:nth-child(2) { background:#70d8f1; }.help-season-demo { flex-wrap:wrap; }.help-season-demo .help-select { margin-right:0; }
  .help-queue b { color: #7bcaf0; letter-spacing: .12rem; }.help-queue .ok { color: #65d69d; font-size: 1.3rem; }
  .help-setting { color: #a7b9d2; font-size: .78rem; }.help-select { margin-right: auto; }
  .help-source-note { display:flex; gap:.7rem; align-items:flex-start; padding:1rem 1.1rem; border:1px solid #b58a32; border-left:4px solid #e1ad3c; border-radius:.55rem; color:#fff3c4; background:#3c2d12; }
  .help-source-note i { color:#ffd66b; font-size:1.35rem; flex:0 0 auto; }.help-source-note strong { display:block; color:#ffe29a; margin-bottom:.2rem; }
+ @keyframes help-progress { from { width:34%; } to { width:78%; } }
+ @media (prefers-reduced-motion: reduce) { .help-progress i { animation:none; width:62%; } }
 
 /* Final text pass: component rules loaded before this file must not turn a
    coloured action into low-contrast grey text. */

@@ -21,7 +21,14 @@ class ProviderRegistry:
     def get(self, source: str):
         try: return self._providers[source]
         except KeyError as exc: raise ProviderError(source, ProviderErrorCode.UNKNOWN_PROVIDER, f"Unknown provider: {source}") from exc
-    def sources(self): return tuple(self._providers)
+    def sources(self, *, include_direct: bool = False):
+        """List catalogues, optionally including direct-URL-only engines.
+
+        Existing catalogue consumers must not attempt search/home on LA7.
+        Direct engines remain addressable by get() and is_downloadable().
+        """
+        return tuple(source for source, provider in self._providers.items()
+                     if include_direct or provider.capabilities.search or provider.capabilities.home)
 
     def search(self, source: str, query: str, **filters) -> list[SearchResult]:
         provider = self.get(source)
@@ -84,17 +91,14 @@ class ProviderRegistry:
 
 
 def create_default_registry(*, include_metadata_sources: bool = True):
-    """The two download sources, plus the metadata-only catalogues.
-
-    ``include_metadata_sources`` (on by default) adds RaiPlay: search, home and
-    title cards only, ``download=False``, so the download and request entry
-    points refuse it (app/routers/_providers.require_downloadable_source).
-    """
+    """Register the download engines and optional additional catalogues."""
     from .adapters import AnimeUnityProvider, StreamingCommunityProvider
     registry = ProviderRegistry(); registry.register(StreamingCommunityProvider()); registry.register(AnimeUnityProvider())
     if include_metadata_sources:
         from .adapters import RaiPlayProvider
         registry.register(RaiPlayProvider())
+    from .la7 import LA7Provider
+    registry.register(LA7Provider())
     return registry
 
 

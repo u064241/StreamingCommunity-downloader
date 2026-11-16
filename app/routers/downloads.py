@@ -6,7 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request as HttpRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app import downloads_notify
 from app.auth.deps import current_user, is_local_user, require
@@ -70,6 +70,38 @@ class StreamingCommunityRequest(BaseModel):
 
 class AnimeUnityRequest(BaseModel):
     source: Literal["animeunity"] = "animeunity"
+
+
+class LA7DownloadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["la7"] = "la7"
+    url: str = Field(min_length=1, max_length=2048)
+    title: str = Field(min_length=1, max_length=300)
+    scope: Literal["single"] = "single"
+
+    @field_validator("url")
+    @classmethod
+    def official_episode_url(cls, value):
+        from app.core.la7 import validate_episode_url
+        validate_episode_url(value)
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def nonempty_title(cls, value):
+        if not value.strip():
+            raise ValueError("Il titolo LA7 non può essere vuoto")
+        return value.strip()
+
+
+@router.post("/la7", status_code=202, dependencies=CAN_DOWNLOAD)
+def download_la7(body: LA7DownloadRequest, http_request: HttpRequest,
+                 registry: ProviderRegistry = Depends(get_registry)):
+    if not registry.is_downloadable("la7"):
+        raise HTTPException(status_code=422, detail="Download LA7 non disponibile")
+    job_id = job_manager.submit_la7(body.url, body.title,
+                                   user_id=_acting_user_id(http_request))
+    return {"job_id": job_id, "status": "queued", "scope": "single"}
 
 
 class RaiPlayDownloadRequest(BaseModel):
