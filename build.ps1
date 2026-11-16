@@ -348,6 +348,9 @@ if getattr(sys, "frozen", False):
         '--collect-submodules', 'mcp.types',
         (Join-Path $ProjectRoot 'main.py')
     )
+    # PyInstaller 6.22 con --clean può rimuovere la workpath appena prima
+    # della scrittura del warning file; ricrearla evita il FileNotFoundError.
+    New-Item -ItemType Directory -Path (Join-Path $WorkDir 'pyinstaller') -Force | Out-Null
     & $venvPython -m PyInstaller @pyinstallerArgs
     if ($LASTEXITCODE -ne 0) { throw 'Build PyInstaller fallita.' }
 
