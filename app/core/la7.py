@@ -140,12 +140,16 @@ def page_values(page: str) -> list:
     return candidates
 
 
-def _episode_data(page: str, content_id: str) -> dict:
+def _episode_data(page: str, content_id: str, page_path: str | None = None) -> dict:
     candidates = page_values(page)
-    matches = [obj for value in candidates for obj in _objects(value)
-               if type(obj.get("id")) in (str, int)
-               and str(obj["id"]) == content_id
-               and ("drm" in obj or "uploadVideo" in obj)]
+    videos = [obj for value in candidates for obj in _objects(value)
+              if type(obj.get("id")) in (str, int) and str(obj["id"]).isdigit()
+              and ("drm" in obj or "uploadVideo" in obj)]
+    # Migrated LA7 URLs retain the old suffix, while their video node has a
+    # new id. Match the requested official path before the legacy suffix.
+    matches = [obj for obj in videos if page_path and obj.get("path") == page_path]
+    if not matches:
+        matches = [obj for obj in videos if not obj.get("path") and str(obj["id"]) == content_id]
     if not matches:
         raise LA7Error("Dati della puntata LA7 Play non trovati")
     if any(obj != matches[0] for obj in matches[1:]):
@@ -163,12 +167,15 @@ def _manifest_url(episode: dict) -> str:
         raise LA7Error("Percorso video LA7 Play non trovato")
     paths = remote.split(",")
     for path in paths:
-        if (not re.fullmatch(r"/nk/[A-Za-z0-9_./-]+\.mp4", path)
-                or any(part in (".", "..", "") for part in path[1:].split("/"))):
+        # Older, migrated assets use /content/ (sometimes //content/) rather
+        # than /nk/. These are CDN resource paths, never URL destinations.
+        if (not re.fullmatch(r"(?:/nk/|/{1,2}content/)[A-Za-z0-9_./-]+\.mp4", path)
+                or any(part in (".", "..", "") for part in path.lstrip("/").split("/"))):
             raise LA7Error("Percorso CDN LA7 Play non valido")
-    # Preserve the existing CDN route. Variants in the selected master remain
-    # available to the eventual download engine.
-    return f"{CDN_HOST}/local/hls/,{paths[0]}.urlset/master.m3u8"
+    # Preserve every rendition, using the same multi-resource syntax as LA7's
+    # player instead of silently discarding all but the first video file.
+    resources = paths[0] if len(paths) == 1 else ",".join(p[:-4] for p in paths) + ",.mp4"
+    return f"{CDN_HOST}/local/hls/,{resources}.urlset/master.m3u8"
 
 
 def _validate_manifest(url: str, http_get=None) -> dict[str, str]:
@@ -255,13 +262,13 @@ def validate_episode_url(url: str) -> str:
 def resolve_episode(url: str, *, http_get=None) -> dict:
     """Resolve an episode, fetching playlists but never media segments."""
     content_id = validate_episode_url(url)
-    episode = _episode_data(_fetch(url, PAGE_HOSTS, http_get), content_id)
+    episode = _episode_data(_fetch(url, PAGE_HOSTS, http_get), content_id, urlsplit(url).path)
     title = episode.get("title")
     if not isinstance(title, str) or not title.strip():
         raise LA7Error("Titolo della puntata LA7 Play non trovato")
     manifest = _manifest_url(episode)
     _validate_manifest(manifest, http_get)
-    return {"id": content_id, "title": title.strip(), "drm": False,
+    return {"id": str(episode["id"]), "title": title.strip(), "drm": False,
             "manifest": manifest, "page_url": url}
 
 

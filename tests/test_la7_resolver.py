@@ -12,7 +12,9 @@ from app.providers.la7 import LA7Provider
 FIXTURES = Path(__file__).parent / "fixtures" / "la7"
 URL = "https://www.la7play.it/programma/puntata-di-prova-399460"
 MANIFEST = (la7.CDN_HOST + "/local/hls/,/nk/content/entry/data/0/408/"
-            "test_720.mp4.urlset/master.m3u8")
+            "test_720,/nk/content/entry/data/0/408/test_sd,.mp4.urlset/master.m3u8")
+SINGLE_MANIFEST = (la7.CDN_HOST + "/local/hls/,/nk/content/entry/data/0/408/"
+                   "test_720.mp4.urlset/master.m3u8")
 
 
 class Response:
@@ -85,9 +87,11 @@ def test_resolve_episode_checks_metadata_and_all_variants(network):
 
 def test_flight_json_escapes_and_correlated_content(network):
     network.responses[URL] = Response((FIXTURES / "flight.html").read_text())
+    network.responses.update({key.replace(MANIFEST.rsplit("/", 1)[0], SINGLE_MANIFEST.rsplit("/", 1)[0]): value
+                              for key, value in list(network.responses.items()) if key.startswith(la7.CDN_HOST)})
     result = la7.resolve_episode(URL)
     assert result["title"] == 'Puntata "speciale" &amp; ospiti'
-    assert result["manifest"] == MANIFEST
+    assert result["manifest"] == SINGLE_MANIFEST
 
 
 def test_flight_record_split_across_chunks(network, payload):

@@ -134,9 +134,110 @@ test('late response from another source cannot paint LA7 catalogue', async () =>
   let finish;
   app.context.api.get = () => new Promise(resolve => { finish = resolve; });
   const pending = app.run('doSearch()');
+  const finishOld = finish;
+  app.context.api.get = async () => [];
   app.run("setSource('la7')");
-  finish([{id: 1, name: 'Old title', type: 'tv'}]);
+  finishOld([{id: 1, name: 'Old title', type: 'tv'}]);
   await pending;
-  assert.equal(app.element('search-results').innerHTML, '');
+  assert.doesNotMatch(app.element('search-results').innerHTML, /Old title/);
   assert.equal(app.context._searchResults.length, 0);
+});
+
+function createTitle() {
+  const app = create();
+  app.run(fs.readFileSync('app/static/page-title.js', 'utf8'));
+  app.run(`_tpRender = () => {}; _tpRenderEpisodes = () => {}; _tpRenderHero = () => {};
+    _tp = {source:'la7', metadataOnly:true, downloadable:true, type:'tv',
+      id:'serie', name:'Serie', pageUrl:'https://www.la7play.it/serie',
+      downloadScope:'series', seasonsCount:2, season:1, seasonNumbers:[1,2026], episodes:[]};`);
+  return app;
+}
+
+test('LA7 details expose episode tab, real seasons and an enabled download button', async () => {
+  const app = createTitle();
+  app.context.api.get = async (path, params) => {
+    app.calls.push({path, params});
+    return path.endsWith('/episodes') ? [{n:'2', season:2026}] : {
+      type:'tv', downloadable:true, download_scope:'series', page_url:'https://www.la7play.it/serie',
+      season_paths:[{name:'Stagione 2026', number:2026, path:'/serie/puntate'}],
+    };
+  };
+  await app.run('_tpLoadMetadataOnly(_tpToken)');
+  assert.equal(app.run('_tp.seasonsCount'), 1);
+  assert.equal(app.run('_tp.season'), 2026);
+  assert.equal(app.calls[1].params.season_number, 2026);
+  assert.equal(app.run('_tp.episodes[0].n'), '2');
+  assert.equal(app.run('_tpTabs()[0][0]'), 'episodes');
+  app.run('_tpRenderCta()');
+  assert.doesNotMatch(app.element('th-cta').innerHTML, /disabled|Contenuto non scaricabile/);
+});
+
+test('catalogue replica is a single video even when its media type is tv', async () => {
+  const app = createTitle();
+  app.context.api.get = async () => ({type:'tv', downloadable:true, download_scope:'single',
+    page_url:'https://www.la7play.it/tgla7/edizione-399613', season_paths:[]});
+  await app.run('_tpLoadMetadataOnly(_tpToken)');
+  app.run('_tpRenderCta()');
+  assert.doesNotMatch(app.element('th-cta').innerHTML, /disabled|scopeSeries|non scaricabile/);
+  assert.equal(app.run('_tpTabs()[0][0]'), 'about');
+  await app.actions['tp:primary']();
+  const request = app.calls.at(-1);
+  assert.equal(request.body.scope, 'single');
+  assert.equal(request.body.url, 'https://www.la7play.it/tgla7/edizione-399613');
+  assert.equal(request.body.season_number, null);
+});
+
+test('LA7 series and season actions reach their own batch endpoint', async () => {
+  const app = createTitle();
+  await app.actions['tp:primary']();
+  await app.actions['tp:batchSeason']({season:'2026'});
+  assert.deepEqual(app.calls.map(c => c.body.scope), ['series','season']);
+  assert.equal(app.calls[1].body.season_number, 2026);
+  assert.ok(app.calls.every(c => c.path === '/api/download/la7' && c.body.url === ''));
+});
+
+test('protected LA7 film explains DRM and cannot be queued', async () => {
+  const app = createTitle();
+  app.run("_tp.type='movie'; _tp.downloadScope='single'; _tp.downloadable=false; _tp.downloadDisabledReason='Contenuto LA7 protetto da DRM'");
+  app.run('_tpRenderCta()');
+  assert.match(app.element('th-cta').innerHTML, /disabled[^]*DRM/);
+  await app.actions['tp:primary']();
+  assert.equal(app.calls.length, 0);
+});
+
+test('LA7 batch suppresses double clicks and restores the button after error', async () => {
+  const app = createTitle();
+  let fail;
+  app.context.api.post = (path, body) => {
+    app.calls.push({path, body}); return new Promise((_, reject) => {fail = reject;});
+  };
+  const pending = app.actions['tp:primary']();
+  await app.actions['tp:primary']();
+  assert.equal(app.calls.length, 1);
+  assert.match(app.element('th-cta').innerHTML, /disabled/);
+  fail(new Error('LA7 unavailable')); await pending;
+  assert.equal(app.run('_tp.raiQueueBusy'), false);
+  assert.doesNotMatch(app.element('th-cta').innerHTML, /disabled/);
+  assert.equal(app.toasts.at(-1)[1], 'danger');
+});
+
+test('older LA7 season response cannot replace the last selection', async () => {
+  const app = createTitle();
+  const pending = {};
+  app.context.api.get = (path, params) => new Promise(resolve => {pending[params.season_number] = resolve;});
+  const first = app.run('tpLoadLa7Season(1)');
+  const latest = app.run('tpLoadLa7Season(2026)');
+  pending[2026]([{n:'16', season:2026}]); await latest;
+  pending[1]([{n:'1', season:1}]); await first;
+  assert.equal(app.run('_tp.season'), 2026);
+  assert.equal(app.run('_tp.episodes[0].season'), 2026);
+});
+
+test('LA7 episode action preserves its page URL and numbering', async () => {
+  const app = createTitle();
+  app.run("_tp.episodes=[{n:'16',season:2026,page_url:'https://www.la7play.it/tgla7/edizione-399613'}]");
+  await app.actions['tp:la7Episode']({index:'0'});
+  assert.equal(app.calls[0].body.scope, 'single');
+  assert.equal(app.calls[0].body.title, 'Serie S2026E16');
+  assert.equal(app.calls[0].body.url, 'https://www.la7play.it/tgla7/edizione-399613');
 });

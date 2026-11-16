@@ -187,6 +187,7 @@ async function _tpLoadMetadataOnly(token) {
     if (['movie', 'tv'].includes(card.type)) _tp.type = card.type;
     _tp.raiDownloadable = card.downloadable === true;
     _tp.downloadable = card.downloadable !== false;
+    _tp.downloadScope = card.download_scope || (_tp.type === 'movie' ? 'single' : 'series');
     _tp.plot = card.description || _tp.plot;
     _tp.genres = Array.isArray(card.genres) && card.genres.length ? card.genres : _tp.genres;
     _tp.poster = card.poster || _tp.poster;
@@ -351,10 +352,10 @@ function tpSelectTracks(which, enabled) {
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 function _tpTabs() {
-  if (_tp.source === 'raiplay') return _tp.type === 'tv'
+  if (['raiplay', 'la7'].includes(_tp.source)) return _tp.type === 'tv' && _tp.downloadScope !== 'single'
     ? [['episodes', t('title.episodes')], ['about', t('title.about')]]
     : [['about', t('title.about')]];
-  if (_tp.metadataOnly && !(_tp.source === 'raiplay' && _tp.type === 'tv')) return [['about', t('title.about')]];
+  if (_tp.metadataOnly) return [['about', t('title.about')]];
   const tabs = [];
   if (_tp.type !== 'movie') tabs.push(['episodes', t('title.episodes')]);
   tabs.push(['about', t('title.about')]);
@@ -476,16 +477,17 @@ function _tpRenderCta() {
     const canCatalogueDownload = ((_tp.source === 'raiplay' && _tp.raiDownloadable)
       || (_tp.source === 'la7' && _tp.downloadable !== false)) && can('DOWNLOAD')
       && typeof _tp.pageUrl === 'string' && !_tp.raiQueueBusy;
-    const canDownload = canCatalogueDownload && (_tp.source !== 'la7' || _tp.type === 'movie' || _tp.seasonsCount > 0);
+    const isSingle = _tp.type === 'movie' || _tp.downloadScope === 'single';
+    const canDownload = canCatalogueDownload && (_tp.source !== 'la7' || isSingle || _tp.seasonsCount > 0);
     const linkHost = _tp.source === 'la7' ? 'la7play.it' : 'raiplay.it';
     const link = typeof _tp.pageUrl === 'string' && _tp.pageUrl.includes(linkHost)
       ? `<a class="btn btn-outline-secondary" href="${escapeHtml(_tp.pageUrl)}" target="_blank" rel="noopener noreferrer">
            <i class="ti ti-external-link me-1"></i>${_tp.source === 'la7' ? 'LA7 Play' : 'RaiPlay'}</a>` : '';
     document.getElementById('th-cta').innerHTML = `
       <button class="btn btn-primary" type="button" data-action="tp:primary" ${canDownload ? '' : 'disabled aria-disabled="true"'} title="${escapeHtml(canDownload ? '' : reason)}">
-        <i class="ti ti-download${canDownload ? '' : '-off'} me-1"></i>${escapeHtml(_tp.raiQueueBusy ? t('title.raiPreparing') : t('title.download') + (_tp.type === 'tv' ? t('title.scopeSeries') : ''))}
+        <i class="ti ti-download${canDownload ? '' : '-off'} me-1"></i>${escapeHtml(_tp.raiQueueBusy ? t('title.raiPreparing') : t('title.download') + (!isSingle ? t('title.scopeSeries') : ''))}
       </button>
-      ${_tp.source === 'raiplay' ? '' : `<span class="small text-muted ms-2">${escapeHtml(reason)}</span>`}
+      ${_tp.source === 'la7' && _tp.downloadable === false ? `<span class="small text-muted ms-2">${escapeHtml(reason)}</span>` : ''}
       ${link}`;
     return;
   }
@@ -665,7 +667,7 @@ function _tpRenderEpisodes() {
       // its episodes arrive flagged in_library. For anime the server decides.
       const owned = _tp.type === 'tv' ? _tp.episodes.filter(e => e.in_library).length : 0;
       const ownedHint = owned ? ` <span class="th-only-missing-n">${t('title.owned', {count: owned})}</span>` : '';
-      batch = (_tp.source === 'raiplay' ? '' : `<label class="form-check form-switch th-only-missing"
+      batch = (['raiplay', 'la7'].includes(_tp.source) ? '' : `<label class="form-check form-switch th-only-missing"
                       title="${escapeHtml(t('title.skipHint'))}">
             <input class="form-check-input" type="checkbox" data-change="tp:onlyMissing"
                    ${_tp.onlyMissing ? 'checked' : ''}>
@@ -763,26 +765,33 @@ async function startLa7EpisodeDownload(index) {
 async function tpLoadLa7Season(number, token = _tpToken) {
   const season = Number(number);
   if (!_tp?.seasonNumbers?.includes(season)) return;
-  _tp.season = season; _tp.episodes = null; _tpRenderEpisodes();
+  const state = _tp;
+  const request = (state.la7SeasonRequest || 0) + 1;
+  state.la7SeasonRequest = request;
+  _tp.season = season; _tp.episodes = null; _tp.episodesError = null;
+  syncHash('detail'); _tpRenderEpisodes();
   try {
     const rows = await api.get(`/api/titles/la7/${encodeURIComponent(String(_tp.id))}/episodes`, {season_number: season});
-    if (token !== _tpToken) return;
+    if (token !== _tpToken || state !== _tp || request !== state.la7SeasonRequest) return;
     _tp.episodes = rows || [];
   } catch (e) {
-    if (token !== _tpToken) return;
+    if (token !== _tpToken || state !== _tp || request !== state.la7SeasonRequest) return;
     _tp.episodes = []; _tp.episodesError = e.message || t('title.sourceUnavailable');
   }
   if (token === _tpToken) { _tpRenderEpisodes(); _tpRenderHero(); }
 }
 
 async function tpQueueLa7(scope, season = null) {
-  if (!_tp || !can('DOWNLOAD') || !_tp.downloadable) return;
+  if (!_tp || !can('DOWNLOAD') || !_tp.downloadable || _tp.raiQueueBusy) return;
+  const state = _tp;
+  state.raiQueueBusy = true; _tpRenderCta();
   try {
     const result = await api.post('/api/download/la7', {source: 'la7', scope,
-      url: _tp.pageUrl || '', external_id: String(_tp.id), title: _tp.name,
-      season_number: season});
-    showToast(t('title.raiQueued', {count: result.count || 0}), 'success', DOWNLOADS_LINK);
+      url: scope === 'single' ? state.pageUrl : '', external_id: String(state.id), title: state.name,
+      season_number: scope === 'season' ? season : null});
+    showToast(t('title.raiQueued', {count: result.count || (result.job_id ? 1 : 0)}), 'success', DOWNLOADS_LINK);
   } catch (e) { showToast(errText(e), 'danger'); }
+  finally { state.raiQueueBusy = false; if (_tp === state) _tpRenderCta(); }
 }
 
 async function tpLoadRaiSeason(number, token = _tpToken) {
@@ -841,7 +850,7 @@ function tpPrimary() {
   // refuses it with 422 as well).
   if (!_tp || _tp.comingSoon) return;
   if (_tp.source === 'raiplay') return tpQueueRai(_tp.type === 'movie' ? 'film' : 'series');
-  if (_tp.source === 'la7') return tpQueueLa7(_tp.type === 'movie' ? 'single' : 'series', _tp.season);
+  if (_tp.source === 'la7') return tpQueueLa7(_tp.type === 'movie' || _tp.downloadScope === 'single' ? 'single' : 'series');
   if (_tp.metadataOnly) {
     return;
   }
@@ -1066,6 +1075,7 @@ function _skipNote() { return _onlyMissing() ? t('title.skipNote') : ''; }
 
 async function downloadWholeSeason(season) {
   if (_tp.source === 'raiplay') return tpQueueRai('season', Number(season));
+  if (_tp.source === 'la7') return tpQueueLa7('season', Number(season));
   const { tvId, slug, tvName, year, episodes, scheduledAt, audioLangs, subLangs } = _epCtx;
   const label = scheduledAt ? t('title.planAction') : t('title.queueAction');
   // The episode list says which are already there, so the question can name

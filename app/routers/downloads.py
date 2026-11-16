@@ -6,7 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request as HttpRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app import downloads_notify
 from app.auth.deps import current_user, is_local_user, require
@@ -78,17 +78,38 @@ class LA7DownloadRequest(BaseModel):
     url: str = Field(default="", max_length=2048)
     title: str = Field(min_length=1, max_length=300)
     scope: Literal["single", "season", "series"] = "single"
-    external_id: str | None = Field(default=None, max_length=300)
-    season_number: int | None = Field(default=None, ge=1, le=999)
+    external_id: str | None = Field(default=None, min_length=1, max_length=400)
+    season_number: int | None = Field(default=None, ge=1, le=9999)
 
     @field_validator("url")
     @classmethod
-    def official_episode_url(cls, value):
+    def official_page_url(cls, value):
         if not value:
             return value
-        from app.core.la7 import validate_episode_url
-        validate_episode_url(value)
+        from app.core.la7 import _validate_url
+        from app.providers.la7.parser import path_for_id
+        from urllib.parse import urlsplit
+        _validate_url(value)
+        parts = urlsplit(value)
+        path_for_id(parts.path)
+        if parts.query:
+            raise ValueError("URL LA7 non valido")
         return value
+
+    @field_validator("external_id")
+    @classmethod
+    def official_page_identity(cls, value):
+        if value is not None:
+            from app.providers.la7.parser import path_for_id
+            return path_for_id(value).lstrip("/")
+        return value
+
+    @model_validator(mode="after")
+    def single_video_url(self):
+        if self.scope == "single" and self.url:
+            from app.core.la7 import validate_episode_url
+            validate_episode_url(self.url)
+        return self
 
     @field_validator("title")
     @classmethod
@@ -114,8 +135,10 @@ def download_la7(body: LA7DownloadRequest, http_request: HttpRequest,
     provider = registry.get("la7")
     try:
         details = provider.details(body.external_id)
-        if details.ref.media_type != "tv":
+        if details.ref.media_type != "tv" or details.extra.get("download_scope") == "single":
             raise HTTPException(422, "Il titolo LA7 non è una serie")
+        if not details.downloadable:
+            raise HTTPException(409, details.download_disabled_reason)
         if body.scope == "season" and body.season_number is None:
             raise HTTPException(422, "Specificare la stagione LA7")
         seasons = [s["number"] for s in details.seasons]
@@ -130,11 +153,28 @@ def download_la7(body: LA7DownloadRequest, http_request: HttpRequest,
         raise
     except Exception as exc:
         raise HTTPException(502, f"Impossibile elencare gli episodi LA7: {exc}") from exc
-    if not episodes:
+    # Validate the entire plan before submitting any jobs, and deduplicate by
+    # official page identity (different editions can share an episode number).
+    from app.core.la7 import validate_episode_url
+    planned = {}
+    for ep in episodes:
+        if ep.get("drm") is True or ep.get("downloadable") is False:
+            continue
+        try:
+            validate_episode_url(ep["page_url"])
+            if (type(ep.get("season")) is not int or not 1 <= ep["season"] <= 9999
+                    or not str(ep.get("n", "")).isdigit() or int(ep["n"]) < 1):
+                raise ValueError("Metadati episodio incompleti")
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(502, "Elenco episodi LA7 non valido") from exc
+        planned.setdefault(ep["page_url"], ep)
+    if not planned:
         raise HTTPException(409, "Nessun episodio LA7 disponibile")
+    if len(planned) > MAX_BATCH_JOBS:
+        raise HTTPException(409, f"Troppi episodi LA7: selezionare una stagione (massimo {MAX_BATCH_JOBS})")
     batch_id = str(uuid.uuid4())
     jobs = []
-    for ep in episodes[:MAX_BATCH_JOBS]:
+    for ep in planned.values():
         jobs.append(job_manager.submit_la7(ep["page_url"],
                      f"{body.title} S{ep['season']:02d}E{ep['n']}", user_id=user_id,
                      batch_id=batch_id, batch_kind=body.scope,

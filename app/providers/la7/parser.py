@@ -14,7 +14,7 @@ from ..contracts import ContentRef, TitleDetails
 
 
 def path_for_id(value):
-    if not isinstance(value, str):
+    if not isinstance(value, str) or not 1 <= len(value) <= 400:
         raise la7.LA7Error("Identificativo LA7 non valido")
     path = value if value.startswith("/") else "/" + value
     la7._validate_url(la7.BASE_URL + path)
@@ -61,7 +61,7 @@ def row(node):
     if not isinstance(node, dict):
         return None
     kind = node.get("contentType") or node.get("__typename")
-    if kind not in {"property", "film", "replica", "video", "TermProperty", "ResolvedProperty", "NodeReplica", "NodeEventoSingolo", "ResolvedVideo"}:
+    if kind not in {"property", "film", "replica", "video", "TermProperty", "ResolvedProperty", "NodeReplica", "NodeEventoSingolo", "NodeVideo", "ResolvedVideo"}:
         return None
     try:
         raw_path = node.get("path") or node.get("url")
@@ -78,6 +78,7 @@ def row(node):
     if not isinstance(video, dict):
         video = {}
     movie = kind in {"film", "NodeEventoSingolo"}
+    single = kind not in {"property", "TermProperty", "ResolvedProperty"}
     return {"id": path.lstrip("/"), "source": "la7", "type": "movie" if movie else "tv",
             "name": title, "slug": path.lstrip("/"), "page_url": la7.BASE_URL + path,
             "poster": image(node.get("coverImage") or node.get("imageUrl") or node.get("image") or video.get("cf_thumbnail_cover")),
@@ -89,7 +90,8 @@ def row(node):
             "drm": node.get("drm") if type(node.get("drm")) is bool else None,
             # Missing DRM metadata is not proof of protection. The downloader
             # performs the definitive HLS/DRM check when the job starts.
-            "downloadable": node.get("drm") is not True, "content_type": kind}
+            "downloadable": node.get("drm") is not True, "content_type": kind,
+            "download_scope": "single" if single else "series"}
 
 
 def unique_rows(nodes):
@@ -143,21 +145,41 @@ def episode_rows(page, program_path, season=None):
         path = obj.get("path", "")
         if not isinstance(path, str) or not path.startswith(program_path + "/"):
             continue
-        # The listing cards may omit __typename; the official route is also
-        # enough to identify complete replicas, never /video/ clip cards.
-        if "/puntate/" not in path and "/rivedila7/" not in path:
+        # Replica listings also contain TG routes without /puntate/. Accept
+        # their programme-owned video records, but never clips or trailers.
+        if "/video/" in path or obj.get("__typename") in {"NodeVideo", "NodeLiveStreaming"}:
+            continue
+        if ("/puntate/" not in path and "/rivedila7/" not in path
+                and obj.get("__typename") != "NodeReplica"
+                and not (isinstance(obj.get("uploadVideo"), dict)
+                         and "numeroEpisodio" in obj)):
             continue
         nodes.append({**obj, "__typename": "NodeReplica"})
     rows = unique_rows(nodes)
+    for item in rows:
+        item["season"] = item["season"] or 1
+        # The portal and batch router use n, not the catalogue's number field.
+        item["n"] = str(item["number"] or la7.validate_episode_url(item["page_url"]))
+        item["still"] = item["backdrop"] or item["poster"]
+        item["plot"] = item["description"]
+        seconds = item["duration"]
+        item["duration"] = (max(1, round(float(seconds) / 60))
+                            if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", str(seconds)) else None)
     return [item for item in rows if season is None or item["season"] == season]
 
 
-def seasons(page):
+def seasons(page, program_path=None):
     result = {}
     for obj in objects(page):
         for entry in obj.get("seasons", []) if isinstance(obj.get("seasons"), list) else []:
             n = number(entry)
             if n:
+                result[n] = {"number": n, "name": f"Stagione {n}"}
+    if not result:
+        # Some programmes have complete episodes without a season selector.
+        if program_path:
+            for item in episode_rows(page, program_path):
+                n = item["season"]
                 result[n] = {"number": n, "name": f"Stagione {n}"}
     return [result[n] for n in sorted(result)]
 
@@ -184,16 +206,23 @@ def title_details(external_id, page, season_entries=()):
                                               "NodeEventoSingolo", "ResolvedVideo", "NodeVideo"}]
     if not matches:
         raise la7.LA7Error("Dettagli LA7 non trovati")
-    rows = unique_rows(matches)
-    if not rows:
-        raise la7.LA7Error("Dettagli LA7 non validi")
-    item = rows[0]
+    # Prefer the complete route entity over lightweight copies of the card.
     node = max(matches, key=len)
+    item = row(node)
+    if not item:
+        raise la7.LA7Error("Dettagli LA7 non validi")
+    protected = any(obj.get("drm") is True for obj in matches)
+    season_paths = [{**s, "path": path + "/puntate"} for s in season_entries]
+    downloadable = not protected and (item["download_scope"] == "single" or bool(season_paths))
     return TitleDetails(ContentRef("la7", item["id"], item["type"]), item["name"],
-                        description=text(node.get("description") or node.get("sinossibreve") or node.get("body")),
+                        description=text(node.get("description") or node.get("sinossilunga")
+                                         or node.get("sinossibreve") or node.get("body") or node.get("testoProgramma")),
                         year=str(node["annodiproduzione"]) if node.get("annodiproduzione") else None,
                         poster=item["poster"], backdrop=item["backdrop"], page_url=item["page_url"],
                         seasons=tuple(season_entries), duration=str(item["duration"]) if item["duration"] else None,
-                        extra={"drm": item["drm"], "download_url": item["page_url"]},
-                        downloadable=item["downloadable"],
-                        download_disabled_reason="Disponibilità da verificare sulla singola puntata")
+                        extra={"drm": True if protected else item["drm"],
+                               "download_url": item["page_url"], "download_scope": item["download_scope"],
+                               "season_paths": season_paths},
+                        downloadable=downloadable,
+                        download_disabled_reason=("Contenuto LA7 protetto da DRM" if protected
+                                                  else "Nessuna puntata completa disponibile su LA7"))

@@ -337,6 +337,8 @@ if (typeof document.addEventListener === 'function') {
 async function doSearch(options) {
   if (_catalogSection) return loadCatalog(!!options?.append);
   _cancelCatalogWork();
+  const generation = _catalogGeneration;
+  const source = currentSource;
   const append = !!(options && options.append);
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
@@ -345,6 +347,7 @@ async function doSearch(options) {
   // it is: ensureDomain() shares the one request.
   if (_sourceNeedsDomain(currentSource)) {
     await ensureDomain();
+    if (generation !== _catalogGeneration || source !== currentSource) return;
     if (!currentDomain && currentSource !== 'all') { openSettings(); return; }
   }
   if (append && (_loadingMore || _searchExhausted)) return;
@@ -387,12 +390,14 @@ async function doSearch(options) {
       results = await api.get('/api/search', _searchParams(q, _searchPage),
                               append ? {onHeaders} : {signal: _searchAbort.signal, onHeaders});
     } catch (e) {
+      if (generation !== _catalogGeneration || source !== currentSource) return;
       if (e.name === 'AbortError') throw e;   // handled by the catch below
       const detail = errText(e);
       if (append) { if (!_quietSourceLimit(detail)) showToast(escapeHtml(detail), 'danger'); }
       else container.innerHTML = _quietSourceLimit(detail) ? '' : `<div class="col-12"><div class="alert alert-danger">${escapeHtml(detail)}</div></div>`;
       return;
     }
+    if (generation !== _catalogGeneration || source !== currentSource) return;
     if (!append) {
       container.innerHTML = '';
       if (stamp && results.length) container.insertAdjacentHTML('beforeend', _cacheStampMarkup(stamp, 'col-12'));
@@ -420,14 +425,15 @@ async function doSearch(options) {
 
     loadRequestStatuses(results.filter(r => r.type !== 'movie').map(r => String(r.id)));
   } catch(e) {
+    if (generation !== _catalogGeneration || source !== currentSource) return;
     if (e.name === 'AbortError') return; // cancelled by new search
     if (append) showToast(t('search.networkError'), 'danger');
     else container.innerHTML=`<div class="col-12"><div class="alert alert-danger">${t('common.error')}: ${escapeHtml(e.message)}</div></div>`;
   } finally {
-    if (append) {
+    if (generation === _catalogGeneration && source === currentSource && append) {
       _loadingMore = false;
       if (moreBtn) { moreBtn.disabled = false; moreBtn.innerHTML = moreLabel; scLanguage.localize(moreBtn); }
-    } else {
+    } else if (generation === _catalogGeneration && source === currentSource) {
       btn.disabled=false; btn.innerHTML=`<i class="ti ti-search me-1"></i>${searchLabel('search.button')}`;
     }
   }

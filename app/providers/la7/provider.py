@@ -62,14 +62,14 @@ class LA7Provider:
                                    for obj in parser.objects(page))
                 if has_replicas:
                     listing = self.client.text(path + "/puntate")
-                    entries = parser.seasons(listing)
+                    entries = parser.seasons(listing, path)
             return parser.title_details(external_id, page, entries)
         return self._call(load)
 
     def episodes(self, external_id, season_path=None, season_number=None):
         path = self._path(external_id)
         if (path.count("/") != 1 or (season_number is not None and
-                (type(season_number) is not int or season_number < 1))
+                (type(season_number) is not int or not 1 <= season_number <= 9999))
                 or season_path not in (None, path + "/puntate")):
             raise ProviderError(self.source, ProviderErrorCode.INVALID_REQUEST, "Stagione LA7 non valida")
         return self._call(lambda: self._episodes(path, season_number))

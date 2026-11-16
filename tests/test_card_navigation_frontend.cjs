@@ -9,6 +9,7 @@ function create() {
     if (!elements.has(id)) elements.set(id, {
       value: '', dataset: {}, innerHTML: '', style: {},
       classList: {toggle() {}}, querySelectorAll: () => [],
+      toggleAttribute(name, value) { this[name] = value; },
     });
     return elements.get(id);
   };
@@ -16,6 +17,7 @@ function create() {
     URLSearchParams, AbortController,
     location: {hash: '#/title/anime/42?src=animeunity'},
     history: {length: 1},
+    sessionStorage: {getItem: () => null},
     window: {addEventListener() {}},
     document: {referrer: '', getElementById: element, querySelector: () => null,
       addEventListener: (name, fn) => {events[name] = fn;},

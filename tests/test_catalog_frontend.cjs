@@ -19,6 +19,7 @@ function create() {
     if (!elements.has(id)) elements.set(id, {
       value: '', innerHTML: '', textContent: '', style: {}, hidden: false, dataset: {},
       classList: {toggle() {}}, querySelectorAll: () => [],
+      toggleAttribute(name, value) { this[name] = value; },
       appendChild() {}, querySelector: () => element('mock-rail'),
     });
     return elements.get(id);
@@ -28,7 +29,7 @@ function create() {
   const context = vm.createContext({
     document: {getElementById: element, createElement: () => ({
       innerHTML: '', querySelector: () => element('mock-rail'), insertAdjacentHTML() {},
-    })}, window: {addEventListener() {}},
+    })}, window: {addEventListener() {}}, sessionStorage: {getItem: () => null},
     currentSource: 'streamingcommunity', currentDomain: 'source.test',
     _searchResults: [], _requestStatus: {}, AbortController,
     api: {get: async (path, params) => { calls.push({path, params}); return {
