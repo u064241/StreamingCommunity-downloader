@@ -797,6 +797,7 @@ function prepareLa7Preview() {
   renderResultCards([{source: 'la7', id: url, name: title, type: 'episode'}], preview, 0,
     'col-12 col-sm-6 col-lg-3', {action: 'search:la7Detail', noPreview: true});
   document.getElementById('la7-detail').hidden = true;
+  showToast(t('la7.preview'), 'success');
 }
 
 function openLa7Detail() {
@@ -1045,7 +1046,20 @@ registerPageHash('search', {
     const saved = sessionStorage.getItem('sc.search.return');
     if (saved) {
       sessionStorage.removeItem('sc.search.return');
-      try { const state = JSON.parse(saved); setTimeout(() => window.scrollTo(0, Number(state.y) || 0), 0); } catch (_) {}
+      try {
+        const state = JSON.parse(saved);
+        if (state.hash === location.hash && Array.isArray(state.results)) {
+          _searchResults = state.results;
+          _searchPage = Number(state.page) || 1;
+          _searchExhausted = !!state.exhausted;
+          const container = document.getElementById('search-results');
+          container.innerHTML = '';
+          renderResultCards(_searchResults, container, 0);
+          _setMoreVisible(!_searchExhausted);
+          loadRequestStatuses(_searchResults.filter(i => i.type !== 'movie').map(i => String(i.id)));
+        }
+        setTimeout(() => window.scrollTo(0, Number(state.y) || 0), 0);
+      } catch (_) {}
     }
   },
 });

@@ -87,7 +87,9 @@ def row(node):
             "season": number(node.get("numeroStagione") or video.get("stagione")),
             "number": number(node.get("numeroEpisodio") or video.get("episodio")),
             "drm": node.get("drm") if type(node.get("drm")) is bool else None,
-            "downloadable": node.get("drm") is False, "content_type": kind}
+            # Missing DRM metadata is not proof of protection. The downloader
+            # performs the definitive HLS/DRM check when the job starts.
+            "downloadable": node.get("drm") is not True, "content_type": kind}
 
 
 def unique_rows(nodes):
@@ -178,7 +180,8 @@ def next_page(page):
 def title_details(external_id, page, season_entries=()):
     path = path_for_id(external_id)
     matches = [obj for obj in objects(page) if obj.get("path") == path
-               and obj.get("__typename") in {"TermProperty", "NodeReplica", "NodeEventoSingolo"}]
+               and obj.get("__typename") in {"TermProperty", "ResolvedProperty", "NodeReplica",
+                                              "NodeEventoSingolo", "ResolvedVideo", "NodeVideo"}]
     if not matches:
         raise la7.LA7Error("Dettagli LA7 non trovati")
     rows = unique_rows(matches)

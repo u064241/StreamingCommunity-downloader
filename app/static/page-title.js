@@ -22,7 +22,8 @@ function titleHash(item) {
 function openTitle(idx) {
   const item = _searchResults[idx];
   if (!item) return;
-  sessionStorage.setItem('sc.search.return', JSON.stringify({hash: location.hash, y: window.scrollY}));
+  sessionStorage.setItem('sc.search.return', JSON.stringify({hash: location.hash, y: window.scrollY,
+    results: _searchResults, page: _searchPage, exhausted: _searchExhausted}));
   _tpSeed = item;                     // spares the first render a round trip
   location.hash = titleHash(item);
 }
