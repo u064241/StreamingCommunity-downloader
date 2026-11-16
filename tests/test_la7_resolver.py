@@ -224,7 +224,9 @@ def test_provider_returns_checked_metadata(network, method):
     assert result["source"] == "la7"
     assert result["manifest"] == MANIFEST
     assert result["drm"] is False
-    assert not provider.capabilities.search
+    assert provider.capabilities.search
+    assert provider.capabilities.details
+    assert provider.capabilities.episodes
     assert provider.capabilities.download
 
 

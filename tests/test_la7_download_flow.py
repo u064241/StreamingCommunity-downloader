@@ -84,11 +84,11 @@ def run_next(manager):
     args[0](*args[1:], **kwargs)
 
 
-def test_registered_as_direct_download_only():
+def test_registered_with_catalogue_and_download():
     registry = create_default_registry()
     assert isinstance(registry.get("la7"), LA7Provider)
     assert registry.is_downloadable("la7")
-    assert "la7" not in registry.sources()  # no new catalogue/UI entries
+    assert "la7" in registry.sources()
     assert "la7" in registry.sources(include_direct=True)
     assert create_default_registry(include_metadata_sources=False).is_downloadable("la7")
     assert download_source("la7", "la7") == "la7"

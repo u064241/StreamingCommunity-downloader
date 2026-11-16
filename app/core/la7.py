@@ -115,7 +115,8 @@ def _json_values(text):
         yield value
 
 
-def _episode_data(page: str, content_id: str) -> dict:
+def page_values(page: str) -> list:
+    """Decode JSON/Flight data without evaluating page JavaScript."""
     parser = _Scripts()
     parser.feed(page)
     candidates = []
@@ -136,6 +137,11 @@ def _episode_data(page: str, content_id: str) -> dict:
             except (ValueError, RecursionError):
                 pass
     candidates.extend(_json_values("".join(flight_chunks)))
+    return candidates
+
+
+def _episode_data(page: str, content_id: str) -> dict:
+    candidates = page_values(page)
     matches = [obj for value in candidates for obj in _objects(value)
                if type(obj.get("id")) in (str, int)
                and str(obj["id"]) == content_id

@@ -3,6 +3,12 @@
 (function () {
   const translations = {
     it: {
+      'la7.heading': 'LA7 · Puntata da link',
+      'la7.catalogAvailable': 'Cerca nel catalogo LA7 oppure prepara una puntata usando il suo link ufficiale.',
+      'la7.preview': 'Prepara anteprima', 'la7.episode': 'Puntata',
+      'la7.manualPreview': 'Anteprima preparata dal link e dal titolo inseriti. Immagine, stagioni e metadati ufficiali non sono ancora disponibili.',
+      'la7.downloadHint': 'Scarica questa singola puntata. La disponibilità del formato viene verificata all’avvio del lavoro nella coda Download.',
+      'la7.invalidUrl': 'Inserisci il link HTTPS di una singola puntata su la7play.it, senza parametri o frammenti.',
       'domain.recovery.checking': 'Ricerca del dominio in corso…',
       'domain.recovery.found': 'Dominio trovato e verificato. Conferma per applicarlo:',
       'domain.recovery.not_found': 'Nessun dominio verificato trovato. Puoi riprovare dalle impostazioni.',
@@ -38,6 +44,12 @@
       'archive.count': '{count} titoli', 'archive.count.one': '{count} titolo', 'archive.unavailable': 'Archivio non disponibile'
     },
     en: {
+      'la7.heading': 'LA7 · Episode from a link',
+      'la7.catalogAvailable': 'Search the LA7 catalogue or prepare an episode using its official link.',
+      'la7.preview': 'Prepare preview', 'la7.episode': 'Episode',
+      'la7.manualPreview': 'Preview prepared from the link and title you entered. Official artwork, seasons and metadata are not available yet.',
+      'la7.downloadHint': 'Download this single episode. Format availability is checked when the job starts in the Downloads queue.',
+      'la7.invalidUrl': 'Enter the HTTPS link of a single episode on la7play.it, without query parameters or fragments.',
       'domain.recovery.checking': 'Searching for the source domain…',
       'domain.recovery.found': 'Domain found and verified. Confirm to apply it:',
       'domain.recovery.not_found': 'No verified domain found. You can retry from settings.',

@@ -8,6 +8,7 @@
 // type that is always "anime". Looked up lower case so one table serves both.
 // One colour per kind, so a grid can be read at a glance instead of word by word.
 const KIND_BADGES = {
+  episode: {label: 'la7.episode', cls: 'bg-blue-lt'},
   movie:   {label: 'catalog.movie',     cls: 'bg-blue-lt'},
   tv:      {label: 'catalog.tv', cls: 'bg-green-lt'},
   ova:     {label: 'OVA',      cls: 'bg-purple-lt'},
@@ -32,20 +33,13 @@ function setSource(src) {
   _catalogSection = null;
   _cancelCatalogWork();
   currentSource = src;
+  _syncLa7SearchUI();
   document.getElementById('src-all')?.classList.toggle('active', src === 'all');
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
   document.getElementById('src-rai')?.classList.toggle('active', src === 'raiplay');
   document.getElementById('src-la7')?.classList.toggle('active', src === 'la7');
   document.getElementById('la7-direct-download')?.toggleAttribute('hidden', src !== 'la7');
-  if (src === 'la7') {
-    document.getElementById('search-results').innerHTML = '';
-    document.getElementById('home-shelves').style.display = 'none';
-    document.getElementById('search-filters').innerHTML = '';
-    _setMoreVisible(false);
-    syncHash();
-    return;
-  }
   const input = document.getElementById('search-input');
   if (input) input.dataset.i18nPlaceholder = src === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
   if (input) input.placeholder = src === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
@@ -764,18 +758,74 @@ function renderRequestRibbons() {
   });
 }
 
-async function downloadLa7Url() {
+// LA7 currently exposes only POST /api/download/la7. No catalogue or metadata
+// requests are made here; see la7-ui-contract.md for the missing provider contract.
+let _la7Draft = null;
+let _la7Downloading = false;
+
+function _syncLa7SearchUI() {
+  const selected = currentSource === 'la7';
+  const panel = document.getElementById('la7-direct-download');
+  if (panel) panel.hidden = !selected;
+  const search = document.getElementById('catalog-searchbar');
+  if (search) search.hidden = false;
+  if (!selected) return;
+  clearTimeout(_searchDebounceTimer);
+  _searchAbort?.abort();
+}
+
+function prepareLa7Preview() {
+  if (_la7Downloading) return;
   const url = document.getElementById('la7-url')?.value.trim();
   const title = document.getElementById('la7-title')?.value.trim();
-  if (!url || !title) {
+  if (!url || !title || title.length > 300) {
     showToast(t('search.la7Missing'), 'warning');
     return;
   }
   try {
-    await api.post('/api/download/la7', {source: 'la7', url, title, scope: 'single'});
+    const parsed = new URL(url);
+    if (url.length > 2048 || /[\s\\]/.test(url) || parsed.hash || parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
+        !['www.la7play.it', 'la7play.it'].includes(parsed.hostname) || parsed.search ||
+        !/-\d+\/*$/.test(parsed.pathname)) throw new Error();
+  } catch (_) {
+    showToast(t('la7.invalidUrl'), 'warning');
+    return;
+  }
+  _la7Draft = {source: 'la7', url, title, scope: 'single'};
+  const preview = document.getElementById('la7-preview');
+  preview.innerHTML = '';
+  renderResultCards([{source: 'la7', id: url, name: title, type: 'episode'}], preview, 0,
+    'col-12 col-sm-6 col-lg-3', {action: 'search:la7Detail', noPreview: true});
+  document.getElementById('la7-detail').hidden = true;
+}
+
+function openLa7Detail() {
+  if (!_la7Draft) return;
+  document.getElementById('la7-detail-title').textContent = _la7Draft.title;
+  document.getElementById('la7-detail-url').textContent = _la7Draft.url;
+  if (!_la7Downloading) document.getElementById('la7-download-status').textContent = '';
+  document.getElementById('la7-detail').hidden = false;
+  document.getElementById('la7-detail-title').focus();
+}
+
+async function downloadLa7Url() {
+  if (!_la7Draft || _la7Downloading || !can('DOWNLOAD')) return;
+  const body = {..._la7Draft};
+  const button = document.getElementById('la7-download-btn');
+  const status = document.getElementById('la7-download-status');
+  _la7Downloading = true;
+  button.disabled = true;
+  status.textContent = t('common.loading');
+  try {
+    await api.post('/api/download/la7', body);
+    status.textContent = t('search.la7Queued');
     showToast(t('search.la7Queued'), 'success', DOWNLOADS_LINK);
   } catch (e) {
-    showToast(errText(e), 'danger');
+    status.textContent = errText(e);
+    showToast(escapeHtml(errText(e)), 'danger');
+  } finally {
+    _la7Downloading = false;
+    button.disabled = false;
   }
 }
 
@@ -788,6 +838,9 @@ registerActions({
   'catalog:sections': () => loadHomeSections(),
   'search:source': d => setSource(d.source),
   'search:la7Download': () => downloadLa7Url(),
+  'search:la7Preview': () => prepareLa7Preview(),
+  'search:la7Detail': () => openLa7Detail(),
+  'search:la7Close': () => { document.getElementById('la7-detail').hidden = true; },
   'search:run':    () => doSearch(),
   'search:more':   () => loadMoreResults(),
   'search:kind':   d => setKindFilter(d.kind),
@@ -988,6 +1041,7 @@ registerPageHash('search', {
     _searchPage = 1;
     _searchExhausted = false;
     renderSearchFilters();
+    _syncLa7SearchUI();
     const saved = sessionStorage.getItem('sc.search.return');
     if (saved) {
       sessionStorage.removeItem('sc.search.return');
@@ -1048,6 +1102,7 @@ window.addEventListener('sc:language-changed', () => {
   const key = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
   if (input) { input.dataset.i18nPlaceholder = key; input.placeholder = t(key); }
   renderSearchFilters();
+  _syncLa7SearchUI();
   renderRequestRibbons();
   root.querySelectorAll('[data-catalog-label]').forEach(node => {
     node.textContent = catalogLabel(node.dataset.catalogLabel);
