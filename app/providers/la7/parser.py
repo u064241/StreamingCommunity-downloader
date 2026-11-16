@@ -118,8 +118,11 @@ def search_rows(payload):
     result = payload.get("siteSearch")
     if not isinstance(result, dict) or not isinstance(result.get("groups"), list):
         raise la7.LA7Error("Risultati ricerca LA7 non validi")
-    return unique_rows(hit for group in result["groups"] if isinstance(group, dict)
+    rows = unique_rows(hit for group in result["groups"] if isinstance(group, dict)
                        for hit in group.get("hits", []) if isinstance(hit, dict))
+    # Un film DRM non può essere scaricato dal portale: non mostrarlo proprio
+    # nei risultati, evitando una card che conduce a un'azione inutilizzabile.
+    return [item for item in rows if not (item["type"] == "movie" and item["drm"] is True)]
 
 
 def home_shelves(payload):
@@ -134,8 +137,10 @@ def home_shelves(payload):
         if not isinstance(slot, dict) or slot.get("__typename") != "NodeContentCarousel":
             continue
         items = (slot.get("paginatedItems") or {}).get("items", [])
+        rows = unique_rows(items)
+        rows = [item for item in rows if not (item["type"] == "movie" and item["drm"] is True)]
         shelves.append({"key": "la7-" + str(slot.get("id")), "title": text(slot.get("titoloCarrello")),
-                        "items": unique_rows(items)})
+                        "items": rows})
     return shelves
 
 

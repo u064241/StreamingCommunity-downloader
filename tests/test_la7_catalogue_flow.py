@@ -212,6 +212,18 @@ def test_protected_film_has_specific_reason_and_never_resolves_media(client, cat
     assert network.calls == [card["page_url"]]
 
 
+def test_protected_films_are_hidden_from_search_and_home():
+    protected = video("/film/protetto-1", kind="NodeEventoSingolo", drm=True)
+    available = video("/film/disponibile-2", kind="NodeEventoSingolo", drm=False)
+    payload_data = {"siteSearch": {"groups": [{"hits": [protected, available]}]}}
+    rows = parser.search_rows(payload_data)
+    assert [row["id"] for row in rows] == ["film/disponibile-2"]
+    home = {"route": {"entity": {"contentSlots": [{"__typename": "NodeContentCarousel",
+        "id": "films", "titoloCarrello": "Film", "paginatedItems": {
+            "items": [protected, available]}}]}}}
+    assert [row["id"] for row in parser.home_shelves(home)[0]["items"]] == ["film/disponibile-2"]
+
+
 def test_invalid_batch_plan_is_rejected_before_any_job(client, catalogue, monkeypatch):
     _, provider = catalogue
     monkeypatch.setattr(provider, "episodes", lambda *a, **kw: [
