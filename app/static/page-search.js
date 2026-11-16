@@ -36,6 +36,16 @@ function setSource(src) {
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
   document.getElementById('src-rai')?.classList.toggle('active', src === 'raiplay');
+  document.getElementById('src-la7')?.classList.toggle('active', src === 'la7');
+  document.getElementById('la7-direct-download')?.toggleAttribute('hidden', src !== 'la7');
+  if (src === 'la7') {
+    document.getElementById('search-results').innerHTML = '';
+    document.getElementById('home-shelves').style.display = 'none';
+    document.getElementById('search-filters').innerHTML = '';
+    _setMoreVisible(false);
+    syncHash();
+    return;
+  }
   const input = document.getElementById('search-input');
   if (input) input.dataset.i18nPlaceholder = src === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
   if (input) input.placeholder = src === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
@@ -119,6 +129,7 @@ const KIND_FILTERS = {
                ['ova', 'OVA'], ['ona', 'ONA'], ['special', 'catalog.specials']],
   // Metadata only, and its search does not tell film from series: no filter.
   raiplay: [['', 'catalog.all']],
+  la7: [['', 'catalog.all']],
 };
 
 // Sources with a download engine. The others (RaiPlay) are browsed only: no
@@ -753,6 +764,21 @@ function renderRequestRibbons() {
   });
 }
 
+async function downloadLa7Url() {
+  const url = document.getElementById('la7-url')?.value.trim();
+  const title = document.getElementById('la7-title')?.value.trim();
+  if (!url || !title) {
+    showToast(t('search.la7Missing'), 'warning');
+    return;
+  }
+  try {
+    await api.post('/api/download/la7', {source: 'la7', url, title, scope: 'single'});
+    showToast(t('search.la7Queued'), 'success', DOWNLOADS_LINK);
+  } catch (e) {
+    showToast(errText(e), 'danger');
+  }
+}
+
 
 // ── Delegated handlers ───────────────────────────────────────────────────────
 
@@ -761,6 +787,7 @@ registerActions({
   'catalog:home': () => { _catalogSection = null; navigate('search'); },
   'catalog:sections': () => loadHomeSections(),
   'search:source': d => setSource(d.source),
+  'search:la7Download': () => downloadLa7Url(),
   'search:run':    () => doSearch(),
   'search:more':   () => loadMoreResults(),
   'search:kind':   d => setKindFilter(d.kind),
@@ -946,11 +973,13 @@ registerPageHash('search', {
     // The catalogue browse is StreamingCommunity only; otherwise the address
     // names the source, and an address without one opens "Tutte le fonti".
     currentSource = _catalogSection ? 'streamingcommunity'
-      : (['all', 'streamingcommunity', 'animeunity', 'raiplay'].includes(params.src) ? params.src : 'all');
+      : (['all', 'streamingcommunity', 'animeunity', 'raiplay', 'la7'].includes(params.src) ? params.src : 'all');
     document.getElementById('src-all')?.classList.toggle('active', currentSource === 'all');
     document.getElementById('src-sc')?.classList.toggle('active', currentSource === 'streamingcommunity');
     document.getElementById('src-au')?.classList.toggle('active', currentSource === 'animeunity');
     document.getElementById('src-rai')?.classList.toggle('active', currentSource === 'raiplay');
+    document.getElementById('src-la7')?.classList.toggle('active', currentSource === 'la7');
+    document.getElementById('la7-direct-download')?.toggleAttribute('hidden', currentSource !== 'la7');
     if (input) input.dataset.i18nPlaceholder = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
     if (input) input.placeholder = currentSource === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
     _kindFilter = params.type || '';

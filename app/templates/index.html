@@ -66,6 +66,9 @@
                       title="Solo catalogo: i contenuti RaiPlay non sono scaricabili dal pannello">
                 <i class="ti ti-broadcast"></i>RaiPlay
               </button>
+              <button class="source-btn" id="src-la7" data-action="search:source" data-source="la7">
+                <i class="ti ti-player-play"></i>LA7
+              </button>
             </div>
             <div class="sc-searchbar">
               <input type="text" id="search-input"
@@ -74,6 +77,14 @@
               <button class="sc-search-btn" data-action="search:run" id="search-btn">
                 <i class="ti ti-search"></i><span data-i18n="search.button">Cerca</span>
               </button>
+            </div>
+            <div id="la7-direct-download" class="sc-direct-source" hidden>
+              <p class="small text-muted mb-2" data-i18n="search.la7Hint">Incolla l’URL ufficiale di una puntata LA7 per avviare il download.</p>
+              <div class="input-group">
+                <input type="url" id="la7-url" class="form-control" placeholder="https://www.la7play.it/..." data-i18n-placeholder="search.la7Url">
+                <input type="text" id="la7-title" class="form-control" placeholder="Titolo" data-i18n-placeholder="search.la7Title">
+                <button class="btn btn-primary" data-action="search:la7Download"><i class="ti ti-download me-1"></i><span data-i18n="search.la7Download">Scarica</span></button>
+              </div>
             </div>
           </div>
           <div id="search-filters" class="search-filters"></div>
