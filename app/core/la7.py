@@ -140,23 +140,74 @@ def page_values(page: str) -> list:
     return candidates
 
 
+def node_path(node: dict) -> str | None:
+    """Read a node's own identity, never that of a related video."""
+    path = node.get("path") or node.get("url")
+    if not isinstance(path, str):
+        return None
+    if path.startswith("https://"):
+        _validate_url(path)
+        parsed = urlsplit(path)
+        if parsed.query:
+            raise LA7Error("Percorso LA7 Play non valido")
+        path = parsed.path
+    return path
+
+
+def drm_state(nodes) -> bool | None:
+    """Protection wins across copies of the same content, not site config."""
+    flags = [node["drm"] for node in nodes if node.get("drm") is not None]
+    if any(flag is True for flag in flags):
+        return True
+    if flags and all(flag is False for flag in flags):
+        return False
+    return None
+
+
+def video_id(node: dict) -> str | None:
+    value = node.get("id")
+    if type(value) not in (str, int):
+        return None
+    match = re.fullmatch(r"(?:([0-9]+)|entity:node/([0-9]+):[a-zA-Z_-]+)", str(value))
+    return (match[1] or match[2]) if match else None
+
+
+def merge_video_nodes(nodes: list[dict]) -> dict:
+    """Combine lightweight cards with full records of exactly one video."""
+    ids = {video_id(node) for node in nodes if node.get("id") is not None}
+    videos = [node["uploadVideo"] for node in nodes if isinstance(node.get("uploadVideo"), dict)]
+    remotes = [video["cf_remote_url"] for video in videos if video.get("cf_remote_url")]
+    if len(ids) > 1 or any(remote != remotes[0] for remote in remotes[1:]):
+        raise LA7Error("Dati della puntata LA7 Play ambigui")
+    merged = {}
+    for node in sorted(nodes, key=len):
+        merged.update({key: value for key, value in node.items() if value is not None})
+    if videos:
+        merged["uploadVideo"] = {}
+        for video in sorted(videos, key=len):
+            merged["uploadVideo"].update({key: value for key, value in video.items() if value is not None})
+    merged["drm"] = drm_state(nodes)
+    if ids:
+        merged["id"] = ids.pop()
+    return merged
+
+
 def _episode_data(page: str, content_id: str, page_path: str | None = None) -> dict:
     candidates = page_values(page)
     videos = [obj for value in candidates for obj in _objects(value)
-              if type(obj.get("id")) in (str, int) and str(obj["id"]).isdigit()
-              and ("drm" in obj or "uploadVideo" in obj)]
+              if "drm" in obj or "uploadVideo" in obj]
     # Migrated LA7 URLs retain the old suffix, while their video node has a
     # new id. Match the requested official path before the legacy suffix.
-    matches = [obj for obj in videos if page_path and obj.get("path") == page_path]
+    matches = [obj for obj in videos if page_path and node_path(obj) == page_path]
     if not matches:
-        matches = [obj for obj in videos if not obj.get("path") and str(obj["id"]) == content_id]
+        matches = [obj for obj in videos if not node_path(obj) and video_id(obj) == content_id]
     if not matches:
         raise LA7Error("Dati della puntata LA7 Play non trovati")
-    if any(obj != matches[0] for obj in matches[1:]):
-        raise LA7Error("Dati della puntata LA7 Play ambigui")
-    episode = matches[0]
+    episode = merge_video_nodes(matches)
     if episode.get("drm") is not False:
         raise LA7Error("Contenuto LA7 Play con DRM o stato DRM sconosciuto")
+    if video_id(episode) is None:
+        raise LA7Error("Identificativo video LA7 Play non valido")
     return episode
 
 
@@ -263,7 +314,7 @@ def resolve_episode(url: str, *, http_get=None) -> dict:
     """Resolve an episode, fetching playlists but never media segments."""
     content_id = validate_episode_url(url)
     episode = _episode_data(_fetch(url, PAGE_HOSTS, http_get), content_id, urlsplit(url).path)
-    title = episode.get("title")
+    title = episode.get("title") or episode.get("titolo")
     if not isinstance(title, str) or not title.strip():
         raise LA7Error("Titolo della puntata LA7 Play non trovato")
     manifest = _manifest_url(episode)

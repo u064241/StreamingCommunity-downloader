@@ -128,6 +128,20 @@ def download_la7(body: LA7DownloadRequest, http_request: HttpRequest,
     if body.scope == "single":
         if not body.url:
             raise HTTPException(422, "Per una puntata LA7 serve il link ufficiale")
+        if body.external_id:
+            from urllib.parse import urlsplit
+            from app.providers import ProviderError, ProviderErrorCode
+            if urlsplit(body.url).path != "/" + body.external_id:
+                raise HTTPException(422, "Il link LA7 non corrisponde al titolo selezionato")
+            try:
+                details = registry.details("la7", body.external_id)
+            except ProviderError as exc:
+                status = 422 if exc.code == ProviderErrorCode.INVALID_REQUEST else 502
+                raise HTTPException(status, str(exc)) from exc
+            if details.extra.get("download_scope") != "single":
+                raise HTTPException(422, "Il titolo LA7 non è un video singolo")
+            if not details.downloadable:
+                raise HTTPException(409, details.download_disabled_reason)
         job_id = job_manager.submit_la7(body.url, body.title, user_id=user_id)
         return {"job_id": job_id, "status": "queued", "scope": "single"}
     if not body.external_id:

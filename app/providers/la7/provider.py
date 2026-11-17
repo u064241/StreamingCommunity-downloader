@@ -1,12 +1,18 @@
 """Official LA7 catalogue and direct episode adapter."""
 from __future__ import annotations
 
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from threading import RLock
+from time import monotonic
 from urllib.parse import urlencode, urljoin, urlsplit, parse_qs
 
 from app.core import la7
 from ..contracts import HomeResult, ProviderCapabilities, ProviderError, ProviderErrorCode, search_results
 from .client import LA7Client
 from . import parser
+
+logger = logging.getLogger(__name__)
 
 
 class LA7Provider:
@@ -17,6 +23,8 @@ class LA7Provider:
     def __init__(self, *, http_get=None, client=None):
         self._http_get = http_get
         self.client = client if client is not None else LA7Client(http_get=http_get)
+        self._catalogue_cache = {}
+        self._catalogue_lock = RLock()
 
     def _call(self, callback):
         try:
@@ -44,11 +52,69 @@ class LA7Provider:
             raise ProviderError(self.source, ProviderErrorCode.INVALID_REQUEST, "Ricerca LA7 non valida")
         if dubbed or media_type not in (None, "tv", "movie"):
             raise ProviderError(self.source, ProviderErrorCode.UNSUPPORTED, "Filtro LA7 non supportato")
-        return self._call(lambda: search_results(self.source, parser.search_rows(
-            self.client.search(query.strip(), page, media_type))))
+        return self._call(lambda: search_results(self.source, self._catalogue_rows(parser.search_rows(
+            self.client.search(query.strip(), page, media_type)))))
 
     def home(self):
-        return self._call(lambda: HomeResult.from_legacy(self.source, parser.home_shelves(self.client.home())))
+        def load():
+            shelves = parser.home_shelves(self.client.home())
+            checked = self._check_catalogue([item for shelf in shelves for item in shelf["items"]])
+            for shelf in shelves:
+                shelf["items"] = self._catalogue_rows(shelf["items"], checked)
+            return HomeResult.from_legacy(self.source, shelves)
+        return self._call(load)
+
+    def _check_catalogue(self, rows):
+        identities = dict.fromkeys(item["id"] for item in rows
+                                   if item["download_scope"] == "single" and item["drm"] is None)
+        def check(identity):
+            with self._catalogue_lock:
+                cached = self._catalogue_cache.get(identity)
+                if cached and monotonic() < cached[0]:
+                    return cached[1]
+            try:
+                card = self.details(identity).to_legacy()
+            except ProviderError:
+                logger.warning("Skipping unverified LA7 video %s", identity)
+                card = None
+            # Cache small availability records separately from large HTML
+            # pages, so a home with >64 videos does not churn the page cache.
+            with self._catalogue_lock:
+                if len(self._catalogue_cache) >= 256:
+                    self._catalogue_cache.pop(next(iter(self._catalogue_cache)))
+                self._catalogue_cache[identity] = (monotonic() + getattr(self.client, "cache_seconds", 120), card)
+            return card
+        if not identities:
+            return {}
+        # A cold home contains many lean cards. Bound metadata concurrency so
+        # one slow page does not hold every other check in a serial queue.
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="la7-catalogue") as pool:
+            return dict(zip(identities, pool.map(check, identities)))
+
+    def _catalogue_rows(self, rows, checked=None):
+        """The public search/carousel queries omit DRM: read each video page.
+
+        The client caches these bounded reads; repeated shelf entries are only
+        checked once per response. Programmes keep their mixed episode lists.
+        Unknown/unreachable standalone videos are not advertised as downloads.
+        """
+        checked = self._check_catalogue(rows) if checked is None else checked
+        result = []
+        for item in rows:
+            if item["download_scope"] != "single":
+                result.append(item)
+                continue
+            if item["drm"] is None:
+                identity = item["id"]
+                detail = checked[identity]
+                if detail is None or detail.get("download_scope") != "single":
+                    continue
+                # Details determine availability; preserve card artwork when
+                # the complete record has no cover of its own.
+                item = {**item, **{key: value for key, value in detail.items() if value is not None}}
+            if item["drm"] is False and item["downloadable"] is True:
+                result.append(item)
+        return result
 
     def details(self, external_id):
         path = self._path(external_id)
@@ -57,9 +123,12 @@ class LA7Provider:
             entries = ()
             if path.count("/") == 1:
                 # Only programmes declaring a replica submenu have episodes.
+                programme = [obj for obj in parser.objects(page)
+                             if parser.node_kind(obj) in parser.PROGRAM_KINDS and la7.node_path(obj) == path]
                 has_replicas = any(isinstance(obj.get("tipoDiContenuto"), dict)
                                    and obj["tipoDiContenuto"].get("name") == "Replica"
-                                   for obj in parser.objects(page))
+                                   for node in programme for obj in (node.get("vociSottomenu") or [])
+                                   if isinstance(obj, dict))
                 if has_replicas:
                     listing = self.client.text(path + "/puntate")
                     entries = parser.seasons(listing, path)

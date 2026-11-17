@@ -209,6 +209,12 @@ function renderResultCards(items, container, baseIndex,
                            options = {}) {
   const ranked = !!(options && options.ranked);
   items.forEach((item, i) => {
+    // Old search snapshots may predate server-side availability checks.
+    if (item.source === 'la7' && item.download_scope !== 'series') {
+      if (item.drm === true) return;
+      if ((item.type === 'movie' || item.download_scope === 'single') &&
+          (item.drm !== false || item.downloadable !== true)) return;
+    }
     const idx = Number.isInteger(item._searchIndex) ? item._searchIndex : baseIndex + i;
     const isMovie = item.type === 'movie';
     const kind = kindBadge(item);

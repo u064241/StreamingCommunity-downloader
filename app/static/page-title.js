@@ -87,6 +87,7 @@ async function loadTitlePage(route) {
     // default: fetching a season again over files already there is the
     // exception, and the per-episode button still forces one.
     onlyMissing: true,
+    downloadable: false,
     tab: null,
   };
 
@@ -186,8 +187,10 @@ async function _tpLoadMetadataOnly(token) {
     _tp.name = card.name || _tp.name;
     if (['movie', 'tv'].includes(card.type)) _tp.type = card.type;
     _tp.raiDownloadable = card.downloadable === true;
-    _tp.downloadable = card.downloadable !== false;
+    _tp.drm = card.drm;
     _tp.downloadScope = card.download_scope || (_tp.type === 'movie' ? 'single' : 'series');
+    _tp.downloadable = card.downloadable === true && card.drm !== true &&
+      (_tp.source !== 'la7' || _tp.downloadScope !== 'single' || card.drm === false);
     _tp.plot = card.description || _tp.plot;
     _tp.genres = Array.isArray(card.genres) && card.genres.length ? card.genres : _tp.genres;
     _tp.poster = card.poster || _tp.poster;
@@ -475,7 +478,7 @@ function _tpRenderCta() {
   if (_tp.metadataOnly) {
     const reason = _tp.downloadDisabledReason || TP_NOT_DOWNLOADABLE;
     const canCatalogueDownload = ((_tp.source === 'raiplay' && _tp.raiDownloadable)
-      || (_tp.source === 'la7' && _tp.downloadable !== false)) && can('DOWNLOAD')
+      || (_tp.source === 'la7' && _tp.downloadable === true && _tp.drm !== true)) && can('DOWNLOAD')
       && typeof _tp.pageUrl === 'string' && !_tp.raiQueueBusy;
     const isSingle = _tp.type === 'movie' || _tp.downloadScope === 'single';
     const canDownload = canCatalogueDownload && (_tp.source !== 'la7' || isSingle || _tp.seasonsCount > 0);
@@ -717,6 +720,7 @@ function _tpRenderEpisodes() {
     const dur = ep.duration ? `<span class="th-ep-dur">${escapeHtml(String(ep.duration))}m</span>` : '';
     const owned = ep.in_library
       ? `<i class="ti ti-circle-check-filled th-ep-owned" title="${escapeHtml(t('title.alreadyInLibrary'))}"></i>` : '';
+    const blocked = _tp.source === 'la7' && (ep.drm === true || ep.downloadable === false);
     return `<div class="shelf-item th-ep th-episode-item">
         <span class="th-ep-n">${escapeHtml(String(ep.n))}</span>
         ${still}
@@ -726,7 +730,7 @@ function _tpRenderEpisodes() {
         </div>
         ${dur}${owned}
         <button class="btn btn-sm ${wants ? 'btn-outline-primary' : 'btn-primary'} th-ep-action"
-                data-action="${['raiplay', 'la7'].includes(_tp.source) ? `tp:${_tp.source}Episode` : 'tp:episode'}" data-index="${i}">
+                data-action="${['raiplay', 'la7'].includes(_tp.source) ? `tp:${_tp.source}Episode` : 'tp:episode'}" data-index="${i}" ${blocked ? 'disabled aria-disabled="true"' : ''}>
           <i class="ti ${wants ? 'ti-send' : 'ti-download'} me-1"></i>${wants ? t('title.request') : t('title.download')}
         </button>
       </div>`;
@@ -755,8 +759,9 @@ async function startRaiEpisodeDownload(index) {
 async function startLa7EpisodeDownload(index) {
   const ep = _tp.episodes?.[index];
   if (!ep?.page_url || !can('DOWNLOAD')) return showToast('Serve il permesso Download per LA7', 'warning');
+  if (ep.drm === true || ep.downloadable === false) return;
   try {
-    await api.post('/api/download/la7', {source: 'la7', scope: 'single', url: ep.page_url,
+    await api.post('/api/download/la7', {source: 'la7', scope: 'single', url: ep.page_url, external_id: ep.id,
       title: `${_tp.name} S${String(ep.season).padStart(2, '0')}E${ep.n}`});
     showToast(t('title.started', {title: ep.name || _tp.name}), 'success', DOWNLOADS_LINK);
   } catch (e) { showToast(errText(e), 'danger'); }
@@ -782,7 +787,7 @@ async function tpLoadLa7Season(number, token = _tpToken) {
 }
 
 async function tpQueueLa7(scope, season = null) {
-  if (!_tp || !can('DOWNLOAD') || !_tp.downloadable || _tp.raiQueueBusy) return;
+  if (!_tp || !can('DOWNLOAD') || !_tp.downloadable || _tp.drm === true || _tp.raiQueueBusy) return;
   const state = _tp;
   state.raiQueueBusy = true; _tpRenderCta();
   try {

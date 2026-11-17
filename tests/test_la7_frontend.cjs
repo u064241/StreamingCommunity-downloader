@@ -174,7 +174,7 @@ test('LA7 details expose episode tab, real seasons and an enabled download butto
 
 test('catalogue replica is a single video even when its media type is tv', async () => {
   const app = createTitle();
-  app.context.api.get = async () => ({type:'tv', downloadable:true, download_scope:'single',
+  app.context.api.get = async () => ({type:'tv', drm:false, downloadable:true, download_scope:'single',
     page_url:'https://www.la7play.it/tgla7/edizione-399613', season_paths:[]});
   await app.run('_tpLoadMetadataOnly(_tpToken)');
   app.run('_tpRenderCta()');
@@ -240,4 +240,61 @@ test('LA7 episode action preserves its page URL and numbering', async () => {
   assert.equal(app.calls[0].body.scope, 'single');
   assert.equal(app.calls[0].body.title, 'Serie S2026E16');
   assert.equal(app.calls[0].body.url, 'https://www.la7play.it/tgla7/edizione-399613');
+});
+
+test('cached protected LA7 cards cannot reappear in results or homepage rails', () => {
+  const app = create();
+  const items = [
+    {source:'la7',id:'film/fury-399459',name:'Fury',type:'movie',drm:true,download_scope:'single'},
+    {source:'la7',id:'film/clear-123',name:'Clear film',type:'movie',drm:false,downloadable:true},
+    {source:'la7',id:'serie',name:'Mixed series',type:'tv',drm:true,download_scope:'series'},
+    {source:'streamingcommunity',id:4,name:'Other source',type:'movie',drm:true},
+    {source:'la7',id:'film/old-5',name:'Old unchecked film',type:'movie'},
+    {source:'la7',id:'tgla7/old-6',name:'Old unchecked replica',type:'tv',download_scope:'single'},
+  ];
+  app.context.items = items;
+  for (const options of ['{}', '{ranked:true}']) {
+    const container = app.element('cards-' + options);
+    app.run(`renderResultCards(items, document.getElementById(${JSON.stringify('cards-' + options)}), 0, 'shelf-item', ${options})`);
+    assert.equal(container.children.length, 3);
+    assert.doesNotMatch(container.children.map(c => c.innerHTML).join(''), /Fury|Old unchecked/);
+    // Keep original indices so clicking a remaining card opens that title.
+    assert.equal(container.children[0].dataset.idx, '1');
+  }
+});
+
+test('clear LA7 movie detail downloads its own single official URL', async () => {
+  const app = createTitle();
+  app.context.api.get = async () => ({type:'movie',name:'Film',drm:false,downloadable:true,
+    download_scope:'single',page_url:'https://www.la7play.it/film/clear-123',season_paths:[]});
+  app.run("_tp.id='film/clear-123'");
+  await app.run('_tpLoadMetadataOnly(_tpToken)');
+  await app.actions['tp:primary']();
+  assert.equal(app.calls[0].path, '/api/download/la7');
+  assert.equal(app.calls[0].body.external_id, 'film/clear-123');
+  assert.equal(app.calls[0].body.url, 'https://www.la7play.it/film/clear-123');
+  assert.equal(app.calls[0].body.scope, 'single');
+});
+
+test('unknown or protected detail cannot enable a LA7 download', async () => {
+  for (const fields of [{drm:true,downloadable:true}, {drm:null,downloadable:true}, {drm:null}, {drm:false,downloadable:false}]) {
+    const app = createTitle();
+    app.context.api.get = async () => ({type:'movie',download_scope:'single',
+      page_url:'https://www.la7play.it/film/clear-123',...fields});
+    await app.run('_tpLoadMetadataOnly(_tpToken)');
+    app.run('_tpRenderCta()');
+    assert.match(app.element('th-cta').innerHTML, /disabled/);
+    await app.actions['tp:primary']();
+    assert.equal(app.calls.length, 0);
+  }
+});
+
+test('LA7 episode action ignores protected or unavailable episodes', async () => {
+  const app = createTitle();
+  for (const fields of [{drm:true}, {downloadable:false}]) {
+    app.context.fields = fields;
+    app.run("_tp.episodes=[{id:'serie/ep-123',n:'1',season:1,page_url:'https://www.la7play.it/serie/ep-123',...fields}]");
+    await app.actions['tp:la7Episode']({index:'0'});
+  }
+  assert.equal(app.calls.length, 0);
 });
