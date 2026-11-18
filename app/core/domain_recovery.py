@@ -78,9 +78,11 @@ _running = False
 _status = "idle"
 
 def recovery_state() -> dict:
+    current = config.configured_domain()
     with _lock:
         return {"status": "checking" if _running else ("found" if _pending else _status),
-                "candidate": dict(_pending) if _pending else None}
+                "candidate": dict(_pending) if _pending else None,
+                "current": current}
 
 
 def _now() -> float:
@@ -278,6 +280,11 @@ def apply_candidate(host: str) -> str:
     metadata.clear_cache()
     clear_pending()
     logger.info("Source domain set to %s (version %s)", host, version)
+    try:
+        from app.jobs import job_manager
+        job_manager.broadcast({"type": "domain_changed", "domain": host, "version": version})
+    except Exception:
+        logger.debug("Cannot broadcast the applied source domain", exc_info=True)
     return version
 
 
@@ -339,12 +346,13 @@ def _run_check(force: bool = False) -> dict:
     # domain still answers: the old host may remain reachable briefly after a
     # rotation and must not win over the official announcement.
     candidates = fetch_telegram_candidates()
-    telegram_candidates = set(candidates)
-    try:
-        candidates = list(dict.fromkeys(candidates + fetch_candidates()))
-    except Exception as exc:
-        logger.warning("Cannot read the domain source page: %s", exc)
-        if not candidates:
+    # An old fallback link must never undo the channel's current announcement,
+    # including when Telegram already points to our configured domain.
+    if not candidates:
+        try:
+            candidates = fetch_candidates()
+        except Exception as exc:
+            logger.warning("Cannot read the domain source page: %s", exc)
             return result
 
     if result["current"]:
@@ -449,25 +457,19 @@ def _broadcast_candidate() -> None:
 # ── The periodic check ────────────────────────────────────────────────────────
 
 async def domain_watch_loop():
-    """Check periodically, shaped exactly like the followed-series poller.
-
-    Sleeps first for the same reason that one does: the lifespan must not do
-    network I/O, and a fresh install has no domain to check yet.
-    """
+    """Check at startup in a worker, then at the configured interval."""
     import asyncio
 
     while True:
+        if _settings().get("domain_auto_check_enabled", True):
+            try:
+                await asyncio.to_thread(run_check)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Domain check failed")
         try:
-            interval = int(_settings().get("domain_check_interval_minutes") or 1)
+            interval = int(_settings().get("domain_check_interval_minutes") or 5)
         except (TypeError, ValueError):
-            interval = 1
+            interval = 5
         await asyncio.sleep(max(1, interval) * 60)
-
-        if not _settings().get("domain_auto_check_enabled", True):
-            continue
-        try:
-            await asyncio.to_thread(run_check)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Domain check failed")

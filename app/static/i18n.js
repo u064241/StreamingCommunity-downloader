@@ -492,8 +492,8 @@
   },
   {
     "key": "settings.check.when.the.source.is.unresponsive",
-    "it": "Controlla se la sorgente non risponde",
-    "en": "Check when the source is unresponsive"
+    "it": "Controlla il dominio all'avvio e periodicamente",
+    "en": "Check the domain at startup and periodically"
   },
   {
     "key": "settings.apply.the.discovered.domain.without.asking",

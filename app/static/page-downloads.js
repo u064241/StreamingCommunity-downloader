@@ -84,6 +84,9 @@ function connectGlobalStream() {
       case 'domain_candidate':
         loadDomainCandidate();
         break;
+      case 'domain_changed':
+        loadDomainStatus();
+        break;
       case 'notification':
         // A bare signal: the payload lives behind /api/notifications, which is
         // scoped to the caller, so a shared stream leaks nothing.

@@ -267,6 +267,50 @@ def test_telegram_candidate_is_only_proposed_without_auto_apply(monkeypatch, _co
     assert domain_recovery.pending()["host"] == "streamingcommunityz.rodeo"
 
 
+def test_current_telegram_domain_cannot_be_replaced_by_stale_fallback(monkeypatch, _configured_domain, public_dns):
+    config.update_data({"domain": "streamingcommunityz.dad"})
+    monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates", lambda: ["streamingcommunityz.dad"])
+    monkeypatch.setattr(domain_recovery, "get_domain_version", lambda host: "v1")
+    monkeypatch.setattr(domain_recovery, "_settings", lambda: {"domain_auto_apply": True})
+    def fallback():
+        pytest.fail("A current Telegram announcement must not query the stale fallback")
+    monkeypatch.setattr(domain_recovery, "fetch_candidates", fallback)
+    result = domain_recovery.run_check()
+    assert result["current_ok"] is True and result["applied"] is False
+    assert config.configured_domain() == "streamingcommunityz.dad"
+
+
+def test_applied_domain_broadcasts_new_configuration_and_invalidates_caches(monkeypatch, broken_source):
+    from app.jobs import job_manager
+    events, cleared = [], []
+    monkeypatch.setattr(job_manager, "broadcast", events.append)
+    monkeypatch.setattr(domain_recovery.home, "clear_cache", lambda source: cleared.append(source))
+    monkeypatch.setattr(domain_recovery.metadata, "clear_cache", lambda: cleared.append("metadata"))
+    domain_recovery.apply_candidate("streamingcommunityz.rodeo")
+    assert events == [{"type":"domain_changed", "domain":"streamingcommunityz.rodeo", "version":"v9"}]
+    assert cleared == ["streamingcommunity", "metadata"]
+    assert domain_recovery.recovery_state()["current"] == "streamingcommunityz.rodeo"
+
+
+@pytest.mark.parametrize("enabled,interval", [(True, 5), (False, 5), (True, "invalid")])
+def test_watcher_checks_before_first_sleep_and_respects_settings(monkeypatch, enabled, interval):
+    import asyncio
+    events = []
+    monkeypatch.setattr(domain_recovery, "_settings", lambda: {
+        "domain_auto_check_enabled": enabled, "domain_check_interval_minutes": interval})
+    monkeypatch.setattr(domain_recovery, "run_check", lambda: events.append("check"))
+    async def worker(callback):
+        return callback()
+    async def sleep(seconds):
+        events.append(("sleep", seconds))
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(asyncio, "to_thread", worker)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(domain_recovery.domain_watch_loop())
+    assert events == (["check"] if enabled else []) + [("sleep", 300)]
+
+
 def test_forcing_looks_even_when_the_domain_works(monkeypatch, _configured_domain, page, public_dns):
     monkeypatch.setattr(domain_recovery, "get_domain_version", lambda host: "v1")
 

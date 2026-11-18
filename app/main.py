@@ -142,8 +142,8 @@ async def lifespan(app: FastAPI):
     job_manager.set_schedule_store(store)
     job_manager.load_scheduled_from_store()
     job_manager.set_loop(asyncio.get_event_loop())
-    # Watches the source's domain, not anything in it; it sleeps before its
-    # first pass so the lifespan never does network I/O.
+    # The task checks the source domain immediately in a worker, without
+    # blocking startup, then follows its configured polling interval.
     domain_task = asyncio.create_task(domain_recovery.domain_watch_loop())
     portal_task = None
     if os.environ.get("SC_PANEL_PORTAL_TOKEN"):

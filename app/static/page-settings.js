@@ -985,7 +985,7 @@ async function loadDomainRecoverySettings() {
     data.domain_auto_check_enabled !== false;
   document.getElementById('domain-auto-apply').checked = !!data.domain_auto_apply;
   document.getElementById('domain-check-interval').value =
-    data.domain_check_interval_minutes ?? 1;
+    data.domain_check_interval_minutes ?? 5;
 }
 
 
@@ -1335,7 +1335,7 @@ async function saveDomain() {
   _feedback('domain-feedback', t('settings.verifying'));
   try {
     const data = await api.put('/api/domain', {domain});
-    currentDomain = data.domain; currentVersion = data.version;
+    await loadDomainStatus();
     _feedback('domain-feedback', t('settings.ok.version', {version: data.version}), 'success');
     const badge = document.getElementById('domain-badge');
     badge.className = 'badge bg-success';

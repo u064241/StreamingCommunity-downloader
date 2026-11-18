@@ -81,17 +81,29 @@ function defaultPage() {
 // needs the source awaits this instead of reading a global that may still be
 // empty. One request, shared by every caller.
 let _domainReady = null;
+let _domainStatusLoading = null;
 
 function ensureDomain() {
   if (!_domainReady) _domainReady = loadDomainStatus();
   return _domainReady;
 }
 
-async function loadDomainStatus() {
+function loadDomainStatus() {
+  if (!_domainStatusLoading) {
+    _domainStatusLoading = _readDomainStatus().finally(() => { _domainStatusLoading = null; });
+  }
+  return _domainStatusLoading;
+}
+
+async function _readDomainStatus() {
   try {
     const data = await api.get('/api/domain');
+    const previous = currentDomain;
     currentDomain = data.domain || '';
     currentVersion = data.version || '';
+    // A refresh of the current page may call ensureDomain again. The new
+    // configuration is ready; do not make that call wait on itself.
+    _domainReady = Promise.resolve();
     const badge = document.getElementById('domain-badge');
     if (data.valid) {
       badge.className = 'badge bg-success';
@@ -104,15 +116,47 @@ async function loadDomainStatus() {
       // overruled by a domain check that finished late.
       if (!parseHash()) openSettings();
     }
+    if (previous && currentDomain && previous !== currentDomain) await _refreshDomainViews();
   } catch(e) { console.error('loadDomainStatus:', e); }
-  finally { await loadDomainCandidate(); }
+  finally { loadDomainCandidate(); }
+}
+
+async function _refreshDomainViews() {
+  // Drop source-derived caches, preserving the URL's query/filter/season.
+  if (typeof _homeCache !== 'undefined') {
+    for (const key of Object.keys(_homeCache)) {
+      if (key.startsWith('streamingcommunity:') || key.startsWith('all:')) delete _homeCache[key];
+    }
+  }
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('sc.search.return') || 'null');
+    if (saved?.results?.some(item => !item.source || item.source === 'streamingcommunity')) {
+      delete saved.results;
+      sessionStorage.setItem('sc.search.return', JSON.stringify(saved));
+    }
+  } catch (_) { /* unavailable browser storage is harmless */ }
+  if (currentSource === 'streamingcommunity' || currentSource === 'all') {
+    if (typeof _searchAbort !== 'undefined') _searchAbort?.abort();
+    if (typeof _cancelCatalogWork === 'function') _cancelCatalogWork();
+    _searchResults = []; _requestStatus = {};
+    if (typeof _routePage !== 'undefined' && _routePage === 'search') {
+      const query = document.getElementById('search-input')?.value.trim();
+      if (query) await doSearch();
+      else await showStartPage();
+    }
+  }
+  if (typeof _tp !== 'undefined' && _tp?.source === 'streamingcommunity') {
+    const route = {type: _tp.type, id: _tp.id, slug: _tp.slug, source: _tp.source, season: _tp.season};
+    ++_tpToken; // Discard old metadata/episode responses even on a hidden title.
+    _tp = null;
+    if (typeof _routePage !== 'undefined' && _routePage === 'detail') await loadTitlePage(route);
+  }
 }
 
 // ── Source domain moved ────────────────────────────────────────────────────────
 //
-// The panel proposes; a person applies. See app/core/domain_recovery.py for why
-// adopting a domain published on a page we do not control is not something that
-// happens quietly.
+// Proposals require confirmation unless automatic application is enabled.
+// Polling also synchronizes applied changes when an SSE event was missed.
 
 let _domainCandidate = null;
 let _domainRecoveryStatus = 'idle';
@@ -142,6 +186,7 @@ async function loadDomainCandidate() {
     _domainCandidate = data.candidate || null;
     _domainRecoveryStatus = data.status || (_domainCandidate ? 'found' : 'idle');
     renderDomainBanner();
+    if (data.current && data.current !== currentDomain) await loadDomainStatus();
   } catch (e) { /* a missing banner is not worth a console error */ }
   finally { _domainRecoveryLoading = false; }
 }
