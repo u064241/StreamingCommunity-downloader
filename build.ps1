@@ -188,7 +188,7 @@ function Assert-ReleaseReady {
         if ($tag -in $releaseTags) {
             throw "La release $tag esiste gia. Incrementa __version__ in app\__init__.py e crea un nuovo commit."
         }
-        $remoteTag = & git -C $ProjectRoot ls-remote --exit-code --tags origin "refs/tags/$tag"
+        $null = & git -C $ProjectRoot ls-remote --exit-code --tags origin "refs/tags/$tag"
         if ($LASTEXITCODE -eq 0) { throw "Il tag remoto $tag esiste gia. Scegli una nuova versione." }
         if ($LASTEXITCODE -ne 2) { throw 'Impossibile controllare i tag remoti. Pubblicazione annullata.' }
     } finally {
