@@ -632,9 +632,11 @@ end;
             try {
                 & $gh.Source auth status --hostname github.com
                 if ($LASTEXITCODE -ne 0) { throw 'Autenticazione GitHub non disponibile. Configura SC_GITHUB_TOKEN o gh auth login.' }
-                $releaseBranch = "release/v$Version"
-                & git -C $ProjectRoot push origin ("${ReleaseCommit}:refs/heads/$releaseBranch")
-                if ($LASTEXITCODE -ne 0) { throw "Push del branch release fallito: $releaseBranch" }
+                # Single branch: releases are cut from main, no release/vX branches.
+                # Fast-forward only: a non-fast-forward push is refused.
+                & git -C $ProjectRoot push origin ("${ReleaseCommit}:refs/heads/main")
+                if ($LASTEXITCODE -ne 0) { throw 'Push di main fallito (serve fast-forward).' }
+                $releaseTarget = 'main'
                 $releaseFiles = @(
                     (Join-Path $DistDir "$AppName-Setup-v$Version.exe"),
                     (Join-Path $DistDir 'update-manifest.json'),
@@ -647,7 +649,7 @@ end;
                 }
                 $tag = "v$Version"
                 $notesPath = Join-Path $ProjectRoot "releases\v$Version.md"
-                & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target $releaseBranch --title "StreamingCommunity Downloader $Version" --notes-file $notesPath --latest
+                & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target $releaseTarget --title "StreamingCommunity Downloader $Version" --notes-file $notesPath --latest
                 if ($LASTEXITCODE -ne 0) { throw "Pubblicazione GitHub fallita per $tag." }
                 Write-Host "Release GitHub pubblicata: $tag" -ForegroundColor Green
                 try {
