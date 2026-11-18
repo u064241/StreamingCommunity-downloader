@@ -797,6 +797,13 @@ async def refresh_video_encoders():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@router.get("/ytdlp/status", dependencies=CAN_MANAGE)
+async def ytdlp_status():
+    """Installed yt-dlp vs PyPI. Read-only, called on request only."""
+    from app.core import ytdlp_update
+    return await asyncio.to_thread(ytdlp_update.status)
+
+
 @router.post("/ffmpeg/update", dependencies=CAN_MANAGE)
 async def update_ffmpeg():
     from app.core import ffmpeg_update
