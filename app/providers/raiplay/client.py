@@ -38,7 +38,7 @@ SEARCH_TEMPLATE_OUT = "6516ac5d40da6c377b151642"
 # Only these sections can be fetched for a title card.
 _TITLE_PATH = re.compile(r"/(programmi|collezioni)/[A-Za-z0-9][A-Za-z0-9/-]{0,220}\.json")
 _EPISODES_PATH = re.compile(r"/(programmi|collezioni)/[A-Za-z0-9][A-Za-z0-9/-]{0,300}/episodes\.json")
-_VIDEO_PATH = re.compile(r"/video/[^\s\"'<>\\?#]{1,300}\.json")
+_VIDEO_PATH = re.compile(r"/video/[^\s\"'<>\\?#%]{1,300}\.json")
 _EDITORIAL_PATH = re.compile(r"/(programmi|collezioni)/[a-z0-9][a-z0-9-]{0,150}(?:/[a-z0-9][a-z0-9-]{0,150}){2}")
 
 

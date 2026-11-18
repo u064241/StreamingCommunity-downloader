@@ -82,7 +82,7 @@ def portable_status():
     # Portable mode is delivered through the setup now; standalone portable
     # ZIP updates are no longer published as release assets.
     signed = portable_updates.signature_check_enabled()
-    return {"mode": mode, "available": False,
+    return {"mode": mode, "available": PORTABLE_ZIP_PUBLISHED,
             "signature_verification": signed, "token": _local_token}
 
 

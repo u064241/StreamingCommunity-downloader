@@ -29,6 +29,7 @@ _WEEKDAYS = dict(zip(("lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "s
 def clear_cache():
     with _lock:
         _cache.clear()
+        _key_locks.clear()
 
 
 _key_locks: dict = {}

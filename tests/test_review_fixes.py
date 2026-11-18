@@ -54,7 +54,7 @@ def test_slow_fetch_does_not_block_other_catalogue_keys():
         cat.clear_cache()
 
 
-def test_identical_concurrent_requests_share_one_fetch():
+def test_repeated_identical_request_is_served_from_cache():
     cat.clear_cache()
     calls = []
 
@@ -84,6 +84,15 @@ def test_unlimited_source_requests_need_free_profile_consent(client):
     response = client.put("/api/domain/settings", json={"source_requests_per_hour": 0})
     assert response.status_code == 400
     assert "profilo libero" in response.text
+
+
+def test_explicit_false_ack_cannot_bypass_consent_already_stored(client, monkeypatch):
+    from app.routers import domain
+    monkeypatch.setattr(domain, "get_settings", lambda: {"source_requests_per_hour": 60,
+                                                         "free_profile_acknowledged": True})
+    response = client.put("/api/domain/settings", json={"source_requests_per_hour": 0,
+                                                        "free_profile_acknowledged": False})
+    assert response.status_code == 400
 
 
 def test_portable_prepare_and_apply_stay_closed_without_a_published_zip(monkeypatch):
