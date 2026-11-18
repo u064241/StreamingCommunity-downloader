@@ -1532,6 +1532,7 @@ async function _copyWithToast(text, what) {
 registerActions({
   'cfg:probeHardware': () => probeHardware(),
   'cfg:updateFfmpeg': () => updateFfmpeg(),
+  'cfg:checkYtdlp': () => checkYtdlp(),
   'cfg:performanceProfile': (d, el) => selectPerformanceProfile(el.value),
   'cfg:resetConservative': () => resetConservativePreset(),
   'cfg:softetherStatus': () => loadSoftEtherStatus(),
@@ -1585,6 +1586,34 @@ registerActions({
   'cfg:regenerateMcpToken': () => regenerateMcpToken(),
   'cfg:revokeMcpToken':   () => revokeMcpToken(),
 });
+
+// yt-dlp status. Text is set with textContent: versions come from PyPI.
+async function checkYtdlp() {
+  const out = document.getElementById('ytdlp-status');
+  if (!out) return;
+  const button = document.querySelector('[data-action="cfg:checkYtdlp"]');
+  if (button) button.disabled = true;
+  out.className = 'form-text';
+  out.textContent = 'Controllo yt-dlp…';
+  try {
+    const s = await api.get('/api/domain/ytdlp/status');
+    if (s.error || !s.latest) {
+      out.className = 'form-text text-warning';
+      out.textContent = `yt-dlp ${s.installed || '?'}: impossibile leggere la versione su PyPI.`;
+    } else if (s.update_available) {
+      out.className = 'form-text text-warning';
+      out.textContent = `yt-dlp ${s.installed} installato, ${s.latest} disponibile. Serve una nuova versione del pannello per aggiornarlo.`;
+    } else {
+      out.className = 'form-text text-success';
+      out.textContent = `yt-dlp ${s.installed} aggiornato.`;
+    }
+  } catch (e) {
+    out.className = 'form-text text-danger';
+    out.textContent = _settingsError(e, 'Controllo yt-dlp non riuscito.');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
 
 async function updateFfmpeg() {
   if (!await scConfirm('Scaricare e installare la versione FFmpeg inclusa nel wheel PyPI verificato con SHA-256?')) return;
