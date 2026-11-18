@@ -54,12 +54,14 @@ test('only the two download engines are downloadable; anything else is metadata 
   assert.equal(only('streamingcommunity', {downloadable: false}), true);
 });
 
-test('a RaiPlay card loads from /api/titles only and keeps the button disabled', async () => {
+test('a RaiPlay card loads from /api/titles only and offers the download when not DRM', async () => {
+  // Policy since a1f10b2 (2026-11-15): RaiPlay provider has download=True and
+  // the parser sets downloadable=not drm, so a non-DRM title is downloadable.
   const app = titleSetup(() => ({name: 'Serie <b>Esempio</b>', description: 'Trama', genres: ['Drama'],
     poster: 'https://www.raiplay.it/dl/img/p.jpg', page_url: 'https://www.raiplay.it/programmi/serieesempio',
-    downloadable: true, download_disabled_reason: 'Contenuto non scaricabile dal pannello'}));
+    downloadable: true, download_disabled_reason: null}));
   app.context.setTp({id: 'programmi:serieesempio', source: 'raiplay', type: 'tv', name: '', genres: [],
-    metadataOnly: true, downloadDisabledReason: 'Contenuto non scaricabile dal pannello'});
+    metadataOnly: true, downloadDisabledReason: ''});
   await vm.runInContext('_tpLoadMetadataOnly(1)', app.context);
   assert.deepEqual(app.calls, ['/api/titles/raiplay/programmi%3Aserieesempio']);
   const tp = app.context.getTp();
@@ -67,13 +69,22 @@ test('a RaiPlay card loads from /api/titles only and keeps the button disabled',
   assert.equal(tp.plot, 'Trama');
   vm.runInContext('_tpRenderCta()', app.context);
   const html = app.nodes['th-cta'].innerHTML;
-  assert.match(html, /disabled/);
-  assert.match(html, /Contenuto non scaricabile dal pannello/);
-  assert.doesNotMatch(html, /data-action="tp:primary"/);
+  assert.match(html, /data-action="tp:primary"/);
+  assert.doesNotMatch(html, /<button[^>]*\sdisabled/);
   assert.match(html, /href="https:\/\/www\.raiplay\.it\/programmi\/serieesempio"/);
-  // The primary action does nothing for it (no languages, tracks or download).
-  vm.runInContext('tpPrimary()', app.context);
-  assert.equal(app.calls.length, 1);
+});
+
+test('a RaiPlay title with DRM stays read-only: disabled button and the reason', async () => {
+  const app = titleSetup(() => ({name: 'Film', description: 'Trama', genres: [], poster: '',
+    page_url: 'https://www.raiplay.it/programmi/filmdrm',
+    downloadable: false, download_disabled_reason: 'Contenuto protetto da DRM'}));
+  app.context.setTp({id: 'programmi:filmdrm', source: 'raiplay', type: 'movie', name: '', genres: [],
+    metadataOnly: true, downloadDisabledReason: ''});
+  await vm.runInContext('_tpLoadMetadataOnly(1)', app.context);
+  vm.runInContext('_tpRenderCta()', app.context);
+  const html = app.nodes['th-cta'].innerHTML;
+  assert.match(html, /<button[^>]*\sdisabled/);
+  assert.match(html, /Contenuto protetto da DRM/);
 });
 
 test('the disabled reason is escaped and a foreign page link is not shown', () => {
