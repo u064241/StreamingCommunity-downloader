@@ -33,6 +33,10 @@ tools/softether/payload/
 tools/softether/.verification/
 build/
 
+# Managed FFmpeg binary and version stamp, written by app/core/ffmpeg_update.py.
+# Runtime cache, not source: never committed.
+ffmpeg/
+
 # Runtime state, never committed
 panel.db.bak-*
 source_fields.json
