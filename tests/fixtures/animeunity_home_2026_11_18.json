@@ -1,0 +1,1293 @@
+{
+  "source": "https://animeunity.cx/",
+  "captured_on": "2026-11-18",
+  "note": "Public homepage metadata selected from Inertia props; user data, plots and playback credentials omitted.",
+  "props": {
+    "latestEpisodes": {
+      "data": [
+        {
+          "episode": {
+            "anime": {
+              "id": 6467,
+              "slug": "super-cube",
+              "title": "Super Cube",
+              "type": "ona",
+              "year": 2025,
+              "default_status": "completed",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/39S0Y.png",
+                "poster": "https://img.animeunity.cx/anime/bx166442-JTkdzIQpgf8M.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "ita",
+                  "status": "ongoing",
+                  "airing_day": "wednesday",
+                  "episodes_count": 4
+                },
+                {
+                  "language": "chn",
+                  "status": "completed",
+                  "airing_day": "undefined",
+                  "episodes_count": 12
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7849,
+              "slug": "battle-spirits-re-zekkai-no-ku",
+              "title": "Battle Spirits [Re] Zekkai No Ku",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/G1u8d.png",
+                "poster": "https://img.animeunity.cx/anime/bx187990-tNyQPmr9TkYi.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7798,
+              "slug": "magical-girl-raising-project-restart",
+              "title": "Magical Girl Raising Project: Restart",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/5b4e2d49cd46847585547f654214b2314d1bd8ab2639a678030f5bdf5668359f.jpg",
+                "poster": "https://img.animeunity.cx/anime/bx160803-Rcr3IvhE7q9c.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7688,
+              "slug": "red-river",
+              "title": "Red River",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/aLRxA.png",
+                "poster": "https://img.animeunity.cx/anime/bx207809-cpS7CAyjN7iP.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 20
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7863,
+              "slug": "dark-machine-the-animation",
+              "title": "Dark Machine The Animation",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/-LU-T.png",
+                "poster": "https://img.animeunity.cx/anime/bx179876-Wg62CAzp5WQ1.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 6
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7786,
+              "slug": "chitose-is-in-the-ramune-bottle-part-2",
+              "title": "Chitose Is in the Ramune Bottle Part 2",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/OTwWK.png",
+                "poster": "https://img.animeunity.cx/anime/bx198727-BL0JTpg0G8tq.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 6
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7800,
+              "slug": "the-laid-off-cheat-granting-mage-enjoys-a-second-lease-on-life",
+              "title": "The Laid-Off Cheat-Granting Mage Enjoys a Second Lease on Life",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/207329-9IqRSKIsM3TC.jpg",
+                "cover": "https://img.animeunity.cx/anime/4SaIK.png",
+                "poster": "https://img.animeunity.cx/anime/b207329-6VPeZIDfF4Sr.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7850,
+              "slug": "super-psychic-policeman-chojo",
+              "title": "Super Psychic Policeman Chojo",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/200294-PPEwId1xfGNO.jpg",
+                "cover": "https://img.animeunity.cx/anime/fspzM.png",
+                "poster": "https://img.animeunity.cx/anime/bx200294-E6KIgkFaJOfG.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7870,
+              "slug": "suikoden-the-anime",
+              "title": "Suikoden: The Anime",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/j3VlW.png",
+                "poster": "https://img.animeunity.cx/anime/bx187316-jucYCojVTjSY.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7794,
+              "slug": "the-cold-sato-san-is-only-sweet-to-me",
+              "title": "The Cold Sato-san is Only Sweet to Me",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/bgXwK.png",
+                "poster": "https://img.animeunity.cx/anime/bx209502-C81oN8M4Smlo.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7791,
+              "slug": "nia-liston-the-merciless-maiden",
+              "title": "Nia Liston: The Merciless Maiden",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/206949-c5hfhixdgvy5.jpg",
+                "cover": "https://img.animeunity.cx/anime/VVpfI.png",
+                "poster": "https://img.animeunity.cx/anime/bx206949-4HYI3YuP0eLI.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "tuesday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 5478,
+              "slug": "dragon-ball-daima",
+              "title": "Dragon Ball Daima",
+              "type": "tv",
+              "year": 2024,
+              "default_status": "completed",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/170083-SYCCWWlq3hqF.jpg",
+                "cover": "https://img.animeunity.cx/anime/4Mskl.png",
+                "poster": "https://img.animeunity.cx/anime/bx170083-GTwRrhTApcLR.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "ita",
+                  "status": "ongoing",
+                  "airing_day": "undefined",
+                  "episodes_count": 20
+                },
+                {
+                  "language": "jpn",
+                  "status": "completed",
+                  "airing_day": "friday",
+                  "episodes_count": 20
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 5478,
+              "slug": "dragon-ball-daima",
+              "title": "Dragon Ball Daima",
+              "type": "tv",
+              "year": 2024,
+              "default_status": "completed",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/170083-SYCCWWlq3hqF.jpg",
+                "cover": "https://img.animeunity.cx/anime/4Mskl.png",
+                "poster": "https://img.animeunity.cx/anime/bx170083-GTwRrhTApcLR.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "ita",
+                  "status": "ongoing",
+                  "airing_day": "undefined",
+                  "episodes_count": 20
+                },
+                {
+                  "language": "jpn",
+                  "status": "completed",
+                  "airing_day": "friday",
+                  "episodes_count": 20
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7726,
+              "slug": "a-will-eternal-4",
+              "title": "A Will Eternal 4",
+              "type": "ona",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/deFIJ.png",
+                "poster": "https://img.animeunity.cx/anime/bx199409-tZnVTAQ9P6fY.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "chn",
+                  "status": "ongoing",
+                  "airing_day": "undefined",
+                  "episodes_count": 17
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 6402,
+              "slug": "lazarus",
+              "title": "Lazarus",
+              "type": "tv",
+              "year": 2025,
+              "default_status": "completed",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/167336-IzjrGm2QpTie.jpg",
+                "cover": "https://img.animeunity.cx/anime/MGWjE.png",
+                "poster": "https://img.animeunity.cx/anime/bx167336-KpGIIBie71OX.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "ita",
+                  "status": "completed",
+                  "airing_day": "undefined",
+                  "episodes_count": 13
+                },
+                {
+                  "language": "jpn",
+                  "status": "completed",
+                  "airing_day": "undefined",
+                  "episodes_count": 13
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 6402,
+              "slug": "lazarus",
+              "title": "Lazarus",
+              "type": "tv",
+              "year": 2025,
+              "default_status": "completed",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/167336-IzjrGm2QpTie.jpg",
+                "cover": "https://img.animeunity.cx/anime/MGWjE.png",
+                "poster": "https://img.animeunity.cx/anime/bx167336-KpGIIBie71OX.png",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "ita",
+                  "status": "completed",
+                  "airing_day": "undefined",
+                  "episodes_count": 13
+                },
+                {
+                  "language": "jpn",
+                  "status": "completed",
+                  "airing_day": "undefined",
+                  "episodes_count": 13
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 22,
+              "slug": "boruto-naruto-next-generations",
+              "title": "Boruto: Naruto Next Generations",
+              "type": "tv",
+              "year": 2017,
+              "default_status": "completed",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/87178-BXmEG9Q4KK2T.jpg",
+                "cover": "https://img.animeunity.cx/anime/ux6V6.jpg",
+                "poster": "https://img.animeunity.cx/anime/bx97938-BnF6M5yTaNB1.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "ita",
+                  "status": "ongoing",
+                  "airing_day": "undefined",
+                  "episodes_count": 150
+                },
+                {
+                  "language": "jpn",
+                  "status": "completed",
+                  "airing_day": "sunday",
+                  "episodes_count": 293
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7789,
+              "slug": "psyren",
+              "title": "Psyren",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/204011-hBOwte9MzykA.jpg",
+                "cover": "https://img.animeunity.cx/anime/3pGZY.png",
+                "poster": "https://img.animeunity.cx/anime/bx204011-j45RZoqYbdZK.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "monday",
+                  "episodes_count": 6
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 22,
+              "slug": "boruto-naruto-next-generations",
+              "title": "Boruto: Naruto Next Generations",
+              "type": "tv",
+              "year": 2017,
+              "default_status": "completed",
+              "images": {
+                "banner": "https://img.animeunity.cx/anime/87178-BXmEG9Q4KK2T.jpg",
+                "cover": "https://img.animeunity.cx/anime/ux6V6.jpg",
+                "poster": "https://img.animeunity.cx/anime/bx97938-BnF6M5yTaNB1.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "ita",
+                  "status": "ongoing",
+                  "airing_day": "undefined",
+                  "episodes_count": 150
+                },
+                {
+                  "language": "jpn",
+                  "status": "completed",
+                  "airing_day": "sunday",
+                  "episodes_count": 293
+                }
+              ]
+            }
+          }
+        },
+        {
+          "episode": {
+            "anime": {
+              "id": 7843,
+              "slug": "so-whats-wrong-with-getting-reborn-as-a-goblin",
+              "title": "So What's Wrong with Getting Reborn as a Goblin?",
+              "type": "tv",
+              "year": 2026,
+              "default_status": "ongoing",
+              "images": {
+                "banner": null,
+                "cover": "https://img.animeunity.cx/anime/UC3Im.png",
+                "poster": "https://img.animeunity.cx/anime/bx209219-3yhKlRx0LX3p.jpg",
+                "logo": null
+              },
+              "variants": [
+                {
+                  "language": "jpn",
+                  "status": "ongoing",
+                  "airing_day": "monday",
+                  "episodes_count": 7
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "carouselAnimes": [
+      {
+        "id": 12,
+        "slug": "one-piece",
+        "title": "One Piece",
+        "type": "tv",
+        "year": 1999,
+        "default_status": "ongoing",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/21-wf37VakJmZqs.jpg",
+          "cover": "https://img.animeunity.cx/anime/OnePieceElbaf.png",
+          "poster": "https://img.animeunity.cx/anime/bx21-ELSYx3yMPcKM.jpg",
+          "logo": "https://img.animeunity.cx/anime/9F7daAmibx8ZHTE17CdM5FAwiHE.png"
+        },
+        "variants": [
+          {
+            "language": "ita",
+            "status": "ongoing",
+            "airing_day": "undefined",
+            "episodes_count": 946
+          },
+          {
+            "language": "jpn",
+            "status": "ongoing",
+            "airing_day": "undefined",
+            "episodes_count": 1180
+          }
+        ]
+      },
+      {
+        "id": 7771,
+        "slug": "black-clover-2",
+        "title": "Black Clover 2",
+        "type": "tv",
+        "year": 2026,
+        "default_status": "ongoing",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/195604-lQpCzTziSA17.jpg",
+          "cover": "https://img.animeunity.cx/anime/black-clover-season-2-kv-16x9.png",
+          "poster": "https://img.animeunity.cx/anime/bx195604-tSZcfKbVqSEG.jpg",
+          "logo": "https://img.animeunity.cx/anime/9YHDkwkjIZEGPh6088sAvKAgswk.png"
+        },
+        "variants": [
+          {
+            "language": "ita",
+            "status": "ongoing",
+            "airing_day": "saturday",
+            "episodes_count": 4
+          },
+          {
+            "language": "jpn",
+            "status": "ongoing",
+            "airing_day": "saturday",
+            "episodes_count": 7
+          }
+        ]
+      },
+      {
+        "id": 112,
+        "slug": "black-clover",
+        "title": "Black Clover",
+        "type": "tv",
+        "year": 2017,
+        "default_status": "completed",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/97940-1URQdQ4U1a0b.jpg",
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx97940-fyh8o7gNbha0.png",
+          "logo": "https://img.animeunity.cx/anime/j9ZZ7WV5pwLLXbbebyGdMUxbqrc.png"
+        },
+        "variants": [
+          {
+            "language": "ita",
+            "status": "ongoing",
+            "airing_day": "undefined",
+            "episodes_count": 153
+          },
+          {
+            "language": "jpn",
+            "status": "completed",
+            "airing_day": "tuesday",
+            "episodes_count": 170
+          }
+        ]
+      },
+      {
+        "id": 7810,
+        "slug": "overgeared",
+        "title": "Overgeared",
+        "type": "ona",
+        "year": 2026,
+        "default_status": "ongoing",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/212888-ZsnNegBCKXQq.jpg",
+          "cover": "https://img.animeunity.cx/anime/Overgeared-anime.webp",
+          "poster": "https://img.animeunity.cx/anime/bx212888-NhyvqPt5aIuJ.jpg",
+          "logo": "https://img.animeunity.cx/anime/ki2DwqPbI2LcWeOQrq7dtaDIHFB.png"
+        },
+        "variants": [
+          {
+            "language": "ita",
+            "status": "ongoing",
+            "airing_day": "sunday",
+            "episodes_count": 8
+          },
+          {
+            "language": "jpn",
+            "status": "ongoing",
+            "airing_day": "sunday",
+            "episodes_count": 8
+          }
+        ]
+      },
+      {
+        "id": 7781,
+        "slug": "dragon-ball-super-beerus",
+        "title": "Dragon Ball Super: Beerus",
+        "type": "tv",
+        "year": 2026,
+        "default_status": "ongoing",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/206814-ARuwrZJAGONN.jpg",
+          "cover": "https://img.animeunity.cx/anime/b2bb22d6a96dd7902906507631241bc3d14c04242fed4fb0ea4b802755bd456a.jpg",
+          "poster": "https://img.animeunity.cx/anime/bx206814-PVVzRbf1IQpe.jpg",
+          "logo": "https://img.animeunity.cx/anime/naD7iHNC4eFxcnpNnD0x43IYDmg.png"
+        },
+        "variants": [
+          {
+            "language": "jpn",
+            "status": "ongoing",
+            "airing_day": "sunday",
+            "episodes_count": 6
+          }
+        ]
+      }
+    ],
+    "latestAnimes": [
+      {
+        "id": 8136,
+        "slug": "the-kept-man-of-the-princess-knight",
+        "title": "The Kept Man of the Princess Knight",
+        "type": "tv",
+        "year": 2027,
+        "default_status": "upcoming",
+        "images": {
+          "banner": null,
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx186741-jfAFI71jie1x.jpg",
+          "logo": null
+        },
+        "variants": []
+      },
+      {
+        "id": 8135,
+        "slug": "are-you-a-jirai-girl-chihara-san",
+        "title": "Are You a Jirai Girl, Chihara-san?",
+        "type": "tv",
+        "year": 2027,
+        "default_status": "upcoming",
+        "images": {
+          "banner": null,
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx204579-eIieS4KuQN9x.jpg",
+          "logo": null
+        },
+        "variants": []
+      },
+      {
+        "id": 8133,
+        "slug": "welcome-to-demon-school-iruma-kun-irumafia-edition",
+        "title": "Welcome to Demon School! Iruma-kun: IruMafia Edition",
+        "type": "tv",
+        "year": 2027,
+        "default_status": "dropped",
+        "images": {
+          "banner": null,
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx207251-1opGPW7xVHQ8.jpg",
+          "logo": null
+        },
+        "variants": []
+      },
+      {
+        "id": 7879,
+        "slug": "devils-crest",
+        "title": "Devils' Crest",
+        "type": "tv",
+        "year": 2026,
+        "default_status": "ongoing",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/203275-g8zkD7HCkJCn.jpg",
+          "cover": "https://img.animeunity.cx/anime/Qipbr.png",
+          "poster": "https://img.animeunity.cx/anime/b203275-YyNHygkzIjMC.jpg",
+          "logo": null
+        },
+        "variants": [
+          {
+            "language": "ita",
+            "status": "ongoing",
+            "airing_day": "friday",
+            "episodes_count": 3
+          },
+          {
+            "language": "jpn",
+            "status": "ongoing",
+            "airing_day": "friday",
+            "episodes_count": 3
+          }
+        ]
+      },
+      {
+        "id": 7870,
+        "slug": "suikoden-the-anime",
+        "title": "Suikoden: The Anime",
+        "type": "tv",
+        "year": 2026,
+        "default_status": "ongoing",
+        "images": {
+          "banner": null,
+          "cover": "https://img.animeunity.cx/anime/j3VlW.png",
+          "poster": "https://img.animeunity.cx/anime/bx187316-jucYCojVTjSY.jpg",
+          "logo": null
+        },
+        "variants": [
+          {
+            "language": "jpn",
+            "status": "ongoing",
+            "airing_day": "tuesday",
+            "episodes_count": 7
+          }
+        ]
+      }
+    ],
+    "upcomingAnimes": [
+      {
+        "id": 8136,
+        "slug": "the-kept-man-of-the-princess-knight",
+        "title": "The Kept Man of the Princess Knight",
+        "type": "tv",
+        "year": 2027,
+        "default_status": "upcoming",
+        "images": {
+          "banner": null,
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx186741-jfAFI71jie1x.jpg",
+          "logo": null
+        },
+        "variants": []
+      },
+      {
+        "id": 8135,
+        "slug": "are-you-a-jirai-girl-chihara-san",
+        "title": "Are You a Jirai Girl, Chihara-san?",
+        "type": "tv",
+        "year": 2027,
+        "default_status": "upcoming",
+        "images": {
+          "banner": null,
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx204579-eIieS4KuQN9x.jpg",
+          "logo": null
+        },
+        "variants": []
+      },
+      {
+        "id": 7807,
+        "slug": "fool-night",
+        "title": "Fool Night",
+        "type": "ona",
+        "year": 2026,
+        "default_status": "upcoming",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/213457-4m8VEkWwzJEq.jpg",
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx213457-gN5p1GZjK3zi.jpg",
+          "logo": null
+        },
+        "variants": []
+      },
+      {
+        "id": 7249,
+        "slug": "omae-wa-mada-gunma-wo-shiranai-reiwa-ban",
+        "title": "Omae wa Mada Gunma wo Shiranai: Reiwa-ban",
+        "type": "tv",
+        "year": 2026,
+        "default_status": "upcoming",
+        "images": {
+          "banner": null,
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx202419-BmPPSzsegbcv.png",
+          "logo": null
+        },
+        "variants": []
+      },
+      {
+        "id": 6445,
+        "slug": "me-and-the-alien-mumu",
+        "title": "Me and the Alien MuMu",
+        "type": "tv",
+        "year": 2025,
+        "default_status": "upcoming",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/185070-IqaCRPp4zbM9.jpg",
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx185070-VKzUA4B9kmaX.jpg",
+          "logo": null
+        },
+        "variants": []
+      }
+    ],
+    "topAnimes": {
+      "day": [
+        {
+          "id": 12,
+          "slug": "one-piece",
+          "title": "One Piece",
+          "type": "tv",
+          "year": 1999,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/21-wf37VakJmZqs.jpg",
+            "cover": "https://img.animeunity.cx/anime/OnePieceElbaf.png",
+            "poster": "https://img.animeunity.cx/anime/bx21-ELSYx3yMPcKM.jpg",
+            "logo": "https://img.animeunity.cx/anime/9F7daAmibx8ZHTE17CdM5FAwiHE.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 946
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 1180
+            }
+          ]
+        },
+        {
+          "id": 112,
+          "slug": "black-clover",
+          "title": "Black Clover",
+          "type": "tv",
+          "year": 2017,
+          "default_status": "completed",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/97940-1URQdQ4U1a0b.jpg",
+            "cover": null,
+            "poster": "https://img.animeunity.cx/anime/bx97940-fyh8o7gNbha0.png",
+            "logo": "https://img.animeunity.cx/anime/j9ZZ7WV5pwLLXbbebyGdMUxbqrc.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 153
+            },
+            {
+              "language": "jpn",
+              "status": "completed",
+              "airing_day": "tuesday",
+              "episodes_count": 170
+            }
+          ]
+        },
+        {
+          "id": 7771,
+          "slug": "black-clover-2",
+          "title": "Black Clover 2",
+          "type": "tv",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/195604-lQpCzTziSA17.jpg",
+            "cover": "https://img.animeunity.cx/anime/black-clover-season-2-kv-16x9.png",
+            "poster": "https://img.animeunity.cx/anime/bx195604-tSZcfKbVqSEG.jpg",
+            "logo": "https://img.animeunity.cx/anime/9YHDkwkjIZEGPh6088sAvKAgswk.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 4
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        {
+          "id": 7800,
+          "slug": "the-laid-off-cheat-granting-mage-enjoys-a-second-lease-on-life",
+          "title": "The Laid-Off Cheat-Granting Mage Enjoys a Second Lease on Life",
+          "type": "tv",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/207329-9IqRSKIsM3TC.jpg",
+            "cover": "https://img.animeunity.cx/anime/4SaIK.png",
+            "poster": "https://img.animeunity.cx/anime/b207329-6VPeZIDfF4Sr.png",
+            "logo": null
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "tuesday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        {
+          "id": 430,
+          "slug": "naruto-shippuden",
+          "title": "Naruto Shippuden",
+          "type": "tv",
+          "year": 2007,
+          "default_status": "completed",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/1735.jpg",
+            "cover": null,
+            "poster": "https://img.animeunity.cx/anime/bx1735-kGfVm0YqCPcu.png",
+            "logo": null
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "completed",
+              "airing_day": "undefined",
+              "episodes_count": 500
+            },
+            {
+              "language": "jpn",
+              "status": "completed",
+              "airing_day": "thursday",
+              "episodes_count": 500
+            }
+          ]
+        }
+      ],
+      "week": [
+        {
+          "id": 12,
+          "slug": "one-piece",
+          "title": "One Piece",
+          "type": "tv",
+          "year": 1999,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/21-wf37VakJmZqs.jpg",
+            "cover": "https://img.animeunity.cx/anime/OnePieceElbaf.png",
+            "poster": "https://img.animeunity.cx/anime/bx21-ELSYx3yMPcKM.jpg",
+            "logo": "https://img.animeunity.cx/anime/9F7daAmibx8ZHTE17CdM5FAwiHE.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 946
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 1180
+            }
+          ]
+        },
+        {
+          "id": 7771,
+          "slug": "black-clover-2",
+          "title": "Black Clover 2",
+          "type": "tv",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/195604-lQpCzTziSA17.jpg",
+            "cover": "https://img.animeunity.cx/anime/black-clover-season-2-kv-16x9.png",
+            "poster": "https://img.animeunity.cx/anime/bx195604-tSZcfKbVqSEG.jpg",
+            "logo": "https://img.animeunity.cx/anime/9YHDkwkjIZEGPh6088sAvKAgswk.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 4
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        {
+          "id": 112,
+          "slug": "black-clover",
+          "title": "Black Clover",
+          "type": "tv",
+          "year": 2017,
+          "default_status": "completed",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/97940-1URQdQ4U1a0b.jpg",
+            "cover": null,
+            "poster": "https://img.animeunity.cx/anime/bx97940-fyh8o7gNbha0.png",
+            "logo": "https://img.animeunity.cx/anime/j9ZZ7WV5pwLLXbbebyGdMUxbqrc.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 153
+            },
+            {
+              "language": "jpn",
+              "status": "completed",
+              "airing_day": "tuesday",
+              "episodes_count": 170
+            }
+          ]
+        },
+        {
+          "id": 7810,
+          "slug": "overgeared",
+          "title": "Overgeared",
+          "type": "ona",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/212888-ZsnNegBCKXQq.jpg",
+            "cover": "https://img.animeunity.cx/anime/Overgeared-anime.webp",
+            "poster": "https://img.animeunity.cx/anime/bx212888-NhyvqPt5aIuJ.jpg",
+            "logo": "https://img.animeunity.cx/anime/ki2DwqPbI2LcWeOQrq7dtaDIHFB.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 8
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 8
+            }
+          ]
+        },
+        {
+          "id": 7781,
+          "slug": "dragon-ball-super-beerus",
+          "title": "Dragon Ball Super: Beerus",
+          "type": "tv",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/206814-ARuwrZJAGONN.jpg",
+            "cover": "https://img.animeunity.cx/anime/b2bb22d6a96dd7902906507631241bc3d14c04242fed4fb0ea4b802755bd456a.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx206814-PVVzRbf1IQpe.jpg",
+            "logo": "https://img.animeunity.cx/anime/naD7iHNC4eFxcnpNnD0x43IYDmg.png"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 6
+            }
+          ]
+        }
+      ],
+      "month": [
+        {
+          "id": 12,
+          "slug": "one-piece",
+          "title": "One Piece",
+          "type": "tv",
+          "year": 1999,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/21-wf37VakJmZqs.jpg",
+            "cover": "https://img.animeunity.cx/anime/OnePieceElbaf.png",
+            "poster": "https://img.animeunity.cx/anime/bx21-ELSYx3yMPcKM.jpg",
+            "logo": "https://img.animeunity.cx/anime/9F7daAmibx8ZHTE17CdM5FAwiHE.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 946
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 1180
+            }
+          ]
+        },
+        {
+          "id": 7771,
+          "slug": "black-clover-2",
+          "title": "Black Clover 2",
+          "type": "tv",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/195604-lQpCzTziSA17.jpg",
+            "cover": "https://img.animeunity.cx/anime/black-clover-season-2-kv-16x9.png",
+            "poster": "https://img.animeunity.cx/anime/bx195604-tSZcfKbVqSEG.jpg",
+            "logo": "https://img.animeunity.cx/anime/9YHDkwkjIZEGPh6088sAvKAgswk.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 4
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        {
+          "id": 112,
+          "slug": "black-clover",
+          "title": "Black Clover",
+          "type": "tv",
+          "year": 2017,
+          "default_status": "completed",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/97940-1URQdQ4U1a0b.jpg",
+            "cover": null,
+            "poster": "https://img.animeunity.cx/anime/bx97940-fyh8o7gNbha0.png",
+            "logo": "https://img.animeunity.cx/anime/j9ZZ7WV5pwLLXbbebyGdMUxbqrc.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 153
+            },
+            {
+              "language": "jpn",
+              "status": "completed",
+              "airing_day": "tuesday",
+              "episodes_count": 170
+            }
+          ]
+        },
+        {
+          "id": 7810,
+          "slug": "overgeared",
+          "title": "Overgeared",
+          "type": "ona",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/212888-ZsnNegBCKXQq.jpg",
+            "cover": "https://img.animeunity.cx/anime/Overgeared-anime.webp",
+            "poster": "https://img.animeunity.cx/anime/bx212888-NhyvqPt5aIuJ.jpg",
+            "logo": "https://img.animeunity.cx/anime/ki2DwqPbI2LcWeOQrq7dtaDIHFB.png"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 8
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 8
+            }
+          ]
+        },
+        {
+          "id": 7781,
+          "slug": "dragon-ball-super-beerus",
+          "title": "Dragon Ball Super: Beerus",
+          "type": "tv",
+          "year": 2026,
+          "default_status": "ongoing",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/206814-ARuwrZJAGONN.jpg",
+            "cover": "https://img.animeunity.cx/anime/b2bb22d6a96dd7902906507631241bc3d14c04242fed4fb0ea4b802755bd456a.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx206814-PVVzRbf1IQpe.jpg",
+            "logo": "https://img.animeunity.cx/anime/naD7iHNC4eFxcnpNnD0x43IYDmg.png"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 6
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -34,7 +34,10 @@ class Response:
 def modern(monkeypatch, public_dns):
     raw = json.loads((Path(__file__).parent / 'fixtures/animeunity_2026_11_18.json').read_text())
     props = {"latestEpisodes": {"data": [raw["latest_episode"], raw["latest_episode"]]},
-             "carouselAnimes": [raw["anime"]]}
+             "carouselAnimes": [raw["anime"]], "latestAnimes": [raw["anime"]],
+             "upcomingAnimes": [raw["anime"]],
+             "topAnimes": {"day": [raw["anime"]], "week": [raw["anime"]],
+                           "month": [raw["anime"]]}}
     state = {"home": page(props), "raw": raw, "props": props, "calls": [], "routes": {}}
 
     def fake_get(url, **kwargs):
@@ -63,7 +66,8 @@ def modern(monkeypatch, public_dns):
 
 def test_real_inertia_home_preserves_source_artwork_and_deduplicates(modern):
     shelves = home.shelves("animeunity", au.host())
-    assert [s["key"] for s in shelves] == ["latest_episodes", "featured"]
+    assert [s["key"] for s in shelves] == ["latest_episodes", "featured", "latest_animes",
+                                            "upcoming_animes", "top_day", "top_week", "top_month"]
     assert len(shelves[0]["items"]) == 1
     item = shelves[0]["items"][0]
     assert item["id"] == "6467-super-cube"

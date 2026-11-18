@@ -62,6 +62,11 @@ _LABELS = {
     ("streamingcommunity", "top10"): "Top 10 di oggi",
     ("animeunity", "latest_episodes"): "Ultimi episodi",
     ("animeunity", "featured"): "In evidenza",
+    ("animeunity", "latest_animes"): "Ultimi anime aggiunti",
+    ("animeunity", "upcoming_animes"): "Anime in arrivo",
+    ("animeunity", "top_day"): "Anime più visti oggi",
+    ("animeunity", "top_week"): "Anime più visti della settimana",
+    ("animeunity", "top_month"): "Anime più visti del mese",
 }
 
 
@@ -162,37 +167,70 @@ def _attr_json(soup, attribute: str, element: str | None = None):
         return None
 
 
-def _au_shelves() -> list[dict]:
-    """The home page's own lists: the latest episodes, and the featured carousel.
-
-    Both ride in element attributes as escaped JSON rather than in an API.
-    """
-    html = animeunity.fetch_home_html()
-    props = animeunity.inertia_props(html)
-    soup = BeautifulSoup(html, "lxml")
-    if props is not None:
-        latest_raw = (props.get("latestEpisodes") or {}).get("data") or []
-        featured_raw = props.get("carouselAnimes") or []
-    else:
-        latest_raw = (_attr_json(soup, "items-json") or {}).get("data") or []
-        featured_raw = _attr_json(soup, "animes", element="the-carousel") or []
-    # Two new episodes of the same series are two rows and one card.
-    latest, seen = [], set()
-    for row in latest_raw:
+def _au_home_titles(raw, *, episodes: bool = False) -> list[dict]:
+    """Normalize one rail, keeping source order and duplicates in other rails."""
+    if isinstance(raw, dict):
+        raw = raw.get("data")
+    if not isinstance(raw, list):
+        return []
+    items, seen = [], set()
+    for row in raw:
         if not isinstance(row, dict):
             continue
-        episode = row.get("episode") if isinstance(row.get("episode"), dict) else {}
-        item = animeunity.normalize_title(row.get("anime") or episode.get("anime") or {})
-        if item and item["id"] not in seen:
-            seen.add(item["id"])
-            latest.append(item)
+        if episodes:
+            episode = row.get("episode") if isinstance(row.get("episode"), dict) else {}
+            row = row.get("anime") or episode.get("anime")
+        if not isinstance(row, dict):
+            continue
+        identity = row.get("id")
+        if (type(identity) not in (int, str) or not str(identity).isascii()
+                or not str(identity).isdigit() or int(identity) <= 0
+                or not isinstance(row.get("slug") or "", str)):
+            continue
+        identity = int(identity)
+        if identity in seen:
+            continue
+        try:
+            item = animeunity.normalize_title(row)
+        except (AttributeError, TypeError, ValueError):
+            logger.warning("Skipping malformed AnimeUnity home title %s", identity)
+            continue
+        if item:
+            seen.add(identity)
+            items.append(item)
+            if len(items) >= _SHELF_CAP:
+                break
+    return items
 
-    featured = [t for t in (animeunity.normalize_title(r) for r in featured_raw) if t]
+
+def _au_shelves() -> list[dict]:
+    """Read all public Inertia home rails, or the legacy Vue attributes."""
+    html = animeunity.fetch_home_html()
+    props = animeunity.inertia_props(html)
+    if props is not None:
+        top = props.get("topAnimes")
+        top = top if isinstance(top, dict) else {}
+        rows = [
+            ("latest_episodes", props.get("latestEpisodes")),
+            ("featured", props.get("carouselAnimes")),
+            ("latest_animes", props.get("latestAnimes")),
+            ("upcoming_animes", props.get("upcomingAnimes")),
+            ("top_day", top.get("day")),
+            ("top_week", top.get("week")),
+            ("top_month", top.get("month")),
+        ]
+    else:
+        soup = BeautifulSoup(html, "lxml")
+        rows = [
+            ("latest_episodes", _attr_json(soup, "items-json")),
+            ("featured", _attr_json(soup, "animes", element="the-carousel")),
+        ]
 
     shelves = []
-    for key, items in (("latest_episodes", latest), ("featured", featured)):
+    for key, raw in rows:
+        items = _au_home_titles(raw, episodes=key == "latest_episodes")
         if items:
-            shelves.append(_shelf("animeunity", key, items[:_SHELF_CAP]))
+            shelves.append(_shelf("animeunity", key, items))
     if not shelves:
         # A changed/challenge page is a failure, never an empty catalogue
         # cached for half an hour and presented as a successful response.

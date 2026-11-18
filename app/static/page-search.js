@@ -596,7 +596,7 @@ function renderShelves() {
           '<i class="ti ti-chevron-right"></i></button>' +
       '</div>';
     // /api/browse currently supports only these StreamingCommunity sections.
-    // AnimeUnity's latest_episodes/featured shelves have no paginated endpoint.
+    // AnimeUnity's home rails do not use StreamingCommunity's browse endpoint.
     if (currentSource === 'streamingcommunity' && ['trending', 'latest', 'top10'].includes(shelf.key)) {
       section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
         `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${shelf.key}">${searchLabel('catalog.browse')} <i class="ti ti-arrow-right" aria-hidden="true"></i></button>`);
@@ -1026,7 +1026,12 @@ const CATALOG_LABEL_KEYS = {
   "Aggiunti di recente": "catalog.latest",
   "Top 10 di oggi": "catalog.top10",
   "Ultimi episodi": "catalog.latestEpisodes",
-  "In evidenza": "catalog.featured"
+  "In evidenza": "catalog.featured",
+  "Ultimi anime aggiunti": "catalog.latestAnimes",
+  "Anime in arrivo": "catalog.upcomingAnimes",
+  "Anime più visti oggi": "catalog.topAnimeDay",
+  "Anime più visti della settimana": "catalog.topAnimeWeek",
+  "Anime più visti del mese": "catalog.topAnimeMonth"
 };
 function catalogLabel(value) {
   return CATALOG_LABEL_KEYS[value] ? t(CATALOG_LABEL_KEYS[value]) : value;
