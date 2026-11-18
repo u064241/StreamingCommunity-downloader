@@ -97,6 +97,29 @@
     }
     .search-filters:empty { margin-bottom: 0; }
 
+    #anime-navigation[hidden], #anime-toolbar[hidden],
+    #anime-calendar-days[hidden], .anime-pagination[hidden] { display: none; }
+    #page-search .source-btn { color: #edf4ff; }
+    #page-search .source-btn.active { color: #fff; border-color: #8dc9ed; }
+    #page-search .source-btn:focus-visible { outline: 2px solid #8dc9ed; outline-offset: 3px; }
+    #page-search .source-btn:disabled { opacity: .55; cursor: default; }
+    .anime-toolbar, .anime-pagination {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 14px 0;
+    }
+    .anime-toolbar select { width: auto; }
+    .anime-pagination input { width: 5.5rem; }
+    .anime-pagination .source-btn { display: inline-flex; }
+    .anime-entry-info { padding: 6px 10px; color: var(--text); font-size: 12px; }
+    #search-results.anime-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 16px; }
+    #search-results.anime-grid > .anime-card { width: auto; min-width: 0; }
+    #search-results.anime-grid > .col-12 { grid-column: 1 / -1; width: auto; }
+    #search-results.anime-grid .poster-wrap { aspect-ratio: 2 / 3; }
+    #search-results.anime-grid .poster-main { object-fit: cover; }
+    @media (max-width: 480px) {
+      #search-results.anime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .source-selector { flex-wrap: wrap; }
+    }
+
     #search-more .source-btn, #archive-more .source-btn { display: inline-flex; }
 
     /* ═══════════════════════════════════════════════════════

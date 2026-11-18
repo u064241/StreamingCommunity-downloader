@@ -76,13 +76,18 @@
               </button>
             </div>
           </div>
+          <div id="anime-navigation" class="search-filters" hidden></div>
           <div id="search-filters" class="search-filters"></div>
+          <div id="anime-toolbar" class="anime-toolbar" hidden></div>
+          <div id="anime-calendar-days" class="search-filters" hidden></div>
+          <div id="anime-pagination-top" class="anime-pagination" hidden></div>
           <div id="catalog-heading" class="shelf-head mb-3" hidden>
             <h2 id="catalog-title" class="shelf-title" data-catalog-label="Catalogo">Catalogo</h2>
             <button class="source-btn" data-action="catalog:home" data-i18n="catalog.home">Torna alla home</button>
           </div>
           <div id="home-shelves" style="display:none"></div>
           <div id="search-results" class="row g-3"></div>
+          <div id="anime-pagination-bottom" class="anime-pagination" hidden></div>
           <div id="search-more" class="text-center mt-4" style="display:none">
             <button class="source-btn" id="search-more-btn" data-action="search:more">
               <i class="ti ti-plus"></i><span data-i18n="catalog.more">Carica altri</span>
@@ -334,6 +339,7 @@
      app.js — the entry point, which owns the boot listener — is last. -->
 <script src="{{ asset('router.js') }}"></script>
 <script src="{{ asset('page-search.js') }}"></script>
+<script src="{{ asset('page-anime-catalog.js') }}"></script>
 <script src="{{ asset('page-archive.js') }}"></script>
 <script src="{{ asset('page-help.js') }}"></script>
 <script src="{{ asset('page-title.js') }}"></script>

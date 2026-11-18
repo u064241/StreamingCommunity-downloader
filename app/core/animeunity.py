@@ -164,6 +164,8 @@ def forget_csrf() -> None:
         _csrf_host = None
         _site_formats.clear()
         _redirect_hosts.clear()
+    from app.core.animeunity_catalog import clear_cache
+    clear_cache()
 
 
 def _csrf_token() -> str | None:

@@ -1,0 +1,748 @@
+{
+  "observed": "2026-11-18",
+  "latest": {
+    "current_page": 1,
+    "per_page": 20,
+    "total": 180,
+    "last_page": 9
+  },
+  "latest_rows": [
+    {
+      "id": 112299,
+      "language": "ita",
+      "runtime": 1231,
+      "is_hidden": false,
+      "episode": {
+        "id": 77653,
+        "number": "4",
+        "seq_number_start": 4,
+        "seq_number_end": 4,
+        "is_filler": false,
+        "anime": {
+          "id": 6467,
+          "slug": "super-cube",
+          "title": "Super Cube",
+          "type": "ona",
+          "year": 2025,
+          "total_episodes": 12,
+          "score": "7.67",
+          "images": {
+            "banner": null,
+            "cover": "https://img.animeunity.cx/anime/39S0Y.png",
+            "poster": "https://img.animeunity.cx/anime/bx166442-JTkdzIQpgf8M.jpg",
+            "logo": null
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "wednesday",
+              "episodes_count": 4
+            },
+            {
+              "language": "chn",
+              "status": "completed",
+              "airing_day": "undefined",
+              "episodes_count": 12
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 112298,
+      "language": "jpn",
+      "runtime": 1428,
+      "is_hidden": false,
+      "episode": {
+        "id": 89795,
+        "number": "7",
+        "seq_number_start": 7,
+        "seq_number_end": 7,
+        "is_filler": false,
+        "anime": {
+          "id": 7849,
+          "slug": "battle-spirits-re-zekkai-no-ku",
+          "title": "Battle Spirits [Re] Zekkai No Ku",
+          "type": "tv",
+          "year": 2026,
+          "total_episodes": 0,
+          "score": "7.42",
+          "images": {
+            "banner": null,
+            "cover": "https://img.animeunity.cx/anime/G1u8d.png",
+            "poster": "https://img.animeunity.cx/anime/bx187990-tNyQPmr9TkYi.png",
+            "logo": null
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "tuesday",
+              "episodes_count": 7
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 112297,
+      "language": "jpn",
+      "runtime": 1432,
+      "is_hidden": false,
+      "episode": {
+        "id": 89794,
+        "number": "7",
+        "seq_number_start": 7,
+        "seq_number_end": 7,
+        "is_filler": false,
+        "anime": {
+          "id": 7798,
+          "slug": "magical-girl-raising-project-restart",
+          "title": "Magical Girl Raising Project: Restart",
+          "type": "tv",
+          "year": 2026,
+          "total_episodes": 0,
+          "score": "6.71",
+          "images": {
+            "banner": null,
+            "cover": "https://img.animeunity.cx/anime/5b4e2d49cd46847585547f654214b2314d1bd8ab2639a678030f5bdf5668359f.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx160803-Rcr3IvhE7q9c.png",
+            "logo": null
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "tuesday",
+              "episodes_count": 7
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 112296,
+      "language": "jpn",
+      "runtime": 1370,
+      "is_hidden": false,
+      "episode": {
+        "id": 89793,
+        "number": "20",
+        "seq_number_start": 20,
+        "seq_number_end": 20,
+        "is_filler": false,
+        "anime": {
+          "id": 7688,
+          "slug": "red-river",
+          "title": "Red River",
+          "type": "tv",
+          "year": 2026,
+          "total_episodes": 24,
+          "score": "6.80",
+          "images": {
+            "banner": null,
+            "cover": "https://img.animeunity.cx/anime/aLRxA.png",
+            "poster": "https://img.animeunity.cx/anime/bx207809-cpS7CAyjN7iP.jpg",
+            "logo": null
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "tuesday",
+              "episodes_count": 20
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "archive_sample": {
+    "current_page": 2,
+    "data": [
+      {
+        "id": 6933,
+        "slug": "capitan-harlock-the-movie-larcadia-della-mia-giovinezza",
+        "title": "Capitan Harlock - The Movie: L'Arcadia della mia giovinezza",
+        "type": "movie",
+        "year": 1982,
+        "total_episodes": 1,
+        "score": "8.52",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/2202-YoNdDED7oDhj.jpg",
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/bx2202-mARxwjZ7oXO4.jpg",
+          "logo": null
+        },
+        "variants": [
+          {
+            "language": "ita",
+            "status": "completed",
+            "airing_day": "undefined",
+            "episodes_count": 1
+          }
+        ]
+      },
+      {
+        "id": 6266,
+        "slug": "cardcaptor-sakura-the-movie",
+        "title": "Cardcaptor Sakura The Movie",
+        "type": "movie",
+        "year": 1999,
+        "total_episodes": 1,
+        "score": "8.00",
+        "images": {
+          "banner": "https://img.animeunity.cx/anime/371-w6r3ky6l7LCQ.jpg",
+          "cover": null,
+          "poster": "https://img.animeunity.cx/anime/nx371-sdrIzrI5qXl3.jpg",
+          "logo": null
+        },
+        "variants": [
+          {
+            "language": "ita",
+            "status": "completed",
+            "airing_day": "undefined",
+            "episodes_count": 1
+          }
+        ]
+      }
+    ],
+    "last_page": 14,
+    "per_page": 30,
+    "total": 417
+  },
+  "calendar": {
+    "Mercoledì - Oggi": [
+      {
+        "anime": {
+          "id": 6467,
+          "slug": "super-cube",
+          "title": "Super Cube",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx166442-JTkdzIQpgf8M.jpg"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "wednesday",
+              "episodes_count": 4
+            },
+            {
+              "language": "chn",
+              "status": "completed",
+              "airing_day": "undefined",
+              "episodes_count": 12
+            }
+          ]
+        },
+        "isDub": true,
+        "airedEpisodes": [
+          {
+            "number": "4",
+            "videos": [
+              {
+                "id": 112299
+              }
+            ]
+          }
+        ],
+        "isDailyRelease": true,
+        "airingDay": "wednesday",
+        "releaseTime": "2026-11-18T00:30:00+01:00",
+        "nextEpisodeNumber": "5",
+        "isLate": false,
+        "isAired": true,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 7785,
+          "slug": "sasaki-and-peeps-2",
+          "title": "Sasaki and Peeps 2",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/176314-nj2hmqbGQ9HJ.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx176314-lpvca6vjmkeO.jpg"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "wednesday",
+              "episodes_count": 6
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": true,
+        "airingDay": "wednesday",
+        "releaseTime": "2026-11-18T14:30:00+01:00",
+        "nextEpisodeNumber": "7",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": true,
+        "pausedUntil": null
+      }
+    ],
+    "Giovedì - 19/11": [
+      {
+        "anime": {
+          "id": 7742,
+          "slug": "the-all-devouring-whale-homecoming",
+          "title": "The All-devouring Whale: Homecoming",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx191974-1tqbmtbkCpJ1.jpg"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "thursday",
+              "episodes_count": 3
+            },
+            {
+              "language": "chn",
+              "status": "completed",
+              "airing_day": "undefined",
+              "episodes_count": 12
+            }
+          ]
+        },
+        "isDub": true,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "thursday",
+        "releaseTime": "2026-11-19T00:30:00+01:00",
+        "nextEpisodeNumber": "4",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 7856,
+          "slug": "paw-palaces",
+          "title": "Paw & Palaces",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx166443-0DPdxpZYHRWk.jpg"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "thursday",
+              "episodes_count": 9
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "thursday",
+        "releaseTime": "2026-11-19T12:30:00+01:00",
+        "nextEpisodeNumber": "10",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      }
+    ],
+    "Venerdì - 20/11": [
+      {
+        "anime": {
+          "id": 7808,
+          "slug": "le-bizzarre-avventure-di-jojo-steel-ball-run-2nd-3rd-stage",
+          "title": "Le Bizzarre Avventure di JoJo: Steel Ball Run 2nd - 3rd Stage",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx210482-P1VNKbqdJ6Zj.jpg"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "friday",
+              "episodes_count": 8
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "friday",
+              "episodes_count": 8
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "friday",
+        "releaseTime": "2026-11-20T10:30:00+01:00",
+        "nextEpisodeNumber": "9",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 7808,
+          "slug": "le-bizzarre-avventure-di-jojo-steel-ball-run-2nd-3rd-stage",
+          "title": "Le Bizzarre Avventure di JoJo: Steel Ball Run 2nd - 3rd Stage",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx210482-P1VNKbqdJ6Zj.jpg"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "friday",
+              "episodes_count": 8
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "friday",
+              "episodes_count": 8
+            }
+          ]
+        },
+        "isDub": true,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "friday",
+        "releaseTime": "2026-11-20T10:30:00+01:00",
+        "nextEpisodeNumber": "9",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      }
+    ],
+    "Sabato - 21/11": [
+      {
+        "anime": {
+          "id": 7516,
+          "slug": "rilakkuma",
+          "title": "Rilakkuma",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/183231-JFjTqQe3rPCw.jpg",
+            "poster": "https://img.animeunity.cx/anime/b183231-z7SgjmXZBcoX.png"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 32
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "saturday",
+        "releaseTime": "2026-11-21T02:30:00+01:00",
+        "nextEpisodeNumber": "33",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 7823,
+          "slug": "keroro",
+          "title": "Keroro☆",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/216557-qig0mKuvYRIb.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx216557-b72dAqbVEDO7.jpg"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "saturday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "saturday",
+        "releaseTime": "2026-11-21T02:30:00+01:00",
+        "nextEpisodeNumber": "8",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      }
+    ],
+    "Domenica - 22/11": [
+      {
+        "anime": {
+          "id": 7797,
+          "slug": "mission-yozakura-family-2-part-2",
+          "title": "Mission: Yozakura Family 2 Part 2",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx213657-ORNXVEBCjXaz.jpg"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 6
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "sunday",
+        "releaseTime": "2026-11-22T10:00:00+01:00",
+        "nextEpisodeNumber": "7",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 7772,
+          "slug": "blue-box-2",
+          "title": "Blue Box 2",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/189123-s2oirY2r1Svy.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx189123-0secXELIhkIW.jpg"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 6
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "sunday",
+              "episodes_count": 6
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "sunday",
+        "releaseTime": "2026-11-22T10:30:00+01:00",
+        "nextEpisodeNumber": "7",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      }
+    ],
+    "Lunedì - 23/11": [
+      {
+        "anime": {
+          "id": 7328,
+          "slug": "star-detective-pretty-cure",
+          "title": "Star Detective Pretty Cure!",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/202957-B9U0hNv2Dqap.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx202957-fxZGgJTvwXzP.jpg"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "monday",
+              "episodes_count": 41
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "monday",
+        "releaseTime": "2026-11-23T02:30:00+01:00",
+        "nextEpisodeNumber": "42",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 7788,
+          "slug": "hello-i-am-a-witch-and-my-crush-wants-me-to-make-a-love-potion",
+          "title": "Hello, I am a Witch and my Crush Wants me to Make a Love Potion!",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx207191-VgkIzfH92WoZ.jpg"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "monday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "monday",
+        "releaseTime": "2026-11-23T14:00:00+01:00",
+        "nextEpisodeNumber": "8",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      }
+    ],
+    "Martedì - 24/11": [
+      {
+        "anime": {
+          "id": 7791,
+          "slug": "nia-liston-the-merciless-maiden",
+          "title": "Nia Liston: The Merciless Maiden",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/206949-c5hfhixdgvy5.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx206949-4HYI3YuP0eLI.png"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "tuesday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "tuesday",
+        "releaseTime": "2026-11-24T14:30:00+01:00",
+        "nextEpisodeNumber": "8",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 7794,
+          "slug": "the-cold-sato-san-is-only-sweet-to-me",
+          "title": "The Cold Sato-san is Only Sweet to Me",
+          "images": {
+            "banner": null,
+            "poster": "https://img.animeunity.cx/anime/bx209502-C81oN8M4Smlo.jpg"
+          },
+          "variants": [
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "tuesday",
+              "episodes_count": 7
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "tuesday",
+        "releaseTime": "2026-11-24T15:00:00+01:00",
+        "nextEpisodeNumber": "8",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      }
+    ],
+    "Indeterminato": [
+      {
+        "anime": {
+          "id": 12,
+          "slug": "one-piece",
+          "title": "One Piece",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/21-wf37VakJmZqs.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx21-ELSYx3yMPcKM.jpg"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 946
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 1180
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "undefined",
+        "releaseTime": null,
+        "nextEpisodeNumber": "1181",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      },
+      {
+        "anime": {
+          "id": 4576,
+          "slug": "pokemon-horizons-the-series",
+          "title": "Pokemon Horizons: The Series",
+          "images": {
+            "banner": "https://img.animeunity.cx/anime/158871-JGaVb9DxvgTa.jpg",
+            "poster": "https://img.animeunity.cx/anime/bx158871-GBM9AMDfDRSu.jpg"
+          },
+          "variants": [
+            {
+              "language": "ita",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 89
+            },
+            {
+              "language": "jpn",
+              "status": "ongoing",
+              "airing_day": "undefined",
+              "episodes_count": 115
+            }
+          ]
+        },
+        "isDub": false,
+        "airedEpisodes": [],
+        "isDailyRelease": false,
+        "airingDay": "undefined",
+        "releaseTime": null,
+        "nextEpisodeNumber": "116",
+        "isLate": false,
+        "isAired": false,
+        "isNextAiring": false,
+        "pausedUntil": null
+      }
+    ]
+  }
+}

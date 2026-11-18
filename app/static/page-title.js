@@ -1133,7 +1133,19 @@ async function downloadAllAnime() {
 
 registerActions({
   'tp:back':          () => tpBack(),
-  'tp:crumb-search':  () => navigate('search', [], {src: _tp?.source || currentSource}),
+  'tp:crumb-search':  () => {
+    const source = _tp?.source || currentSource;
+    if (source === 'animeunity') {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem('sc.search.return') || 'null');
+        if (saved?.hash?.startsWith('#/search?') && new URLSearchParams(saved.hash.split('?')[1]).get('src') === source) {
+          location.hash = saved.hash;
+          return;
+        }
+      } catch (_) { /* Direct title links have no previous catalogue. */ }
+    }
+    navigate('search', [], {src: source});
+  },
   'tp:crumb-kind':    d => {
     navigate('search', [], {
       src: _tp?.source || currentSource,

@@ -32,6 +32,7 @@ function setSource(src) {
   _catalogSection = null;
   _cancelCatalogWork();
   currentSource = src;
+  if (typeof resetAnimeBrowse === 'function') resetAnimeBrowse();
   document.getElementById('src-all')?.classList.toggle('active', src === 'all');
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
@@ -130,16 +131,18 @@ function _sourceNeedsDomain(src) { return src === 'streamingcommunity' || src ==
 function renderSearchFilters() {
   const bar = document.getElementById('search-filters');
   if (!bar) return;
-  const chips = (KIND_FILTERS[currentSource] || []).map(([value, label]) =>
+  const calendar = currentSource === 'animeunity' && typeof animeCalendarActive === 'function' && animeCalendarActive();
+  const chips = (calendar ? [] : KIND_FILTERS[currentSource] || []).map(([value, label]) =>
     `<button class="source-btn${value === _kindFilter ? ' active' : ''}" ` +
-    `data-action="search:kind" data-kind="${value}">${t(label)}</button>`).join('');
+    `aria-pressed="${value === _kindFilter}" data-action="search:kind" data-kind="${value}">${t(label)}</button>`).join('');
   // AnimeUnity keeps an Italian dub as a record of its own, so this is a real
   // filter there and meaningless on the other source.
   const dub = currentSource === 'animeunity'
-    ? `<button class="source-btn${_dubOnly ? ' active' : ''}" data-action="search:dub" data-on="${_dubOnly ? '0' : '1'}">` +
+    ? `<button class="source-btn${_dubOnly ? ' active' : ''}" aria-pressed="${_dubOnly}" data-action="search:dub" data-on="${_dubOnly ? '0' : '1'}">` +
       `<i class="ti ti-microphone"></i>${searchLabel('catalog.dubbed')}</button>`
     : '';
   bar.innerHTML = chips + dub;
+  if (typeof renderAnimeNavigation === 'function') renderAnimeNavigation();
 }
 
 function setKindFilter(kind) {
@@ -167,6 +170,7 @@ function _rerunSearch() {
 // a window that has already been narrowed. On the rails there is nothing to
 // page, so it is applied where the cards already are.
 function _afterFilterChange() {
+  if (currentSource === 'animeunity' && typeof animeFilterChanged === 'function') return animeFilterChanged();
   syncHash();
   const input = document.getElementById('search-input');
   if (_catalogSection || (input && input.value.trim())) doSearch();
@@ -331,6 +335,7 @@ if (typeof document.addEventListener === 'function') {
 }
 
 async function doSearch(options) {
+  if (currentSource === 'animeunity' && typeof searchAnimeArchive === 'function') return searchAnimeArchive();
   if (_catalogSection) return loadCatalog(!!options?.append);
   _cancelCatalogWork();
   const generation = _catalogGeneration;
@@ -486,6 +491,8 @@ function _setStartPageVisible(on) {
 // after a look at Download does not silently re-run the search you already
 // have.
 function searchPageEnter() {
+  renderSearchFilters();
+  if (currentSource === 'animeunity' && typeof enterAnimeBrowse === 'function' && enterAnimeBrowse()) return;
   if (_catalogSection) { doSearch(); return; }
   const input = document.getElementById('search-input');
   if (!input || !input.value.trim()) { showStartPage(); return; }
@@ -500,6 +507,7 @@ function _shelfSkeletons() {
 }
 
 async function showStartPage() {
+  if (currentSource === 'animeunity' && typeof enterAnimeBrowse === 'function' && enterAnimeBrowse()) return;
   _catalogSection = null;
   _cancelCatalogWork();
   const homeGeneration = _catalogGeneration;
@@ -600,6 +608,10 @@ function renderShelves() {
     if (currentSource === 'streamingcommunity' && ['trending', 'latest', 'top10'].includes(shelf.key)) {
       section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
         `<button class="source-btn shelf-browse" data-action="catalog:open" data-section="${shelf.key}">${searchLabel('catalog.browse')} <i class="ti ti-arrow-right" aria-hidden="true"></i></button>`);
+    }
+    if (currentSource === 'animeunity' && typeof animeShelfSection === 'function' && animeShelfSection(shelf.key)) {
+      section.querySelector('.shelf-head').insertAdjacentHTML('beforeend',
+        `<button class="source-btn" data-action="anime:view" data-view="${animeShelfSection(shelf.key)}">${searchLabel('catalog.browse')}</button>`);
     }
     const ranked = _isTop10Shelf(shelf);
     if (ranked) section.className = 'shelf shelf-ranked';
@@ -793,6 +805,7 @@ let _homeSectionState = null;
 let _homeObserver = null;
 
 function _cancelCatalogWork() {
+  if (typeof cancelAnimeBrowse === 'function') cancelAnimeBrowse();
   _catalogGeneration++;
   _catalogAbort?.abort();
   _homeAbort?.abort();
@@ -943,6 +956,7 @@ registerPageHash('search', {
       dub: _dubOnly ? '1' : null,
       section: _catalogSection?.section || null,
       genre: _catalogSection?.genre_id || null,
+      ...(typeof animeHashState === 'function' ? animeHashState() : {}),
     },
   }),
   apply: params => {
@@ -965,6 +979,7 @@ registerPageHash('search', {
     if (input) input.placeholder = currentSource === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
     _kindFilter = params.type || '';
     _dubOnly = params.dub === '1';
+    if (typeof restoreAnimeBrowse === 'function') restoreAnimeBrowse(params);
     _searchResults = [];
     _searchPage = 1;
     _searchExhausted = false;
@@ -975,6 +990,7 @@ registerPageHash('search', {
       try {
         const state = JSON.parse(saved);
         if (state.hash === location.hash && Array.isArray(state.results)) {
+          if (currentSource === 'animeunity' && typeof setAnimeReturnPosition === 'function') setAnimeReturnPosition(state.y);
           _searchResults = state.results;
           _searchPage = Number(state.page) || 1;
           _searchExhausted = !!state.exhausted;
