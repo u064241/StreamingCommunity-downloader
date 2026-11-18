@@ -319,15 +319,12 @@ def _worth_retrying(exc: Exception) -> bool:
     """
     from app.core._shared import MissingAudioTrackError
     from app.core.raiplay import RaiPlayDownloadError
-    from app.core.la7 import LA7Error
     from app.core.transcode import TranscodeError
     if isinstance(exc, TranscodeError):
         return False
     if isinstance(exc, MissingAudioTrackError):
         return False
     if isinstance(exc, RaiPlayDownloadError):
-        return False
-    if isinstance(exc, LA7Error):
         return False
     if isinstance(exc, PermissionError) and getattr(exc, "winerror", None) is None:
         return False
@@ -1251,23 +1248,6 @@ class JobManager:
             strict_audio=strict_audio,
             tmdb_id=tmdb_id,
             source=job.source,
-        )
-
-    def submit_la7(self, url: str, title: str, user_id: int = None, *,
-                   batch_id: str = None, batch_kind: str = None,
-                   batch_label: str = None) -> str:
-        from app.core.la7 import download, validate_episode_url
-
-        external_id = validate_episode_url(url)
-        job = self._make_job(title, "la7", source="la7", external_id=external_id,
-                             phases=["downloading"], user_id=user_id, media_label=title,
-                             batch_id=batch_id, batch_kind=batch_kind,
-                             batch_label=batch_label)
-        return self._submit_job(
-            job, download, url, title, _get_library_path("film"),
-            temp_dir=str(TMP_DIR / job.job_id),
-            progress_factory=self._make_progress_factory(job),
-            cancel_event=job.cancel_event,
         )
 
     def submit_raiplay(self, url: str, title: str, year: str = None,

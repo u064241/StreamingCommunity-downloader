@@ -3,12 +3,6 @@
 (function () {
   const translations = {
     it: {
-      'la7.heading': 'LA7 · Puntata da link',
-      'la7.catalogAvailable': 'Cerca nel catalogo LA7 oppure prepara una puntata usando il suo link ufficiale.',
-      'la7.preview': 'Prepara anteprima', 'la7.episode': 'Puntata',
-      'la7.manualPreview': 'Anteprima preparata dal link e dal titolo inseriti. Immagine, stagioni e metadati ufficiali non sono ancora disponibili.',
-      'la7.downloadHint': 'Scarica questa singola puntata. La disponibilità del formato viene verificata all’avvio del lavoro nella coda Download.',
-      'la7.invalidUrl': 'Inserisci il link HTTPS di una singola puntata su la7play.it, senza parametri o frammenti.',
       'domain.recovery.checking': 'Ricerca del dominio in corso…',
       'domain.recovery.found': 'Dominio trovato e verificato. Conferma per applicarlo:',
       'domain.recovery.not_found': 'Nessun dominio verificato trovato. Puoi riprovare dalle impostazioni.',
@@ -32,7 +26,7 @@
       'help.note.title': 'Protezione della sorgente', 'help.note': 'Se una sorgente risponde lentamente o rifiuta richieste, non aumentare subito i download: riduci temporaneamente il profilo sorgente, attendi la fine dell’eventuale pausa automatica e poi riprova. Il profilo limita il numero di lavori, segmenti e richieste; non rimuove il blocco del provider.',
       'updates.check': 'Controlla aggiornamenti', 'home.next': 'Scopri cosa guardare',
       'home.media': 'serie, film, anime.', 'home.subtitle': 'Cerca nel catalogo, scegli audio e sottotitoli, e mandalo in libreria.',
-      'search.placeholder': 'Film, serie TV...', 'search.button': 'Cerca', 'search.allSources': 'Tutte le fonti', 'search.la7Hint': 'Incolla l’URL ufficiale di una puntata LA7 per avviare il download.', 'search.la7Url': 'URL ufficiale LA7', 'search.la7Title': 'Titolo', 'search.la7Download': 'Scarica', 'search.la7Missing': 'Inserisci URL e titolo LA7.', 'search.la7Queued': 'Download LA7 accodato.',
+      'search.placeholder': 'Film, serie TV...', 'search.button': 'Cerca', 'search.allSources': 'Tutte le fonti',
       'requests.title': 'Coda richieste', 'requests.subtitle': 'Approvare risolve di nuovo il titolo e verifica le tracce prima di scaricare: una richiesta che non trova l’audio chiesto viene messa da parte, non sostituita.', 'requests.toReview': 'Da gestire', 'requests.inProgress': 'In corso', 'requests.all': 'Tutte',
       'downloads.title': 'Download', 'downloads.subtitle': 'Ogni download attraversa le sue fasi in ordine — video, una traccia per lingua audio, poi l’unione. La barra segue i segmenti ottenuti.',
       'downloads.refresh': 'Aggiorna', 'downloads.retryFailed': 'Riprova falliti', 'downloads.clearDone': 'Rimuovi completati', 'downloads.clearErrors': 'Pulisci errori',
@@ -44,12 +38,6 @@
       'archive.count': '{count} titoli', 'archive.count.one': '{count} titolo', 'archive.unavailable': 'Archivio non disponibile'
     },
     en: {
-      'la7.heading': 'LA7 · Episode from a link',
-      'la7.catalogAvailable': 'Search the LA7 catalogue or prepare an episode using its official link.',
-      'la7.preview': 'Prepare preview', 'la7.episode': 'Episode',
-      'la7.manualPreview': 'Preview prepared from the link and title you entered. Official artwork, seasons and metadata are not available yet.',
-      'la7.downloadHint': 'Download this single episode. Format availability is checked when the job starts in the Downloads queue.',
-      'la7.invalidUrl': 'Enter the HTTPS link of a single episode on la7play.it, without query parameters or fragments.',
       'domain.recovery.checking': 'Searching for the source domain…',
       'domain.recovery.found': 'Domain found and verified. Confirm to apply it:',
       'domain.recovery.not_found': 'No verified domain found. You can retry from settings.',
@@ -73,7 +61,7 @@
       'help.note.title': 'Source protection', 'help.note': 'If a source responds slowly or rejects requests, do not increase downloads immediately: temporarily lower the source profile, wait for any automatic pause to end, then try again. The profile limits jobs, segments and requests; it cannot remove a provider block.',
       'updates.check': 'Check for updates', 'home.next': 'Discover what to watch',
       'home.media': 'series, films, anime.', 'home.subtitle': 'Search the catalog, choose audio and subtitles, and send it to your library.',
-      'search.placeholder': 'Films, TV series...', 'search.button': 'Search', 'search.allSources': 'All sources', 'search.la7Hint': 'Paste the official URL of an LA7 episode to start the download.', 'search.la7Url': 'Official LA7 URL', 'search.la7Title': 'Title', 'search.la7Download': 'Download', 'search.la7Missing': 'Enter an LA7 URL and title.', 'search.la7Queued': 'LA7 download queued.',
+      'search.placeholder': 'Films, TV series...', 'search.button': 'Search', 'search.allSources': 'All sources',
       'requests.title': 'Request queue', 'requests.subtitle': 'Approval resolves the title again and verifies its tracks before downloading: a request whose requested audio is missing is set aside, not replaced.', 'requests.toReview': 'To review', 'requests.inProgress': 'In progress', 'requests.all': 'All',
       'downloads.title': 'Downloads', 'downloads.subtitle': 'Each download goes through its stages in order — video, one audio track per language, then merging. The bar follows the downloaded segments.',
       'downloads.refresh': 'Refresh', 'downloads.retryFailed': 'Retry failed', 'downloads.clearDone': 'Remove completed', 'downloads.clearErrors': 'Clear errors',

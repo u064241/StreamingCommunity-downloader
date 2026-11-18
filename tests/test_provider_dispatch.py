@@ -263,7 +263,7 @@ def test_registry_loading_does_not_import_backends_or_start_source_requests():
     script = """
 import sys
 from app.providers import get_registry
-assert get_registry().sources() == ('streamingcommunity', 'animeunity', 'raiplay', 'la7')
+assert get_registry().sources() == ('streamingcommunity', 'animeunity', 'raiplay')
 assert not {'app.config', 'app.core.page', 'app.core.animeunity', 'app.core.home'} & sys.modules.keys()
 """
     subprocess.run([sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1], check=True)

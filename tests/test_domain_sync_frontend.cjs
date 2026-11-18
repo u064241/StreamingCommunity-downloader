@@ -21,7 +21,7 @@ function create() {
       return path === '/api/domain' ? {domain, version:'new-version', valid:true}
         : {current:domain, candidate:null, status:'applied'};
     }},
-    _routePage:'search', _homeCache:{'streamingcommunity:old':{}, 'all:old':{}, 'la7:':{}},
+    _routePage:'search', _homeCache:{'streamingcommunity:old':{}, 'all:old':{}},
     _searchAbort:{abort:()=>changes.push('abort')},
     _cancelCatalogWork:()=>changes.push('cancel'),
     doSearch:async()=>changes.push('search'), showStartPage:async()=>changes.push('home'),
@@ -43,7 +43,7 @@ test('applied domain synchronizes globals, badge, caches and the current search 
   assert.equal(app.run('currentDomain'),'streamingcommunityz.dad');
   assert.equal(app.run('currentVersion'),'new-version');
   assert.equal(app.element('domain-badge').textContent,'streamingcommunityz.dad');
-  assert.deepEqual(Object.keys(app.context._homeCache),['la7:']);
+  assert.deepEqual(Object.keys(app.context._homeCache),[]);
   assert.deepEqual(app.changes,['abort','cancel','search']);
   assert.equal(app.element('search-input').value,'a retained query');
   const saved=JSON.parse(app.storage.get('sc.search.return'));
@@ -87,17 +87,6 @@ test('a StreamingCommunity title reloads on the new source and retains its seaso
     assert.equal(loaded.season,6);
     assert.equal(app.context._tpToken,1);
   });
-
-test('domain rotation leaves a LA7 title and its active requests alone',async()=>{
-  const app=create();
-  app.run("currentSource='la7'");
-  app.context._routePage='detail';
-  const title=app.context._tp={source:'la7',id:'programma',season:5};
-  await app.run('loadDomainStatus()');
-  assert.equal(app.context._tp,title);
-  assert.equal(app.context._tpToken,0);
-  assert.deepEqual(app.changes,[]);
-});
 
 test('global SSE domain_changed signal reloads authoritative server configuration',async()=>{
   const app=create();

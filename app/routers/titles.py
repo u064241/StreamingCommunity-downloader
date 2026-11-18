@@ -36,12 +36,10 @@ async def title_episodes(
     return await call_provider(read)
 
 
-# LA7 identities are official page paths (including slashes). Keep the more
-# specific episodes route first, otherwise the greedy detail route consumes it.
 @router.get("/{source}/{external_id:path}")
 async def title_details(
     source: str = Path(min_length=1, max_length=64, pattern="^[a-z][a-z0-9_-]{0,63}$"),
-    # URL-encoded by the caller (RaiPlay ids carry a colon, LA7 ids slashes); the provider
+    # URL-encoded by the caller (RaiPlay ids carry a colon); the provider
     # validates the decoded value strictly before any request.
     external_id: str = Path(min_length=1, max_length=400),
     registry: ProviderRegistry = Depends(get_registry),

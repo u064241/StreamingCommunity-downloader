@@ -24,7 +24,6 @@ class ProviderRegistry:
     def sources(self, *, include_direct: bool = False):
         """List catalogues, optionally including direct-URL-only engines.
 
-        Existing catalogue consumers must not attempt search/home on LA7.
         Direct engines remain addressable by get() and is_downloadable().
         """
         return tuple(source for source, provider in self._providers.items()
@@ -97,8 +96,6 @@ def create_default_registry(*, include_metadata_sources: bool = True):
     if include_metadata_sources:
         from .adapters import RaiPlayProvider
         registry.register(RaiPlayProvider())
-    from .la7 import LA7Provider
-    registry.register(LA7Provider())
     return registry
 
 

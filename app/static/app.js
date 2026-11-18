@@ -3,7 +3,7 @@
 // ── State ──────────────────────────────────────────────────────────────────────
 let currentDomain = '';
 let currentVersion = '';
-let currentSource = 'all'; // 'all' (default) | 'streamingcommunity' | 'animeunity' | 'raiplay' | 'la7'
+let currentSource = 'all'; // 'all' (default) | 'streamingcommunity' | 'animeunity' | 'raiplay'
 let _searchResults = [];
 let _libraries = [];
 let _jobPhases = {};      // job_id → current phase string

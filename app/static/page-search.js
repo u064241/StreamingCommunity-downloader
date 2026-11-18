@@ -8,7 +8,6 @@
 // type that is always "anime". Looked up lower case so one table serves both.
 // One colour per kind, so a grid can be read at a glance instead of word by word.
 const KIND_BADGES = {
-  episode: {label: 'la7.episode', cls: 'bg-blue-lt'},
   movie:   {label: 'catalog.movie',     cls: 'bg-blue-lt'},
   tv:      {label: 'catalog.tv', cls: 'bg-green-lt'},
   ova:     {label: 'OVA',      cls: 'bg-purple-lt'},
@@ -33,13 +32,10 @@ function setSource(src) {
   _catalogSection = null;
   _cancelCatalogWork();
   currentSource = src;
-  _syncLa7SearchUI();
   document.getElementById('src-all')?.classList.toggle('active', src === 'all');
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
   document.getElementById('src-au').classList.toggle('active', src === 'animeunity');
   document.getElementById('src-rai')?.classList.toggle('active', src === 'raiplay');
-  document.getElementById('src-la7')?.classList.toggle('active', src === 'la7');
-  document.getElementById('la7-direct-download')?.toggleAttribute('hidden', src !== 'la7');
   const input = document.getElementById('search-input');
   if (input) input.dataset.i18nPlaceholder = src === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
   if (input) input.placeholder = src === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
@@ -123,7 +119,6 @@ const KIND_FILTERS = {
                ['ova', 'OVA'], ['ona', 'ONA'], ['special', 'catalog.specials']],
   // Metadata only, and its search does not tell film from series: no filter.
   raiplay: [['', 'catalog.all']],
-  la7: [['', 'catalog.all']],
 };
 
 // Sources with a download engine. The others (RaiPlay) are browsed only: no
@@ -210,11 +205,6 @@ function renderResultCards(items, container, baseIndex,
   const ranked = !!(options && options.ranked);
   items.forEach((item, i) => {
     // Old search snapshots may predate server-side availability checks.
-    if (item.source === 'la7' && item.download_scope !== 'series') {
-      if (item.drm === true) return;
-      if ((item.type === 'movie' || item.download_scope === 'single') &&
-          (item.drm !== false || item.downloadable !== true)) return;
-    }
     const idx = Number.isInteger(item._searchIndex) ? item._searchIndex : baseIndex + i;
     const isMovie = item.type === 'movie';
     const kind = kindBadge(item);
@@ -770,79 +760,6 @@ function renderRequestRibbons() {
   });
 }
 
-// LA7 currently exposes only POST /api/download/la7. No catalogue or metadata
-// requests are made here; see la7-ui-contract.md for the missing provider contract.
-let _la7Draft = null;
-let _la7Downloading = false;
-
-function _syncLa7SearchUI() {
-  const selected = currentSource === 'la7';
-  const panel = document.getElementById('la7-direct-download');
-  if (panel) panel.hidden = !selected;
-  const search = document.getElementById('catalog-searchbar');
-  if (search) search.hidden = false;
-  if (!selected) return;
-  clearTimeout(_searchDebounceTimer);
-  _searchAbort?.abort();
-}
-
-function prepareLa7Preview() {
-  if (_la7Downloading) return;
-  const url = document.getElementById('la7-url')?.value.trim();
-  const title = document.getElementById('la7-title')?.value.trim();
-  if (!url || !title || title.length > 300) {
-    showToast(t('search.la7Missing'), 'warning');
-    return;
-  }
-  try {
-    const parsed = new URL(url);
-    if (url.length > 2048 || /[\s\\]/.test(url) || parsed.hash || parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
-        !['www.la7play.it', 'la7play.it'].includes(parsed.hostname) || parsed.search ||
-        !/-\d+\/*$/.test(parsed.pathname)) throw new Error();
-  } catch (_) {
-    showToast(t('la7.invalidUrl'), 'warning');
-    return;
-  }
-  _la7Draft = {source: 'la7', url, title, scope: 'single'};
-  const preview = document.getElementById('la7-preview');
-  preview.innerHTML = '';
-  renderResultCards([{source: 'la7', id: url, name: title, type: 'episode'}], preview, 0,
-    'col-12 col-sm-6 col-lg-3', {action: 'search:la7Detail', noPreview: true});
-  document.getElementById('la7-detail').hidden = true;
-  showToast(t('la7.preview'), 'success');
-}
-
-function openLa7Detail() {
-  if (!_la7Draft) return;
-  document.getElementById('la7-detail-title').textContent = _la7Draft.title;
-  document.getElementById('la7-detail-url').textContent = _la7Draft.url;
-  if (!_la7Downloading) document.getElementById('la7-download-status').textContent = '';
-  document.getElementById('la7-detail').hidden = false;
-  document.getElementById('la7-detail-title').focus();
-}
-
-async function downloadLa7Url() {
-  if (!_la7Draft || _la7Downloading || !can('DOWNLOAD')) return;
-  const body = {..._la7Draft};
-  const button = document.getElementById('la7-download-btn');
-  const status = document.getElementById('la7-download-status');
-  _la7Downloading = true;
-  button.disabled = true;
-  status.textContent = t('common.loading');
-  try {
-    await api.post('/api/download/la7', body);
-    status.textContent = t('search.la7Queued');
-    showToast(t('search.la7Queued'), 'success', DOWNLOADS_LINK);
-  } catch (e) {
-    status.textContent = errText(e);
-    showToast(escapeHtml(errText(e)), 'danger');
-  } finally {
-    _la7Downloading = false;
-    button.disabled = false;
-  }
-}
-
-
 // ── Delegated handlers ───────────────────────────────────────────────────────
 
 registerActions({
@@ -850,10 +767,6 @@ registerActions({
   'catalog:home': () => { _catalogSection = null; navigate('search'); },
   'catalog:sections': () => loadHomeSections(),
   'search:source': d => setSource(d.source),
-  'search:la7Download': () => downloadLa7Url(),
-  'search:la7Preview': () => prepareLa7Preview(),
-  'search:la7Detail': () => openLa7Detail(),
-  'search:la7Close': () => { document.getElementById('la7-detail').hidden = true; },
   'search:run':    () => doSearch(),
   'search:more':   () => loadMoreResults(),
   'search:kind':   d => setKindFilter(d.kind),
@@ -1039,13 +952,11 @@ registerPageHash('search', {
     // The catalogue browse is StreamingCommunity only; otherwise the address
     // names the source, and an address without one opens "Tutte le fonti".
     currentSource = _catalogSection ? 'streamingcommunity'
-      : (['all', 'streamingcommunity', 'animeunity', 'raiplay', 'la7'].includes(params.src) ? params.src : 'all');
+      : (['all', 'streamingcommunity', 'animeunity', 'raiplay'].includes(params.src) ? params.src : 'all');
     document.getElementById('src-all')?.classList.toggle('active', currentSource === 'all');
     document.getElementById('src-sc')?.classList.toggle('active', currentSource === 'streamingcommunity');
     document.getElementById('src-au')?.classList.toggle('active', currentSource === 'animeunity');
     document.getElementById('src-rai')?.classList.toggle('active', currentSource === 'raiplay');
-    document.getElementById('src-la7')?.classList.toggle('active', currentSource === 'la7');
-    document.getElementById('la7-direct-download')?.toggleAttribute('hidden', currentSource !== 'la7');
     if (input) input.dataset.i18nPlaceholder = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
     if (input) input.placeholder = currentSource === 'animeunity' ? t('search.animePlaceholder') : t('search.placeholder');
     _kindFilter = params.type || '';
@@ -1054,7 +965,6 @@ registerPageHash('search', {
     _searchPage = 1;
     _searchExhausted = false;
     renderSearchFilters();
-    _syncLa7SearchUI();
     const saved = sessionStorage.getItem('sc.search.return');
     if (saved) {
       sessionStorage.removeItem('sc.search.return');
@@ -1128,7 +1038,6 @@ window.addEventListener('sc:language-changed', () => {
   const key = currentSource === 'animeunity' ? 'search.animePlaceholder' : 'search.placeholder';
   if (input) { input.dataset.i18nPlaceholder = key; input.placeholder = t(key); }
   renderSearchFilters();
-  _syncLa7SearchUI();
   renderRequestRibbons();
   root.querySelectorAll('[data-catalog-label]').forEach(node => {
     node.textContent = catalogLabel(node.dataset.catalogLabel);

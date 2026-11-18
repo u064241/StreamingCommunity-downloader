@@ -10,7 +10,6 @@ LEGACY_SOURCE_BY_KIND = {
     "episode": "streamingcommunity",
     "anime": "animeunity",
     "raiplay": "raiplay",
-    "la7": "la7",
 }
 
 

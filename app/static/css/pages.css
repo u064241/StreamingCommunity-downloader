@@ -1668,16 +1668,3 @@ html[data-theme="contrast"] .source-btn, html[data-theme="contrast"] .queue-filt
  #setting-mcp-enabled + .form-check-label { color:#dff5ff !important; background:#174b63; border:1px solid #4fa5c5; border-radius:.4rem; padding:.35rem .65rem; }
  #mcp-regen-btn { color:#fff7dd !important; background:#785719 !important; border-color:#e6c05d !important; }
  #mcp-token-once .input-group .btn, [data-action="cfg:copyMcpSnippet"] { color:#e6f4ff !important; background:#255275 !important; border-color:#67a6c9 !important; }
-/* LA7 direct-link preview reuses catalogue cards and theme colours. */
-#la7-direct-download[hidden], #la7-direct-download [hidden],
-#catalog-searchbar[hidden] { display: none !important; }
-#la7-direct-download {
-  padding: 1.25rem;
-  margin-top: 1rem;
-  border: 1px solid var(--border-color, var(--border));
-  border-radius: 1rem;
-  background: var(--bg-surface);
-  color: var(--text);
-}
-#la7-direct-download label { display: block; margin-bottom: .35rem; }
-#la7-direct-download .result-card { max-width: 22rem; }

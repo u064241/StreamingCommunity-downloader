@@ -103,8 +103,8 @@ def test_stream_is_explicitly_refused(provider, transport):
 
 def test_raiplay_is_registered_by_default_with_its_own_download_engine():
     registry = create_default_registry()
-    assert registry.sources() == ("streamingcommunity", "animeunity", "raiplay", "la7")
-    assert get_registry().sources() == ("streamingcommunity", "animeunity", "raiplay", "la7")
+    assert registry.sources() == ("streamingcommunity", "animeunity", "raiplay")
+    assert get_registry().sources() == ("streamingcommunity", "animeunity", "raiplay")
     assert registry.is_downloadable("raiplay") is True
     assert registry.is_downloadable("streamingcommunity") is True
     assert registry.is_downloadable("animeunity") is True
@@ -114,7 +114,7 @@ def test_raiplay_is_registered_by_default_with_its_own_download_engine():
     assert registry.is_downloadable(["streamingcommunity"]) is False
     # The explicit opt-out still exists for callers that want only engines.
     assert create_default_registry(include_metadata_sources=False).sources() == (
-        "streamingcommunity", "animeunity", "la7")
+        "streamingcommunity", "animeunity")
 
 
 def test_importing_the_provider_loads_no_http_library_and_makes_no_request():

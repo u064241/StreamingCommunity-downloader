@@ -66,9 +66,6 @@
                       title="Solo catalogo: i contenuti RaiPlay non sono scaricabili dal pannello">
                 <i class="ti ti-broadcast"></i>RaiPlay
               </button>
-              <button class="source-btn" id="src-la7" data-action="search:source" data-source="la7">
-                <i class="ti ti-player-play"></i>LA7
-              </button>
             </div>
             <div class="sc-searchbar" id="catalog-searchbar">
               <input type="text" id="search-input"
@@ -77,31 +74,6 @@
               <button class="sc-search-btn" data-action="search:run" id="search-btn">
                 <i class="ti ti-search"></i><span data-i18n="search.button">Cerca</span>
               </button>
-            </div>
-            <div id="la7-direct-download" class="sc-direct-source" hidden>
-              <h2 data-i18n="la7.heading">LA7 · Puntata da link</h2>
-              <p class="text-muted" data-i18n="la7.catalogAvailable">Cerca nel catalogo LA7 oppure prepara una puntata usando il suo link ufficiale.</p>
-              <p class="small text-muted mb-2" data-i18n="search.la7Hint">Incolla l’URL ufficiale di una puntata LA7 per avviare il download.</p>
-              <div class="row g-2 align-items-end">
-                <div class="col-md-7"><label for="la7-url" data-i18n="search.la7Url">URL ufficiale LA7</label>
-                  <input type="url" id="la7-url" class="form-control" maxlength="2048" placeholder="https://www.la7play.it/..." data-enter="search:la7Preview"></div>
-                <div class="col-md-5"><label for="la7-title" data-i18n="search.la7Title">Titolo</label>
-                  <input type="text" id="la7-title" class="form-control" maxlength="300" data-i18n-placeholder="search.la7Title" placeholder="Titolo" data-enter="search:la7Preview"></div>
-                <div class="col-12"><button class="btn btn-primary" data-action="search:la7Preview"><i class="ti ti-photo me-1"></i><span data-i18n="la7.preview">Prepara anteprima</span></button></div>
-              </div>
-              <div id="la7-preview" class="row g-3 mt-2"></div>
-              <article id="la7-detail" class="card mt-3" aria-labelledby="la7-detail-title" hidden>
-                <div class="card-body">
-                  <span class="badge bg-blue-lt">LA7</span>
-                  <h3 id="la7-detail-title" class="mt-2" tabindex="-1"></h3>
-                  <p data-i18n="la7.manualPreview">Anteprima preparata dal link e dal titolo inseriti. Immagine, stagioni e metadati ufficiali non sono ancora disponibili.</p>
-                  <p id="la7-detail-url" class="text-break"></p>
-                  <p data-i18n="la7.downloadHint">Scarica questa singola puntata. La disponibilità del formato viene verificata all’avvio del lavoro nella coda Download.</p>
-                  <button class="btn btn-primary" id="la7-download-btn" data-perm="DOWNLOAD" data-action="search:la7Download"><i class="ti ti-download me-1"></i><span data-i18n="search.la7Download">Scarica</span></button>
-                  <button class="btn btn-secondary" data-action="search:la7Close" data-i18n="common.close">Chiudi</button>
-                  <p id="la7-download-status" class="mt-2 mb-0" role="status" aria-live="polite"></p>
-                </div>
-              </article>
             </div>
           </div>
           <div id="search-filters" class="search-filters"></div>
