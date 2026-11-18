@@ -80,6 +80,19 @@ class RaiPlayProvider:
         except Exception as exc:
             raise self._error(ProviderErrorCode.UPSTREAM, "Risposta RaiPlay non valida", exc) from exc
 
+    def video_downloadable(self, page_url: str) -> tuple[bool, str | None]:
+        """Fail closed: a video page is queued only when its own data declares no DRM."""
+        relative = page_url.removeprefix(parser.BASE_URL).removesuffix(".html")
+        try:
+            payload = self.client.video(relative + ".json")
+        except RaiPlayUnavailable as exc:
+            raise self._error(ProviderErrorCode.UPSTREAM, "RaiPlay non raggiungibile", exc) from exc
+        except Exception as exc:
+            raise self._error(ProviderErrorCode.UPSTREAM, "Risposta RaiPlay non valida", exc) from exc
+        if parser.video_drm(payload):
+            return False, "Il contenuto RaiPlay è protetto da DRM"
+        return True, None
+
     def stream(self, *_args, **_kwargs):
         """Streaming is deliberately not exposed; downloads use yt-dlp."""
         raise self._error(ProviderErrorCode.UNSUPPORTED, NOT_DOWNLOADABLE_REASON)

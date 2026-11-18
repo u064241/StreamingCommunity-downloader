@@ -143,6 +143,13 @@ def _explicit_drm(value: Any) -> bool:
                for key in ("drm", "has_drm", "license_url", "license_server", "widevine", "playready", "fairplay"))
 
 
+def video_drm(payload: Any) -> bool:
+    """DRM declared by a video's own data, at the top level or one dict down."""
+    if not isinstance(payload, dict):
+        return False
+    return _explicit_drm(payload) or any(_explicit_drm(v) for v in payload.values() if isinstance(v, dict))
+
+
 def _card_extra(media_type_known: bool) -> dict:
     return {"downloadable": True, "download_disabled_reason": None,
             "metadata_only": False, "media_type_known": media_type_known,
@@ -422,6 +429,11 @@ def episode_rows(payload: Any, expected_season: int | None = None) -> list[dict]
         if match:
             season = match.group(1)
         elif context_season is not None and expected_season is not None and raw_season != str(expected_season):
+            # Only a year (or no season at all) is replaced by the catalogue
+            # context. A card that names another season is dropped, never
+            # forced into this one.
+            if raw_season and not re.fullmatch(r"\d{4}", raw_season):
+                continue
             season = str(context_season)
         else:
             season = raw_season or str(context_season or "")

@@ -419,6 +419,11 @@ async def download_raiplay(body: RaiPlayDownloadRequest, http_request: HttpReque
     if page:
         if body.scope not in {"auto", "film", "episode"}:
             raise HTTPException(422, "Per la serie o la stagione serve il link del programma RaiPlay")
+        # The video page is checked against its own data before it is queued:
+        # a page URL alone is not proof that the content is free of DRM.
+        downloadable, reason = await call_provider(registry.get("raiplay").video_downloadable, page)
+        if not downloadable:
+            raise HTTPException(409, reason)
         job_id = job_manager.submit_raiplay(
             page, body.title, year=body.year, user_id=user_id,
             season=body.season_number, episode_number=body.episode_number,

@@ -38,6 +38,7 @@ SEARCH_TEMPLATE_OUT = "6516ac5d40da6c377b151642"
 # Only these sections can be fetched for a title card.
 _TITLE_PATH = re.compile(r"/(programmi|collezioni)/[A-Za-z0-9][A-Za-z0-9/-]{0,220}\.json")
 _EPISODES_PATH = re.compile(r"/(programmi|collezioni)/[A-Za-z0-9][A-Za-z0-9/-]{0,300}/episodes\.json")
+_VIDEO_PATH = re.compile(r"/video/[^\s\"'<>\\?#]{1,300}\.json")
 _EDITORIAL_PATH = re.compile(r"/(programmi|collezioni)/[a-z0-9][a-z0-9-]{0,150}(?:/[a-z0-9][a-z0-9-]{0,150}){2}")
 
 
@@ -82,6 +83,12 @@ class RaiPlayClient:
     def title(self, path: str) -> dict:
         if not isinstance(path, str) or not (_TITLE_PATH.fullmatch(path) or _EPISODES_PATH.fullmatch(path)):
             raise ValueError("Refusing a non-catalogue RaiPlay path")
+        return self._get_json(path)
+
+    def video(self, path: str) -> dict:
+        """Data of one public video page (its .json twin), for the DRM check."""
+        if not isinstance(path, str) or not _VIDEO_PATH.fullmatch(path) or "/../" in path:
+            raise ValueError("Refusing a non-video RaiPlay path")
         return self._get_json(path)
 
     def editorial_episodes(self, page_path: str) -> dict:
