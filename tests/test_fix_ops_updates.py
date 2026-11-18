@@ -93,9 +93,11 @@ def test_panel_does_not_offer_an_update_it_would_refuse(monkeypatch):
     monkeypatch.setattr(portable_updates, "EXPECTED_SIGNER_THUMBPRINTS", ())
     status = routes.portable_status()
     assert status["available"] is False and status["signature_verification"] is False
+    # Standalone portable ZIPs are no longer published, so no update is offered
+    # even when a signer is configured.
     monkeypatch.setattr(portable_updates, "EXPECTED_SIGNER_THUMBPRINTS", (SIGNER,))
     status = routes.portable_status()
-    assert status["available"] is True and status["signature_verification"] is True
+    assert status["available"] is False and status["signature_verification"] is True
 
 
 def test_staged_binaries_are_verified_before_being_prepared():

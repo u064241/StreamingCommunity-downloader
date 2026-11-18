@@ -85,8 +85,9 @@ def test_panel_version_is_visible_before_javascript_loads(client):
     from tests.conftest import enable_open_mode
     enable_open_mode()
     body = client.get("/").text
-    assert body.count(f'SC Panel v{__version__}') == 2
-    assert 'class="panel-version"' in body
+    # The header badge was removed; the sidebar carries the version server-side.
+    assert body.count(f'SC Panel v{__version__}') == 1
+    assert 'class="sidebar-version"' in body
 
 
 def test_secondary_text_has_readable_contrast_on_dark_surfaces():

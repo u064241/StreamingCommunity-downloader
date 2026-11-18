@@ -639,9 +639,13 @@ def test_a_missing_staging_directory_is_nothing_to_clear(tmp_path, monkeypatch):
 
 def test_the_lifespan_clears_staging_first_and_stops_the_downloads_last(monkeypatch):
     import app.main as main_module
+    from app.core import domain_recovery
 
     order = []
     manager = main_module.job_manager
+    # The lifespan starts the domain watch, which checks at startup. Keep this
+    # offline: the test must never reach t.me or telegra.ph.
+    monkeypatch.setattr(domain_recovery, "run_check", lambda *a, **k: {})
     monkeypatch.setattr(main_module, "check_writable_paths", lambda: order.append("check"))
     monkeypatch.setattr(manager, "purge_stale_temp", lambda: order.append("purge") or 0)
     monkeypatch.setattr(main_module.db, "run_migrations", lambda: order.append("migrate"))
