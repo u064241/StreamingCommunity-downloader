@@ -208,6 +208,9 @@ def local_api(monkeypatch):
 
 def test_local_api_prepare_apply_confirmation_and_owner(local_api, monkeypatch):
     client, _ = local_api
+    # The routes are closed by default (no ZIP published); this test covers the
+    # confirmation flow for when a signed ZIP is published again.
+    monkeypatch.setattr(routes, "PORTABLE_ZIP_PUBLISHED", True)
     token = client.get("/api/updates/portable").json()["token"]
     headers = {"Origin": "http://127.0.0.1:8000", "X-Portable-Update-Token": token}
     prepare = Mock(return_value={"token": "a" * 32})

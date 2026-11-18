@@ -11,6 +11,12 @@ from pathlib import Path
 
 from app.progress import DownloadCancelledError
 
+
+def _outtmpl(target_dir: Path, stem: str) -> str:
+    """yt-dlp output template. Every '%' is escaped, in the directory too:
+    a library path or title containing '%' would otherwise break the template."""
+    return os.path.join(str(target_dir).replace("%", "%%"), stem.replace("%", "%%") + ".%(ext)s")
+
 try:
     import yt_dlp
 except ImportError:  # keeps catalogue-only installs importable
@@ -58,7 +64,7 @@ def download(url: str, title: str, output_dir: str, *, temp_dir=None,
         stem = _safe_name(f"{title} S{season:02d}E{int(episode_number or 1):02d}" +
                           (f" - {episode_title}" if episode_title else ""))
     target_dir.mkdir(parents=True, exist_ok=True)
-    outtmpl = str(target_dir / (stem.replace("%", "%%") + ".%(ext)s"))
+    outtmpl = _outtmpl(target_dir, stem)
     seen = {}
     outputs = []
 

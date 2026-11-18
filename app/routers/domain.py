@@ -568,6 +568,12 @@ def set_app_settings(body: SettingsUpdate):
                 status_code=400, detail=f"{field} must be between {low} and {high}"
             )
 
+    # 0 means unlimited requests to the source: the same consent that the
+    # free profile asks for must hold here too, not only in the preset route.
+    if provided.get("source_requests_per_hour") == 0 and not (
+            provided.get("free_profile_acknowledged") or get_settings().get("free_profile_acknowledged", False)):
+        raise HTTPException(400, "Richieste illimitate alla sorgente richiedono la conferma del profilo libero")
+
     new_settings = {**get_settings(), **provided}
     if new_settings.get("video_conversion", "copy") != "copy" and any(
         key in provided for key in ("video_conversion", "video_encoder", "video_quality", "video_cpu_fallback")

@@ -88,12 +88,24 @@ def portable_status():
 
 @router.post("/portable/prepare", dependencies=[Depends(_local)])
 def prepare_portable(user=MANAGE):
+    _require_portable_zip()
     return _run(portable_updates.prepare, user.id)
 
 
 @router.post("/portable/apply", dependencies=[Depends(_local)])
 def apply_portable(request: Request, body: ApplyUpdate, user=MANAGE):
+    _require_portable_zip()
     if body.confirmed is not True:
         raise HTTPException(400, "Conferma esplicita richiesta")
     return _run(portable_updates.apply, user.id, body.token, request.app)
+
+
+# Standalone portable ZIPs are no longer published as release assets. Until a
+# signed ZIP is published again, the prepare and apply routes stay closed.
+PORTABLE_ZIP_PUBLISHED = False
+
+
+def _require_portable_zip() -> None:
+    if not PORTABLE_ZIP_PUBLISHED:
+        raise HTTPException(409, "Aggiornamento portable non pubblicato: installa la nuova versione dal setup")
 

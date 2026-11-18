@@ -18,6 +18,9 @@ _cache = OrderedDict()
 _lock = threading.RLock()
 _TTL = 120
 _MAX_CACHE = 128
+# A filtered search walks the whole recent feed, one upstream request per page.
+# Capped so one uncached query cannot turn into a long burst at the source.
+_MAX_FEED_PAGES = 30
 SECTIONS = {"latest", "archive", "latest_animes", "upcoming", "top_day", "top_week", "top_month"}
 _WEEKDAYS = dict(zip(("lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"),
                      ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")))
@@ -28,19 +31,40 @@ def clear_cache():
         _cache.clear()
 
 
-def _cached(key, fetch):
-    key = (au.host(), *key)
-    # Share concurrent identical requests and protect the upstream session.
+_key_locks: dict = {}
+
+
+def _key_lock(key):
+    with _lock:
+        return _key_locks.setdefault(key, threading.Lock())
+
+
+def _hit(key):
     with _lock:
         hit = _cache.get(key)
         if hit and hit[0] > time.monotonic():
             _cache.move_to_end(key)
-            return copy.deepcopy(hit[1])
+            return True, copy.deepcopy(hit[1])
+    return False, None
+
+
+def _cached(key, fetch):
+    key = (au.host(), *key)
+    found, value = _hit(key)
+    if found:
+        return value
+    # One lock per key: identical concurrent requests share one fetch, while
+    # other keys (calendar, archive, search) are never blocked by a slow fetch.
+    with _key_lock(key):
+        found, value = _hit(key)
+        if found:
+            return value
         value = fetch()  # Errors are not cached as empty pages.
-        _cache[key] = (time.monotonic() + _TTL, copy.deepcopy(value))
-        _cache.move_to_end(key)
-        while len(_cache) > _MAX_CACHE:
-            _cache.popitem(last=False)
+        with _lock:
+            _cache[key] = (time.monotonic() + _TTL, copy.deepcopy(value))
+            _cache.move_to_end(key)
+            while len(_cache) > _MAX_CACHE:
+                _cache.popitem(last=False)
         return value
 
 
@@ -131,7 +155,7 @@ def browse(*, section="archive", page=1, per_page=60, query="", media_type=None,
         # the visible page, so an empty page cannot hide later matching videos.
         first = fetch(1)
         _, _, last = _paginator(first)
-        if last > 100:
+        if last > _MAX_FEED_PAGES:
             raise RuntimeError("AnimeUnity: recent feed exceeds supported size")
         items, seen = [], set()
         for n in range(1, last + 1):

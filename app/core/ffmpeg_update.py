@@ -82,6 +82,11 @@ def update() -> dict:
     target = _root() / "ffmpeg.exe"
     with tempfile.TemporaryDirectory(prefix="sc-ffmpeg-") as tmp:
         archive = Path(tmp) / wheel["filename"]
+        # The URL comes from PyPI's JSON. Only PyPI's own file host is trusted.
+        from urllib.parse import urlsplit
+        url = urlsplit(str(wheel.get("url") or ""))
+        if url.scheme != "https" or url.hostname != "files.pythonhosted.org":
+            raise RuntimeError("URL del wheel FFmpeg non attendibile")
         req = Request(wheel["url"], headers={"User-Agent": "StreamingCommunityDownloader/ffmpeg-update"})
         with urlopen(req, timeout=120) as response, archive.open("wb") as out:
             shutil.copyfileobj(response, out)
