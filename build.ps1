@@ -632,11 +632,6 @@ end;
             try {
                 & $gh.Source auth status --hostname github.com
                 if ($LASTEXITCODE -ne 0) { throw 'Autenticazione GitHub non disponibile. Configura SC_GITHUB_TOKEN o gh auth login.' }
-                # Single branch: releases are cut from main, no release/vX branches.
-                # Fast-forward only: a non-fast-forward push is refused.
-                & git -C $ProjectRoot push origin ("${ReleaseCommit}:refs/heads/main")
-                if ($LASTEXITCODE -ne 0) { throw 'Push di main fallito (serve fast-forward).' }
-                $releaseTarget = 'main'
                 $releaseFiles = @(
                     (Join-Path $DistDir "$AppName-Setup-v$Version.exe"),
                     (Join-Path $DistDir 'update-manifest.json'),
@@ -647,6 +642,13 @@ end;
                         throw "Artefatto release mancante: $releaseFile"
                     }
                 }
+                # Single branch: releases are cut from main. Checked only after
+                # every artifact exists, so a failed build never moves main.
+                $currentBranch = (& git -C $ProjectRoot rev-parse --abbrev-ref HEAD).Trim()
+                if ($currentBranch -ne 'main') { throw "Pubblicazione solo da main (HEAD su '$currentBranch')." }
+                & git -C $ProjectRoot push origin ("${ReleaseCommit}:refs/heads/main")
+                if ($LASTEXITCODE -ne 0) { throw 'Push di main fallito (serve fast-forward).' }
+                $releaseTarget = 'main'
                 $tag = "v$Version"
                 $notesPath = Join-Path $ProjectRoot "releases\v$Version.md"
                 & $gh.Source release create $tag @releaseFiles --repo 'u064241/StreamingCommunity-downloader' --target $releaseTarget --title "StreamingCommunity Downloader $Version" --notes-file $notesPath --latest
