@@ -1012,6 +1012,9 @@ async function saveHosts() {
       video_host: document.getElementById('video-host-input').value.trim(),
     });
     _fillHosts(data);
+    if (typeof _homeCache !== 'undefined') {
+      Object.keys(_homeCache).filter(key => key.startsWith('animeunity:')).forEach(key => delete _homeCache[key]);
+    }
     _feedback('hosts-feedback', t('settings.saved'), 'success');
     showToast(t('settings.hosts.saved'), 'success');
   } catch (e) { _feedback('hosts-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }

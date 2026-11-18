@@ -7,7 +7,7 @@ function create(source = 'animeunity') {
   function node() {
     const children = [], selectors = new Map();
     return {
-      children, dataset: {}, innerHTML: '',
+      children, dataset: {}, innerHTML: '', value: '', style: {},
       appendChild(child) { children.push(child); },
       insertAdjacentHTML(_, html) { this.innerHTML += html; },
       querySelector(selector) {
@@ -17,17 +17,19 @@ function create(source = 'animeunity') {
     };
   }
   const host = node();
+  const actions = {};
   const context = vm.createContext({
+    AbortController,
     document: {addEventListener() {}, createElement: node, getElementById: () => host},
     window: {addEventListener() {}}, currentSource: source, currentDomain: '',
     _searchResults: [], _requestStatus: {}, t: key => key,
     escapeHtml: value => String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;'),
-    itemYear: () => null, registerActions() {}, registerPageHash() {},
+    itemYear: () => null, registerActions(entries) {Object.assign(actions, entries);}, registerPageHash() {},
     loadRequestStatuses() {},
     api: {get() { throw new Error('Rendering must not fetch metadata'); }},
   });
   vm.runInContext(fs.readFileSync('app/static/page-search.js', 'utf8'), context);
-  return {context, host, node, run: code => vm.runInContext(code, context)};
+  return {context, host, node, actions, run: code => vm.runInContext(code, context)};
 }
 
 test('AnimeUnity cards use available wide artwork and retain full escaped titles', () => {
@@ -87,4 +89,53 @@ test('home headline translates consistently with the initial template', () => {
     assert.equal(context.window.t('home.next'), expected);
   }
   assert.match(fs.readFileSync('app/templates/index.html', 'utf8'), /data-i18n="home.next">Scopri cosa guardare<\/span>/);
+});
+
+function homeApp() {
+  const app = create();
+  app.context._cancelCatalogWork = () => {};
+  app.context._setStartPageVisible = () => {};
+  app.context.renderShelves = () => {app.host.innerHTML = 'cards rendered';};
+  app.context.renderHomeExtras = () => {};
+  return app;
+}
+
+test('an AnimeUnity outage is visible, is not cached, and retry recovers the cards', async () => {
+  const app = homeApp();
+  let requests = 0;
+  app.context.api.get = async (path, params) => {
+    requests++;
+    assert.equal(path, '/api/home');
+    assert.equal(params.source, 'animeunity');
+    if (requests === 1) throw new Error('upstream unavailable');
+    return {shelves: [{key: 'latest_episodes', items: [{id: '112-black-clover'}]}]};
+  };
+  await app.context.showStartPage();
+  assert.match(app.host.innerHTML, /title.sourceUnavailable/);
+  assert.match(app.host.innerHTML, /data-action="search:retryHome"/);
+  assert.equal(app.run('Object.keys(_homeCache).length'), 0);
+  await app.actions['search:retryHome']();
+  assert.equal(app.host.innerHTML, 'cards rendered');
+  await app.context.showStartPage();
+  assert.equal(requests, 2, 'successful home is reused from cache');
+});
+
+test('an empty AnimeUnity response cannot blank the portal for fifteen minutes', async () => {
+  const app = homeApp();
+  app.context.api.get = async () => ({shelves: []});
+  await app.context.showStartPage();
+  assert.match(app.host.innerHTML, /search:retryHome/);
+  assert.equal(app.run('Object.keys(_homeCache).length'), 0);
+});
+
+test('a late AnimeUnity failure cannot clear a different source already on screen', async () => {
+  const app = homeApp();
+  let reject;
+  app.context.api.get = () => new Promise((_, fail) => {reject = fail;});
+  const pending = app.context.showStartPage();
+  app.context.currentSource = 'raiplay';
+  app.host.innerHTML = 'RaiPlay cards';
+  reject(new Error('late AnimeUnity error'));
+  await pending;
+  assert.equal(app.host.innerHTML, 'RaiPlay cards');
 });

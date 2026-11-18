@@ -51,6 +51,29 @@ for (const action of ['tp:crumb-search', 'tp:crumb-kind']) {
   });
 }
 
+test('AnimeUnity keeps the dubbed variant when a card URL is reopened', () => {
+  const app = create();
+  const routes = [];
+  app.context.loadTitlePage = route => routes.push(route);
+  app.context.location.hash = app.run("titleHash({type:'anime',id:'112-black-clover',language:'ita'})");
+  app.run('routeFromHash()');
+  assert.equal(routes[0].source, 'animeunity');
+  assert.equal(routes[0].language, 'ita');
+  app.run("_tp={type:'anime',source:'animeunity',id:'112-black-clover',animeLanguage:'jpn'}");
+  app.run('routeFromHash()');
+  assert.equal(routes.length, 2, 'changing the variant reloads its episodes');
+});
+
+test('AnimeUnity download context uses the actual video language rather than an Italian default', async () => {
+  const app = create();
+  app.context.api = {get: async () => [{id: 10242, number: '1', language: 'jpn'}]};
+  app.context._tpRenderEpisodes = () => {};
+  app.run("_tp={type:'anime',source:'animeunity',id:'112-black-clover',name:'Black Clover',audio:[],subs:[]}");
+  await app.run('_tpLoadAnime(0)');
+  assert.equal(app.run('_animeCtx.language'), 'jpn');
+  assert.equal(app.run('_animeCtx.audioLangs.join()'), 'jpn');
+});
+
 test('kind breadcrumb preserves the StreamingCommunity film filter', () => {
   const app = create();
   app.run("_tp = {type:'movie', source:'streamingcommunity'}");

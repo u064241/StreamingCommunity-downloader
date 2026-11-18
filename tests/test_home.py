@@ -81,7 +81,7 @@ def _au_home(latest_rows, featured):
 
 
 @pytest.fixture
-def au(monkeypatch):
+def au(monkeypatch, public_dns):
     state = {"html": _au_home([], []), "calls": []}
 
     class _Scraper:
@@ -176,10 +176,14 @@ def test_an_anime_poster_is_an_absolute_url(au):
     assert item["type"] == "anime" and item["media_type"] == "TV"
 
 
-def test_a_front_page_with_neither_list_is_no_shelves(au):
+def test_an_unrecognized_anime_page_is_not_cached_as_an_empty_catalogue(au):
     au["html"] = "<html><body>nothing here</body></html>"
 
-    assert home.shelves("animeunity", "www.animeunity.test") == []
+    with pytest.raises(RuntimeError, match="formato pagina"):
+        home.shelves("animeunity", "www.animeunity.test")
+    assert home._cached(("animeunity", "www.animeunity.test")) is None
+    au["html"] = _au_home([], [_au_record(1)])
+    assert home.shelves("animeunity", "www.animeunity.test")[0]["items"]
 
 
 # ── The cache ─────────────────────────────────────────────────────────────────

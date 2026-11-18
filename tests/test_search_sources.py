@@ -291,7 +291,7 @@ def _records(*records, status_code=200):
 
 
 @pytest.fixture
-def au(monkeypatch):
+def au(monkeypatch, public_dns):
     """Build a fake scraper serving the given POST replies in order.
 
     Both the scraper and the CSRF token are module globals that outlive a test,

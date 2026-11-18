@@ -167,24 +167,36 @@ def _au_shelves() -> list[dict]:
 
     Both ride in element attributes as escaped JSON rather than in an API.
     """
-    soup = BeautifulSoup(animeunity.fetch_home_html(), "lxml")
-
-    latest_raw = (_attr_json(soup, "items-json") or {}).get("data") or []
+    html = animeunity.fetch_home_html()
+    props = animeunity.inertia_props(html)
+    soup = BeautifulSoup(html, "lxml")
+    if props is not None:
+        latest_raw = (props.get("latestEpisodes") or {}).get("data") or []
+        featured_raw = props.get("carouselAnimes") or []
+    else:
+        latest_raw = (_attr_json(soup, "items-json") or {}).get("data") or []
+        featured_raw = _attr_json(soup, "animes", element="the-carousel") or []
     # Two new episodes of the same series are two rows and one card.
     latest, seen = [], set()
     for row in latest_raw:
-        item = animeunity.normalize_title(row.get("anime") or {})
+        if not isinstance(row, dict):
+            continue
+        episode = row.get("episode") if isinstance(row.get("episode"), dict) else {}
+        item = animeunity.normalize_title(row.get("anime") or episode.get("anime") or {})
         if item and item["id"] not in seen:
             seen.add(item["id"])
             latest.append(item)
 
-    featured_raw = _attr_json(soup, "animes", element="the-carousel") or []
     featured = [t for t in (animeunity.normalize_title(r) for r in featured_raw) if t]
 
     shelves = []
     for key, items in (("latest_episodes", latest), ("featured", featured)):
         if items:
             shelves.append(_shelf("animeunity", key, items[:_SHELF_CAP]))
+    if not shelves:
+        # A changed/challenge page is a failure, never an empty catalogue
+        # cached for half an hour and presented as a successful response.
+        raise RuntimeError("AnimeUnity: catalogo non disponibile o formato pagina non riconosciuto")
     return shelves
 
 
@@ -224,9 +236,13 @@ def shelves(source: str, domain: str) -> list[dict]:
             label=f"home:{source}", swr=True, spawn=_spawn)
     except source_budget.SourceUnavailable as exc:
         logger.warning("Front page of %s not fetched: %s", source, exc)
+        if source == "animeunity":
+            raise
         return []
     except Exception:
         logger.exception("Cannot read the front page of %s", source)
+        if source == "animeunity":
+            raise
         return []
 
     with _served_lock:

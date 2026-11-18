@@ -320,7 +320,7 @@ def retired_domains() -> set[str]:
 # Where AnimeUnity lives unless an administrator says otherwise. The source moves
 # TLD (.so to .to to .co); Settings › Sorgente overrides it without a release, and the
 # ANIMEUNITY_HOST env var still works for deployments that set it.
-ANIMEUNITY_DEFAULT_HOST = "www.animeunity.co"
+ANIMEUNITY_DEFAULT_HOST = "animeunity.cx"
 
 
 def configured_animeunity_host() -> str:

@@ -112,14 +112,15 @@ function routeFromHash() {
     const season = parseInt(route.params.s, 10);
     const source = route.params.src || (type === 'anime' ? 'animeunity' : 'streamingcommunity');
     // Re-entering the same title must not refetch it.
-    if (_tp && _tp.type === type && String(_tp.id) === id && _tp.source === source) {
+    if (_tp && _tp.type === type && String(_tp.id) === id && _tp.source === source
+        && (type !== 'anime' || (_tp.animeLanguage || null) === (route.params.lang || null))) {
       showPage('detail');
       const selectedSeason = season > 0 ? season : (_tp.seasonNumbers?.[0] || 1);
       if (selectedSeason !== _tp.season) tpLoadSeason(selectedSeason);
       return;
     }
     loadTitlePage({ page: 'detail', type, id, slug: slug || '',
-                    source,
+                    source, language: type === 'anime' ? route.params.lang || null : null,
                     season: season > 0 ? season : 1 });
     return;
   }

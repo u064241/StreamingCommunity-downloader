@@ -542,7 +542,7 @@ def available_tracks(request: models.Request) -> dict:
     download_source(request.media_type, request.source)
     if request.source == "animeunity":
         episode = _find_anime_episode(request)
-        return animeunity.get_episode_languages(episode["id"])
+        return animeunity.get_episode_languages(episode["id"], anime_id=request.external_id)
 
     from app.core.film import get_film_languages
     from app.core.tv import get_episode_languages, get_info_season, get_token
@@ -616,7 +616,7 @@ def resolve(request: models.Request) -> Resolution:
         download_source(request.media_type, request.source)
         if request.source == "animeunity":
             episode = _find_anime_episode(request)
-            available = animeunity.get_episode_languages(episode["id"])
+            available = animeunity.get_episode_languages(episode["id"], anime_id=request.external_id)
             _check_audio(request, available)
             _widen_to_everyone(common, request, available)
 

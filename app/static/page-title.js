@@ -15,7 +15,8 @@ let _tpToken = 0;    // guards against a slow response painting over a newer tit
 function titleHash(item) {
   const kind = item.type === 'anime' ? 'anime' : (item.type === 'movie' ? 'movie' : 'tv');
   const source = item.source || (kind === 'anime' ? 'animeunity' : 'streamingcommunity');
-  return hashFor('detail', [kind, item.id, item.slug || ''], {src: source});
+  return hashFor('detail', [kind, item.id, item.slug || ''], {src: source,
+    lang: kind === 'anime' ? item.language : null});
 }
 
 // From a result card or a shelf.
@@ -59,6 +60,7 @@ async function loadTitlePage(route) {
     seasonNumbers: [],
     episodesCount: seed?.episodes_count || 0,
     animeType: seed?.media_type || null,
+    animeLanguage: route.language || seed?.language || null,
     plot: seed?.plot || null,
     genres: seed?.genres || [],
     // AnimeUnity has no metadata endpoint - it never needed one, because its
@@ -278,7 +280,8 @@ async function _tpLoadAnime(token) {
   _tp.episodes = null;
   _tpRenderEpisodes();
   try {
-    const eps = await api.get(`/api/anime/${_tp.id}/episodes`, {source: _tp.source});
+    const eps = await api.get(`/api/anime/${_tp.id}/episodes`, {source: _tp.source,
+      ...(_tp.animeLanguage ? {language: _tp.animeLanguage} : {})});
     if (token !== _tpToken) return;
     // Spread, not a projection: startAnimeDownload reads episode.number and
     // posts the whole record back. Narrowing it to {id, n} here sent the API
@@ -289,7 +292,10 @@ async function _tpLoadAnime(token) {
       source: _tp.source,
       animeId: _tp.id, animeName: _tp.name, animeType: _tp.animeType || 'tv',
       animeYear: _tp.year, episodes: _tp.episodes,
-      audioLangs: _tpPicked('audio'), subLangs: _tpPicked('subs'), scheduledAt: _tp.scheduledAt,
+      language: _tp.animeLanguage || eps[0]?.language || null,
+      audioLangs: (_tp.animeLanguage || eps[0]?.language)
+        ? [_tp.animeLanguage || eps[0].language] : _tpPicked('audio'),
+      subLangs: _tpPicked('subs'), scheduledAt: _tp.scheduledAt,
     };
   } catch (e) {
     if (token !== _tpToken) return;
@@ -1109,6 +1115,7 @@ async function downloadAllAnime() {
   await _startBatch('/api/download/anime-all', {
     source: _animeCtx.source || 'animeunity',
     anime_id: String(animeId), anime_name: animeName, anime_type: animeType,
+    language: _animeCtx.language || null,
     year: animeYear,
     audio_languages: audioLangs, subtitle_languages: subLangs,
     scheduled_at: scheduledAt || null,
@@ -1163,7 +1170,8 @@ registerActions({
 registerPageHash('detail', {
   read: () => (_tp ? {
     extra: [_tp.type, _tp.id, _tp.slug || ''],
-    params: { src: _tp.source, s: _tp.season !== _tpSeasons()[0] ? _tp.season : null },
+    params: { src: _tp.source, s: _tp.season !== _tpSeasons()[0] ? _tp.season : null,
+      lang: _tp.type === 'anime' ? _tp.animeLanguage : null },
   } : {}),
 });
 

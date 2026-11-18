@@ -532,14 +532,17 @@ async function showStartPage() {
     const homeSource = source === 'all' ? 'streamingcommunity' : source;
     const body = await api.get('/api/home', {source: homeSource}, {signal: _homeAbort.signal,
                                                        onHeaders: h => { stamp = _cacheStamp(h); }});
+    if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
+    if (source === 'animeunity' && !body.shelves?.length) throw new Error(t('title.sourceUnavailable'));
     _homeCache[cacheKey] = {shelves: body.shelves || [], genres: body.genres || [], stamp,
                             expires: Date.now() + 900000};
-    if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
     renderShelves();
     renderHomeExtras(_homeCache[cacheKey]);
   } catch (e) {
     if (e.name === 'AbortError') return;
-    host.innerHTML = '';
+    if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
+    host.innerHTML = `<div class="alert alert-warning" role="alert">${escapeHtml(t('title.sourceUnavailable'))} ` +
+      `<button class="btn btn-primary btn-sm ms-2" data-action="search:retryHome">${escapeHtml(t('common.retry'))}</button></div>`;
   }
 }
 
@@ -768,6 +771,7 @@ registerActions({
   'catalog:sections': () => loadHomeSections(),
   'search:source': d => setSource(d.source),
   'search:run':    () => doSearch(),
+  'search:retryHome': () => showStartPage(),
   'search:more':   () => loadMoreResults(),
   'search:kind':   d => setKindFilter(d.kind),
   'search:dub':    d => setDubOnly(d.on === '1'),

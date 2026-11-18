@@ -1,0 +1,59 @@
+{
+  "source": "https://animeunity.cx/",
+  "captured_on": "2026-11-18",
+  "note": "Selected public metadata only; plots, user data and playback credentials omitted.",
+  "anime": {
+    "id": 112,
+    "slug": "black-clover",
+    "title": "Black Clover",
+    "title_ja": null,
+    "type": "tv",
+    "year": 2017,
+    "total_episodes": 170,
+    "default_status": "completed",
+    "images": {
+      "poster": "https://img.animeunity.cx/anime/bx97940-fyh8o7gNbha0.png",
+      "banner": "https://img.animeunity.cx/anime/97940-1URQdQ4U1a0b.jpg",
+      "cover": null
+    },
+    "variants": [
+      {"language": "ita", "status": "ongoing", "episodes_count": 153},
+      {"language": "jpn", "status": "completed", "episodes_count": 170}
+    ],
+    "genres": [{"id": 1, "name": "Action"}],
+    "studios": [{"id": 8, "name": "Studio Pierrot"}]
+  },
+  "latest_episode": {
+    "id": 112299,
+    "language": "ita",
+    "episode": {
+      "id": 77653,
+      "number": "4",
+      "anime": {
+        "id": 6467,
+        "slug": "super-cube",
+        "title": "Super Cube",
+        "type": "ona",
+        "year": 2025,
+        "images": {
+          "cover": "https://img.animeunity.cx/anime/39S0Y.png",
+          "poster": "https://img.animeunity.cx/anime/bx166442-JTkdzIQpgf8M.jpg"
+        },
+        "variants": [
+          {"language": "ita", "episodes_count": 4},
+          {"language": "chn", "episodes_count": 12}
+        ]
+      }
+    }
+  },
+  "episode": {
+    "id": 3767,
+    "number": "1",
+    "seq_number_start": 1,
+    "seq_number_end": 1,
+    "videos": [
+      {"id": 107514, "language": "ita", "is_hidden": false},
+      {"id": 10242, "language": "jpn", "is_hidden": false}
+    ]
+  }
+}

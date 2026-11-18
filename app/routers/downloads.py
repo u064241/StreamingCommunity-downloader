@@ -151,6 +151,7 @@ class SeriesDownloadRequest(StreamingCommunityRequest):
 
 class AnimeAllDownloadRequest(AnimeUnityRequest):
     anime_id: str
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}$")
     anime_name: str
     anime_type: str = Field(default="tv", max_length=32)
     year: str | None = None
@@ -347,7 +348,8 @@ async def download_anime_all(body: AnimeAllDownloadRequest, http_request: HttpRe
         from app.core.animeunity import get_episodes
         from app.requests import resolver
 
-        listed = get_episodes(body.anime_id) or []
+        kwargs = {"language": body.language} if body.language else {}
+        listed = get_episodes(body.anime_id, **kwargs) or []
         indices, skipped = _missing_only(body, list(range(len(listed))), lambda i: (
             resolver.episode_on_disk(resolver.ANIME, body.source, body.anime_id,
                                      body.anime_name, body.year, None,
