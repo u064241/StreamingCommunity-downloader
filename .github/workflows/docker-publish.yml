@@ -68,7 +68,7 @@ jobs:
           node-version: '22'
 
       - name: Run frontend tests
-        run: node --test tests/*.cjs
+        run: node scripts/run-frontend-tests.cjs
 
   # Pull requests only prove that the image still builds: nothing is pushed and
   # the job holds no write permission.
