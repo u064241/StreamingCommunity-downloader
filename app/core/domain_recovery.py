@@ -139,10 +139,16 @@ def fetch_telegram_candidates() -> list[str]:
             # Ignore old/replaced domains shown struck out in announcements.
             for old in message.select("s, del, strike"):
                 old.decompose()
-            texts = [message.get_text(" ", strip=True)]
-            texts += [a.get("href", "") for a in message.find_all("a")]
+            # The channel writes a blocked domain defanged, e.g.
+            # "streamingcommunityz[.]nexus", and the new one after the word
+            # "Nuovo". A defanged host never matches (no literal dot), so it is
+            # never a candidate. When "Nuovo" is present, only what follows it
+            # counts: the blocked domain is listed before it and must not win.
+            body = message.get_text(" ", strip=True)
+            parts = re.split(r"(?i)\bnuovo\b", body)
+            anchored = len(parts) > 1
+            texts = [parts[-1]] if anchored else [body] + [a.get("href", "") for a in message.find_all("a")]
             for text in texts:
-                text = text.replace("[.]", ".")
                 for host in re.findall(r"(?i)(?<![\w.-])(?:www\.)?streaming(?:community|unity)[a-z0-9-]{0,12}\.[a-z]{2,24}(?![\w.-])", text):
                     host = host.lower()
                     if host not in hosts:
