@@ -690,7 +690,7 @@ function _wireShelfArrows(section) {
     stopGlide();
     const from = rail.scrollLeft;
     const change = to - from;
-    if (Math.abs(change) < 1) { rail.scrollLeft = to; return; }
+    if (Math.abs(change) < 1) { rail.scrollLeft = to; rail.classList.remove('is-gliding'); return; }
     const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
     const state = {to, frame: 0};
     const startedAt = performance.now();
@@ -718,10 +718,14 @@ function _wireShelfArrows(section) {
     const count = visibleCount();
     const distance = stepDistance(count);
     if (distance <= 0) return;
+    // Snap off before any scroll position is set, including the rotation below:
+    // with snap on, the browser re-aligns the cards and the rail visibly shifts.
+    rail.classList.add('is-gliding');
     let position = glideState ? glideState.to : rail.scrollLeft;
     const atEdge = direction > 0 ? position >= max - 2 : position <= 2;
     if (atEdge) {
       stopGlide();
+      rail.classList.add('is-gliding');
       rail.scrollLeft = position;
       rotate(direction > 0 ? 1 : -1, count);
       position = rail.scrollLeft;
