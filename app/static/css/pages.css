@@ -154,6 +154,9 @@
       color: var(--text);
       letter-spacing: .2px;
     }
+    /* While a rail glides frame by frame, the browser must not snap it or
+       animate its position on its own: both would fight the animation. */
+    .shelf-rail.is-gliding { scroll-snap-type: none; scroll-behavior: auto; }
     .shelf-rail {
       display: flex;
       gap: 12px;

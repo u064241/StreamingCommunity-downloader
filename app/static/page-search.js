@@ -673,24 +673,60 @@ function _wireShelfArrows(section) {
     rail.scrollLeft += anchor.getBoundingClientRect().left - before;
   }
 
-  // One click moves one step in its direction and never stops at an edge:
-  // at the end the rail rotates so the first cards follow the last ones.
-  let busy = false;
-  let busyTimer = null;
+  // The glide moves the rail frame by frame with an ease-in-out curve, so the
+  // motion is continuous. Native smooth scrolling is switched off for its
+  // duration (.shelf-rail.is-gliding), so the browser does not fight it.
+  const GLIDE_MS = 520;
+  let glideState = null;
+
+  function stopGlide() {
+    if (!glideState) return;
+    cancelAnimationFrame(glideState.frame);
+    glideState = null;
+    rail.classList.remove('is-gliding');
+  }
+
+  function glideTo(to) {
+    stopGlide();
+    const from = rail.scrollLeft;
+    const change = to - from;
+    if (Math.abs(change) < 1) { rail.scrollLeft = to; return; }
+    const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const state = {to, frame: 0};
+    const startedAt = performance.now();
+    const tick = now => {
+      const t = Math.max(0, Math.min(1, (now - startedAt) / GLIDE_MS));
+      rail.scrollLeft = from + change * ease(t);
+      if (t < 1) {
+        state.frame = requestAnimationFrame(tick);
+      } else if (glideState === state) {
+        glideState = null;
+        rail.classList.remove('is-gliding');
+      }
+    };
+    glideState = state;
+    rail.classList.add('is-gliding');
+    state.frame = requestAnimationFrame(tick);
+  }
+
+  // One click moves one step in its direction and never stops at an edge: at
+  // the end the rail rotates so the first cards follow the last ones. A click
+  // during a glide continues from where the rail is heading.
   function scrollByCards(direction) {
-    if (busy) return;
     const max = rail.scrollWidth - rail.clientWidth;
     if (max <= 4) return;
     const count = visibleCount();
     const distance = stepDistance(count);
     if (distance <= 0) return;
-    if (direction > 0 && rail.scrollLeft >= max - 2) rotate(1, count);
-    if (direction < 0 && rail.scrollLeft <= 2) rotate(-1, count);
-    const target = rail.scrollLeft + direction * distance;
-    busy = true;
-    clearTimeout(busyTimer);
-    busyTimer = setTimeout(() => { busy = false; }, 420);
-    rail.scrollTo({left: Math.max(0, Math.min(max, target)), behavior: 'smooth'});
+    let position = glideState ? glideState.to : rail.scrollLeft;
+    const atEdge = direction > 0 ? position >= max - 2 : position <= 2;
+    if (atEdge) {
+      stopGlide();
+      rail.scrollLeft = position;
+      rotate(direction > 0 ? 1 : -1, count);
+      position = rail.scrollLeft;
+    }
+    glideTo(Math.max(0, Math.min(max, position + direction * distance)));
   }
 
   function sync() {

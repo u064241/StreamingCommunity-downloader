@@ -1,7 +1,7 @@
 // The rail arrows make the rail a loop: ">" keeps moving right and, past the
 // last title, the first titles follow; "<" keeps moving left the same way.
 // Runs the real _wireShelfArrows from page-search.js against a fake rail that
-// models scrollLeft, card positions and DOM reordering.
+// models scrollLeft, card positions, DOM reordering and animation frames.
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -18,8 +18,14 @@ const VIEW = 500;          // clientWidth
 
 function makeRail(n) {
   const children = Array.from({length: n}, (_, id) => ({id, offsetWidth: 132}));
+  const classes = new Set();
   const rail = {
     children, clientWidth: VIEW, _left: 0,
+    classList: {
+      add: c => classes.add(c),
+      remove: c => classes.delete(c),
+      contains: c => classes.has(c),
+    },
     get scrollWidth() { return children.length * CARD; },
     get scrollLeft() { return this._left; },
     set scrollLeft(v) { this._left = Math.max(0, Math.min(this.scrollWidth - VIEW, v)); },
@@ -31,7 +37,6 @@ function makeRail(n) {
       children.splice(at, 0, node);
       return node;
     },
-    scrollTo(opts) { this.scrollLeft = opts.left; },   // smooth is modelled as instant
     addEventListener() {},
   };
   // Screen position of a card: its slot in the rail minus how far the rail is scrolled.
@@ -43,20 +48,34 @@ function makeRail(n) {
   return rail;
 }
 
-function setup(n, {timers = 'instant'} = {}) {
+function setup(n) {
   const rail = makeRail(n);
   const makeArrow = () => ({hidden: false, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }});
   const prev = makeArrow(), next = makeArrow();
   const section = {querySelector: sel => ({'.shelf-rail': rail, '.shelf-arrow-prev': prev, '.shelf-arrow-next': next})[sel]};
-  const queue = [];
+
+  // Manual clock and frame queue: flush() runs every pending animation frame
+  // at a time well past the glide, so each glide finishes in one call.
+  let clock = 0;
+  let frames = [];
   const context = vm.createContext({
     getComputedStyle: () => ({paddingLeft: '0px'}),
-    setTimeout: fn => { if (timers === 'instant') fn(); else queue.push(fn); return queue.length; },
-    clearTimeout() {},
+    performance: {now: () => clock},
+    requestAnimationFrame: fn => { frames.push(fn); return frames.length; },
+    cancelAnimationFrame: id => { if (frames[id - 1]) frames[id - 1] = null; },
   });
   vm.runInContext(wire + '\nthis.wire = _wireShelfArrows;', context);
   context.wire(section);
-  return {rail, prev, next, queue};
+  const flush = () => {
+    let guard = 0;
+    while (frames.some(Boolean) && guard++ < 100) {
+      clock += 1000;
+      const pending = frames;
+      frames = [];
+      pending.forEach(fn => fn && fn(clock));
+    }
+  };
+  return {rail, prev, next, flush};
 }
 
 // Id of the first card that is at least half on screen.
@@ -65,19 +84,19 @@ function firstVisible(rail) {
   return card.id;
 }
 
-function clicks(arrow, rail, times) {
+function clicks(arrow, rail, flush, times) {
   const seen = [];
   for (let i = 0; i < times; i++) {
     arrow.listeners.click();
+    flush();
     seen.push(firstVisible(rail));
   }
   return seen;
 }
 
 test('">" keeps moving right: past the last title the first ones follow', () => {
-  const {rail, next} = setup(10);
-  const seen = clicks(next, rail, 40);
-  // Every step moves the first visible title forward in the loop, never back.
+  const {rail, next, flush} = setup(10);
+  const seen = clicks(next, rail, flush, 40);
   let prev = 0;
   for (const id of seen) {
     const forward = (id - prev + 10) % 10;
@@ -88,8 +107,8 @@ test('">" keeps moving right: past the last title the first ones follow', () => 
 });
 
 test('"<" keeps moving left: before the first title the last ones come', () => {
-  const {rail, prev} = setup(10);
-  const seen = clicks(prev, rail, 40);
+  const {rail, prev: back, flush} = setup(10);
+  const seen = clicks(back, rail, flush, 40);
   let current = 0;
   for (const id of seen) {
     const backward = (current - id + 10) % 10;
@@ -100,34 +119,35 @@ test('"<" keeps moving left: before the first title the last ones come', () => {
 });
 
 test('a click at the end never shows a jump back to the start', () => {
-  const {rail, next} = setup(10);
-  rail.scrollLeft = rail.scrollWidth - VIEW;     // already at the end
+  const {rail, next, flush} = setup(10);
+  rail.scrollLeft = rail.scrollWidth - VIEW;       // already at the end
   const before = firstVisible(rail);
   next.listeners.click();
+  flush();
   const after = firstVisible(rail);
-  // The first titles follow the last ones: a short forward step in the loop.
   const forward = (after - before + 10) % 10;
   assert.ok(forward >= 1 && forward <= 3, `from ${before} to ${after}: not a short forward step`);
 });
 
-test('a click while a scroll is still running is ignored', () => {
-  const {rail, next, queue} = setup(10, {timers: 'queued'});
+test('a click during a glide continues from where the rail is heading', () => {
+  const {rail, next, flush} = setup(10);
   next.listeners.click();
-  const once = rail.scrollLeft;
-  next.listeners.click();
-  assert.equal(rail.scrollLeft, once, 'second click moved the rail while busy');
-  queue.forEach(fn => fn());                       // the scroll finished
-  next.listeners.click();
-  assert.notEqual(rail.scrollLeft, once, 'a click after the scroll must work again');
+  next.listeners.click();                          // before the first glide finished
+  flush();
+  assert.equal(rail.scrollLeft, 2 * 3 * CARD, 'two clicks should add up to two steps');
 });
 
-test('both arrows stay visible when the rail overflows, at any position', () => {
-  const {rail, prev, next} = setup(10);
+test('the rail is in glide mode only while it moves', () => {
+  const {rail, next, flush} = setup(10);
+  next.listeners.click();
+  assert.equal(rail.classList.contains('is-gliding'), true);
+  flush();
+  assert.equal(rail.classList.contains('is-gliding'), false);
+});
+
+test('both arrows stay visible when the rail overflows', () => {
+  const {prev, next} = setup(10);
   assert.equal(prev.hidden, false);
-  assert.equal(next.hidden, false);
-  rail.scrollLeft = rail.scrollWidth - VIEW;
-  // Sync runs on scroll; call the wired sync through the scroll handler is not exposed,
-  // so only the initial state is checked here.
   assert.equal(next.hidden, false);
 });
 
