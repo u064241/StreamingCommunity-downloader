@@ -81,6 +81,31 @@ def with_retry(send, *, what: str, attempts: int = RESOLVE_ATTEMPTS,
     raise AssertionError("unreachable: the final attempt returns or raises")
 
 
+def source_page_get(send, path: str, *, what: str):
+    """GET one page of the source itself, paid for and watched like every other.
+
+    Each attempt spends one request of the hourly budget (``acquire`` raises
+    ``SourceUnavailable`` before sending anything during a backoff) and has its
+    status read by ``observe``. A 403, 429 or 503 is a refusal, not a flap: it
+    starts the backoff and raises ``SourceRefused`` at once instead of being
+    retried here at 1, 2, 4 s — knocking again on a source that just said no is
+    exactly what gets the panel banned. Timeouts, dropped connections and the
+    other 5xx are still retried by ``with_retry``, each attempt paid for.
+    """
+    from app.core import source_budget
+
+    def once():
+        source_budget.acquire(path)
+        response = send()
+        status = getattr(response, "status_code", None)
+        source_budget.observe(status, f"{what} {path}")
+        if status in source_budget.PUSHBACK_STATUSES:
+            raise source_budget.SourceRefused(status, source_budget.backoff_until())
+        return response
+
+    return with_retry(once, what=what)
+
+
 
 def _fetch_vixcloud_embed(url_embed, referer=None):
     """Fetch a vixcloud /embed/ HTML page and return its <script> text.

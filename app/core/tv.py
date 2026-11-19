@@ -20,6 +20,7 @@ from app.core._shared import (
     embed_referer,
     apply_video_host,
     with_retry,
+    source_page_get,
 )
 from app.core.headers import fit_title
 from app.core.paths import episode_path, fmt_ep  # noqa: F401  (fmt_ep re-exported)
@@ -180,7 +181,8 @@ def _get_iframe(tv_id, ep_id, domain, token):
     cookies = {"XSRF-TOKEN": token}
     for path in (f"/iframe/{tv_id}", f"/it/iframe/{tv_id}"):
         url = f"https://{domain}{path}"
-        req = with_retry(
+        # A page of the source like any other: paid for, and a refusal pauses it.
+        req = source_page_get(
             lambda: requests.get(
                 url,
                 params=params,
@@ -191,6 +193,7 @@ def _get_iframe(tv_id, ep_id, domain, token):
                 },
                 timeout=15,
             ),
+            path,
             what="episode iframe",
         )
         if req.ok:

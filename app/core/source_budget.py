@@ -58,6 +58,9 @@ _backoff_level = 0
 _budget_warned = False
 _refreshed: dict[str, float] = {}
 _versions: dict[str, str] = {}
+# When each host last served a page carrying its version (``_now()`` clock):
+# proof the host is the source and answering, without asking it again.
+_version_seen_at: dict[str, float] = {}
 _rng = random.Random()
 _caches: list["SourceCache"] = []
 
@@ -97,6 +100,24 @@ class SourceUnavailable(RuntimeError):
         text = ("sorgente in pausa dopo un rifiuto" if reason == "backoff"
                 else "budget orario di richieste alla sorgente esaurito")
         super().__init__(f"Nessuna richiesta inviata: {text}{when}")
+
+
+class SourceRefused(SourceUnavailable):
+    """A request *was* sent and the source refused it (403, 429 or 503).
+
+    The refusal has already started (or extended) the backoff. A
+    SourceUnavailable all the same, so every caller that recognises "the source
+    is paused" recognises this too, and nobody retries it in a tight loop.
+    """
+
+    def __init__(self, status: int, until: float | None = None):
+        self.status = status
+        self.reason = "backoff"
+        self.until = until
+        when = f" fino alle {_hhmm(until)}" if until else ""
+        RuntimeError.__init__(
+            self, f"La sorgente ha rifiutato la richiesta (HTTP {status}): "
+                  f"sorgente in pausa{when}")
 
 
 def _now() -> float:
@@ -429,6 +450,7 @@ def note_version(host: str | None, version: str | None) -> bool:
         _load_versions()
         previous = _versions.get(host) or _persisted_versions.get(host)
         _versions[host] = version
+        _version_seen_at[host] = _now()
         if _persisted_versions.get(host) != version:
             _persisted_versions.pop(host, None)
             _persisted_versions[host] = version
@@ -457,6 +479,15 @@ def version(host: str | None) -> str | None:
         return None
     with _lock:
         return _versions.get(host)
+
+
+def version_age(host: str | None) -> float | None:
+    """Seconds since *host* last served a page with its version, or None."""
+    if not host:
+        return None
+    with _lock:
+        seen = _version_seen_at.get(host)
+        return None if seen is None else max(0.0, _now() - seen)
 
 
 def status() -> dict:
@@ -522,6 +553,7 @@ def reset() -> None:
         _budget_warned = False
         _refreshed.clear()
         _versions.clear()
+        _version_seen_at.clear()
         _pushbacks.clear()
         _backoff_starts.clear()
         caches = list(_caches)

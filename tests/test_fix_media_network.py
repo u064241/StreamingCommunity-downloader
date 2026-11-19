@@ -415,7 +415,9 @@ IFRAME_PAGE = '<html><body><iframe src="https://vixcloud.test/embed/42?token=SEC
 
 
 def test_the_film_iframe_is_retried_and_logs_no_token(monkeypatch, no_sleep, caplog):
-    replies = [requests.exceptions.Timeout(), _Response(503), _Response(200, text=IFRAME_PAGE)]
+    # 502, not 503: a 503 is a refusal now, which pauses the source instead of
+    # being retried (tests/test_source_budget.py, the iframe tests).
+    replies = [requests.exceptions.Timeout(), _Response(502), _Response(200, text=IFRAME_PAGE)]
     asked = []
 
     def fake_get(url, **kwargs):

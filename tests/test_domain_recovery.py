@@ -292,8 +292,12 @@ def test_applied_domain_broadcasts_new_configuration_and_invalidates_caches(monk
     assert domain_recovery.recovery_state()["current"] == "streamingcommunityz.rodeo"
 
 
-@pytest.mark.parametrize("enabled,interval", [(True, 5), (False, 5), (True, "invalid")])
-def test_watcher_checks_before_first_sleep_and_respects_settings(monkeypatch, enabled, interval):
+# The sleep is floored at MIN_WATCH_INTERVAL_MINUTES (30): five minutes, the
+# old default, used to mean a request to the source's home every five minutes,
+# refusals included. A longer setting is still honoured.
+@pytest.mark.parametrize("enabled,interval,slept", [
+    (True, 5, 1800), (False, 5, 1800), (True, "invalid", 1800), (True, 90, 5400)])
+def test_watcher_checks_before_first_sleep_and_respects_settings(monkeypatch, enabled, interval, slept):
     import asyncio
     events = []
     monkeypatch.setattr(domain_recovery, "_settings", lambda: {
@@ -308,7 +312,7 @@ def test_watcher_checks_before_first_sleep_and_respects_settings(monkeypatch, en
     monkeypatch.setattr(asyncio, "sleep", sleep)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(domain_recovery.domain_watch_loop())
-    assert events == (["check"] if enabled else []) + [("sleep", 300)]
+    assert events == (["check"] if enabled else []) + [("sleep", slept)]
 
 
 def test_forcing_looks_even_when_the_domain_works(monkeypatch, _configured_domain, page, public_dns):
@@ -340,6 +344,108 @@ def test_the_throttle_expires(monkeypatch, broken_source):
     clock[0] += domain_recovery._MIN_CHECK_INTERVAL + 1
 
     assert domain_recovery.run_check()["checked"] is True
+
+
+# ── Pauses and refusals are not a dead domain ────────────────────────────────
+
+from app.core import source_budget  # noqa: E402
+
+
+@pytest.fixture
+def no_source(monkeypatch):
+    """Fail the test on any request to the source or to the candidates pages."""
+    def boom(*a, **k):
+        pytest.fail("no request may be sent")
+    monkeypatch.setattr(domain_recovery, "get_domain_version", boom)
+    monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates", boom)
+    monkeypatch.setattr(domain_recovery, "fetch_candidates", boom)
+
+
+def test_the_watcher_sends_nothing_during_a_backoff(no_source, _configured_domain):
+    source_budget.report_pushback("HTTP 429 test")
+
+    result = domain_recovery.run_check()
+
+    assert result["checked"] is False
+    assert domain_recovery.pending() is None
+    assert domain_recovery._last_check_at is None   # the next pass is not throttled
+
+
+def test_a_recent_good_page_spares_the_current_domain_a_request(
+        monkeypatch, _configured_domain, public_dns):
+    source_budget.note_version("example.test", "v1")
+    asked = []
+    monkeypatch.setattr(domain_recovery, "get_domain_version",
+                        lambda host: asked.append(host) or "v1")
+    monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates", lambda: [])
+    monkeypatch.setattr(domain_recovery, "fetch_candidates", lambda: [])
+
+    assert domain_recovery.run_check()["current_ok"] is True
+    assert asked == []
+
+
+@pytest.mark.parametrize("status", [403, 429, 503])
+def test_a_refusal_is_not_a_dead_domain(monkeypatch, _configured_domain, public_dns, status):
+    """The current domain refuses: it stays, and no candidate is probed."""
+    asked = []
+
+    def version(host):
+        asked.append(host)
+        if source_budget.blocked():   # what the real one does in a pause
+            raise source_budget.SourceUnavailable("backoff")
+        if host == "example.test":
+            source_budget.report_pushback(f"HTTP {status}")
+            raise source_budget.SourceRefused(status)
+        return "v9"
+
+    monkeypatch.setattr(domain_recovery, "get_domain_version", version)
+    monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates",
+                        lambda: ["streamingcommunityz.rodeo", "streamingcommunityz.dad"])
+    monkeypatch.setattr(domain_recovery, "_settings", lambda: {"domain_auto_apply": True})
+
+    result = domain_recovery.run_check()
+
+    assert result["current_ok"] is True
+    assert result["candidate"] is None and result["applied"] is False
+    assert result["rejected"] == [{"host": "streamingcommunityz.rodeo",
+                                   "reason": "sorgente in pausa"}]
+    assert asked == ["example.test", "streamingcommunityz.rodeo"]
+    assert config.configured_domain() == "example.test"
+
+
+def test_get_domain_on_a_refusal_does_not_hunt_for_a_replacement(client, monkeypatch):
+    checks = []
+    monkeypatch.setattr(domain_recovery, "run_check", lambda *a: checks.append(a))
+
+    def refused(host):
+        raise source_budget.SourceRefused(403)
+
+    monkeypatch.setattr(domain_router, "get_domain_version", refused)
+
+    body = client.get("/api/domain").json()
+
+    assert body["valid"] is True
+    assert checks == []
+
+
+def test_get_domain_reuses_a_recent_version(client, monkeypatch):
+    source_budget.note_version("example.test", "v7")
+    monkeypatch.setattr(domain_router, "get_domain_version",
+                        lambda host: pytest.fail("no request for a known version"))
+
+    body = client.get("/api/domain").json()
+
+    assert body == {"domain": "example.test", "valid": True, "version": "v7"}
+
+
+def test_get_domain_asks_again_once_the_version_is_old(client, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(source_budget, "_now", lambda: now[0])
+    source_budget.note_version("example.test", "v7")
+    now[0] += domain_recovery.FRESH_VERSION_AGE + 1
+    monkeypatch.setattr(domain_router, "get_domain_version", lambda host: "v8")
+
+    assert client.get("/api/domain").json()["version"] == "v8"
 
 
 def test_an_unreachable_page_is_not_fatal(monkeypatch, _configured_domain):

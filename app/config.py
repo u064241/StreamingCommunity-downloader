@@ -146,7 +146,8 @@ SETTINGS_DEFAULTS = {
     # page we do not control is proposed to an administrator, never applied on
     # its own. See app.core.domain_recovery.
     "domain_auto_apply": False,
-    "domain_check_interval_minutes": 5,
+    # Floored at 30 by app.core.domain_recovery.MIN_WATCH_INTERVAL_MINUTES.
+    "domain_check_interval_minutes": 30,
     # The container every download is written into, and whether subtitles are
     # muxed in or left beside the video as .vtt. The vocabulary and the
     # fallbacks live in app.core.container, which is the only thing that reads

@@ -137,13 +137,31 @@ def get_domain_version(domain: str) -> str | None:
     them, because an administrator typing a host in is making a decision and a
     page we do not control is not.
     """
-    # Deliberately outside the budget and the backoff: domain recovery and the
-    # domain settings use this to decide whether a host is the source at all,
-    # and a pause must not make a live host look dead. It does feed the version
-    # check below, which costs nothing extra.
+    # Inside the budget and the backoff, like every other page of the source:
+    # the domain watcher used to knock on the home page every few minutes even
+    # while the source was refusing us. During a pause (or with the budget
+    # spent) nothing is sent and the last version this host served is the
+    # answer; with none known, ``SourceUnavailable`` says "paused", which is
+    # not "dead". A 403/429/503 starts the backoff and raises ``SourceRefused``
+    # (also a SourceUnavailable): a refusal proves the host is there, so
+    # callers must not read it as a dead domain.
+    try:
+        source_budget.acquire("/")
+    except source_budget.SourceUnavailable:
+        known = source_budget.version(domain)
+        if known:
+            return known
+        raise
     site_url = f"https://{domain}"
     try:
         response = requests.get(site_url, headers={"user-agent": get_headers()}, timeout=10)
+    except Exception as e:
+        raise RuntimeError(f"Cannot reach {domain}: {e}")
+    status = getattr(response, "status_code", None)
+    source_budget.observe(status, "/ (domain check)")
+    if status in source_budget.PUSHBACK_STATUSES:
+        raise source_budget.SourceRefused(status, source_budget.backoff_until())
+    try:
         response.raise_for_status()
     except Exception as e:
         raise RuntimeError(f"Cannot reach {domain}: {e}")

@@ -317,10 +317,96 @@ def test_a_bad_budget_value_falls_back_to_the_setting(monkeypatch):
     assert source_budget.limit() == 1
 
 
-def test_get_domain_version_is_outside_the_budget(source, clock, monkeypatch):
-    """Domain recovery must be able to tell a live host from a dead one."""
-    source_budget.report_pushback("x")
+def test_get_domain_version_is_inside_the_budget_and_the_backoff(source, clock):
+    """It used to be outside both, on purpose, so that a pause could not make a
+    live host look dead. The price was a home-page request every few minutes
+    from the domain watcher, refusals included. Now it is paid for, sends
+    nothing during a pause, and answers with the last version the host served;
+    a pause is told apart from a dead host by the exception, not by asking."""
     assert page.get_domain_version("s.test") == "v1"
+    assert len(source["calls"]) == 1
+    assert source_budget.status()["requests_last_hour"] == 1
+
+    source_budget.report_pushback("x")
+    assert page.get_domain_version("s.test") == "v1"      # last known
+    assert len(source["calls"]) == 1                     # nothing sent
+
+    with pytest.raises(source_budget.SourceUnavailable):  # paused, not dead
+        page.get_domain_version("other.test")
+    assert len(source["calls"]) == 1
+
+
+@pytest.mark.parametrize("status", [403, 429, 503])
+def test_a_refused_domain_check_starts_the_backoff(source, clock, status):
+    source["status"] = status
+    with pytest.raises(source_budget.SourceRefused, match=f"HTTP {status}"):
+        page.get_domain_version("s.test")
+    assert source_budget.blocked() == "backoff"
+    assert len(source["calls"]) == 1
+
+
+# ── The iframe pages ──────────────────────────────────────────────────────────
+
+_IFRAME = '<html><body><iframe src="https://vixcloud.test/embed/42"></iframe></body></html>'
+
+
+@pytest.fixture
+def iframe_source(monkeypatch):
+    """film/tv ``_get_iframe`` against a fake source; never sleeps."""
+    from app.core import _shared, film, tv
+
+    state = {"calls": [], "status": 200}
+
+    def fake_get(url, *args, **kwargs):
+        state["calls"].append(url)
+        return _Response(_IFRAME, state["status"])
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(film, "_fetch_vixcloud_embed", lambda url, referer=None: "script")
+    monkeypatch.setattr(tv, "_fetch_vixcloud_embed", lambda url, referer=None: "script")
+    monkeypatch.setattr(_shared.time, "sleep",
+                        lambda s: pytest.fail("a refusal must not be retried"))
+    return state
+
+
+def _iframes():
+    from app.core import film, tv
+    return [lambda: film._get_iframe(1, "s.test"),
+            lambda: tv._get_iframe(1, 2, "s.test", "xsrf")]
+
+
+@pytest.mark.parametrize("which", [0, 1], ids=["film", "episode"])
+def test_the_iframe_is_paid_for_out_of_the_budget(iframe_source, clock, which):
+    assert _iframes()[which]()[0] == "script"
+    assert source_budget.status()["requests_last_hour"] == 1
+
+
+@pytest.mark.parametrize("which", [0, 1], ids=["film", "episode"])
+@pytest.mark.parametrize("status", [403, 429, 503])
+def test_a_refused_iframe_pauses_the_source_without_retrying(iframe_source, clock,
+                                                              which, status):
+    iframe_source["status"] = status
+    with pytest.raises(source_budget.SourceRefused, match=f"HTTP {status}"):
+        _iframes()[which]()
+    assert len(iframe_source["calls"]) == 1              # one request, no burst
+    assert source_budget.blocked() == "backoff"
+    assert "iframe" in source_budget._pushbacks[-1][1]   # the reason says what
+
+    with pytest.raises(source_budget.SourceUnavailable):  # paused: nothing sent
+        _iframes()[which]()
+    assert len(iframe_source["calls"]) == 1
+
+
+def test_a_refused_iframe_fails_the_job_as_a_pause(iframe_source, clock):
+    """What the job sees is recognisably "source paused"; jobs.py retries it,
+    and the retried job waits in DownloadSlots until the pause is over
+    (tests/test_auto_protection.py), so nothing reaches the source meanwhile."""
+    from app import jobs
+    iframe_source["status"] = 429
+    with pytest.raises(source_budget.SourceUnavailable) as info:
+        _iframes()[0]()
+    assert "pausa" in str(info.value)
+    assert jobs._worth_retrying(info.value)
 
 
 # ── Version check ─────────────────────────────────────────────────────────────

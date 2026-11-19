@@ -33,7 +33,7 @@ from bs4 import BeautifulSoup
 
 from app import config
 from app.core.headers import get_headers
-from app.core import home, metadata
+from app.core import home, metadata, source_budget
 from app.core.page import get_domain_version
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,16 @@ _MAX_CANDIDATES = 5
 # which on a broken panel is every page load of every user. Without a floor
 # between checks that becomes a small stampede against someone else's page.
 _MIN_CHECK_INTERVAL = 60
+
+# The periodic watcher never runs more often than this, whatever the setting
+# says: every pass is a request to the source's home page, and one every five
+# minutes, refusals included, is the kind of steady knocking that gets the
+# panel banned.
+MIN_WATCH_INTERVAL_MINUTES = 30
+
+# A host that served a page carrying its version this recently is alive and is
+# the source: there is nothing to verify, and no request is sent to find out.
+FRESH_VERSION_AGE = MIN_WATCH_INTERVAL_MINUTES * 60
 
 _lock = threading.Lock()
 _pending: dict | None = None
@@ -232,9 +242,15 @@ def verify(host: str) -> str | None:
     version string comes back empty: an administrator typing a domain in is
     making a decision, and a page we do not control is not. Here an empty
     version is not proof of anything, so it is not enough.
+
+    A paused source (``source_budget.SourceUnavailable``, a refusal included)
+    is not an answer either way, so it reaches the caller instead of reading as
+    "not the source".
     """
     try:
         version = get_domain_version(host)
+    except source_budget.SourceUnavailable:
+        raise
     except Exception as exc:
         logger.info("Candidate %s failed verification: %s", host, exc)
         return None
@@ -337,6 +353,13 @@ def _run_check(force: bool = False) -> dict:
                 logger.debug("Domain check skipped: within the throttle window")
                 return result
 
+    # During a backoff the watcher stays quiet: no request goes to the source,
+    # and a pause is not a reason to go looking for a replacement.
+    paused = source_budget.blocked()
+    if paused and not force:
+        logger.info("Domain check skipped: source paused (%s)", paused)
+        return result
+
     with _lock:
         _last_check_at = _now()
     result["checked"] = True
@@ -356,7 +379,18 @@ def _run_check(force: bool = False) -> dict:
             return result
 
     if result["current"]:
-        result["current_ok"] = verify(result["current"]) is not None
+        age = source_budget.version_age(result["current"])
+        if age is not None and age < FRESH_VERSION_AGE:
+            # It served a page with its version moments ago: alive, no request.
+            result["current_ok"] = True
+        else:
+            try:
+                result["current_ok"] = verify(result["current"]) is not None
+            except source_budget.SourceUnavailable as exc:
+                # A refusal (403/429/503) or a pause is the source asking for
+                # room, not a dead domain: never a reason to replace it.
+                logger.info("Domain %s not verified: %s", result["current"], exc)
+                result["current_ok"] = True
 
     # Old aliases are dropped before any request goes to them: probing a retired
     # host is traffic toward the source for nothing, and it can be proposed back.
@@ -372,7 +406,12 @@ def _run_check(force: bool = False) -> dict:
             logger.info("Rejected candidate %s: %s", host, reason)
             result["rejected"].append({"host": host, "reason": reason})
             continue
-        version = verify(host)
+        try:
+            version = verify(host)
+        except source_budget.SourceUnavailable:
+            # Paused, or refused just now: probe nothing else until it ends.
+            result["rejected"].append({"host": host, "reason": "sorgente in pausa"})
+            break
         if version is None:
             result["rejected"].append({"host": host, "reason": "non verificato"})
             continue
@@ -457,7 +496,11 @@ def _broadcast_candidate() -> None:
 # ── The periodic check ────────────────────────────────────────────────────────
 
 async def domain_watch_loop():
-    """Check at startup in a worker, then at the configured interval."""
+    """Check at startup in a worker, then at the configured interval.
+
+    Never more often than ``MIN_WATCH_INTERVAL_MINUTES``: a lower setting, or
+    the old five-minute default, is raised to it.
+    """
     import asyncio
 
     while True:
@@ -469,7 +512,8 @@ async def domain_watch_loop():
             except Exception:
                 logger.exception("Domain check failed")
         try:
-            interval = int(_settings().get("domain_check_interval_minutes") or 5)
+            interval = int(_settings().get("domain_check_interval_minutes")
+                           or MIN_WATCH_INTERVAL_MINUTES)
         except (TypeError, ValueError):
-            interval = 5
-        await asyncio.sleep(max(1, interval) * 60)
+            interval = MIN_WATCH_INTERVAL_MINUTES
+        await asyncio.sleep(max(MIN_WATCH_INTERVAL_MINUTES, interval) * 60)

@@ -18,7 +18,7 @@ from app import config
 from app.auth.deps import require
 from app.auth.permissions import Permission
 from app.config import get_settings, save_settings
-from app.core import animeunity, domain_recovery, home, hosts, metadata, naming
+from app.core import animeunity, domain_recovery, home, hosts, metadata, naming, source_budget
 from app.core.paths import validate_library_path
 from app.core.page import get_domain_version
 
@@ -84,11 +84,24 @@ async def get_domain():
     version = None
     valid = False
     if domain:
-        try:
-            version = await asyncio.to_thread(get_domain_version, domain)
+        age = source_budget.version_age(domain)
+        if age is not None and age < domain_recovery.FRESH_VERSION_AGE:
+            # A page of this host carried its version moments ago: that is the
+            # answer, and a page reload costs the source nothing.
+            version = source_budget.version(domain)
             valid = True
-        except Exception:
-            valid = False
+        else:
+            try:
+                version = await asyncio.to_thread(get_domain_version, domain)
+                valid = True
+            except source_budget.SourceUnavailable:
+                # Paused, or refused just now (403/429/503): the host is there
+                # and asking for room. Not a dead domain, so no hunt for a
+                # replacement either.
+                version = source_budget.version(domain)
+                valid = True
+            except Exception:
+                valid = False
 
     if not valid and get_settings().get("domain_auto_check_enabled", True):
         # The domain is dead, so start looking for its replacement now rather

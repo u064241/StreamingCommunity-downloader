@@ -17,7 +17,7 @@ from app.core._shared import (
     _get_m3u8_url,
     embed_referer,
     apply_video_host,
-    with_retry,
+    source_page_get,
 )
 from app.core.hosts import redact, safe_get
 
@@ -41,8 +41,9 @@ def _get_iframe(id_title, domain):
     ua = get_headers()
     for path in (f"/iframe/{id_title}", f"/it/iframe/{id_title}"):
         url = f"https://{domain}{path}"
-        req = with_retry(lambda: requests.get(url, headers={"User-agent": ua}, timeout=15),
-                         what="iframe")
+        # A page of the source like any other: paid for, and a refusal pauses it.
+        req = source_page_get(lambda: requests.get(url, headers={"User-agent": ua}, timeout=15),
+                              path, what="iframe")
         if req.ok:
             break
     else:
