@@ -37,16 +37,47 @@ async def home(
     (epoch seconds of the fetch from the source) and ``X-Stale`` naming why an
     expired copy was served (``refreshing``, ``backoff``, ``budget``,
     ``error``).
+    With ``source=all`` the shelves of StreamingCommunity and then AnimeUnity
+    are stacked (``home_core.combine_all``), each fetched exactly as its own
+    start page would be — same cache, same budget. A source that fails is
+    left out and logged; the other is still answered.
     """
+    if source == "all":
+        return await _home_all(registry, response)
     result = await call_provider(registry.home, source)
-    info = home_core.last_served(source) or {}
-    if response is not None and info:
-        response.headers["X-Cache"] = "HIT" if info.get("cached") else "MISS"
-        if info.get("updated_at"):
-            response.headers["X-Cache-Updated"] = str(int(info["updated_at"]))
-        if info.get("stale"):
-            response.headers["X-Stale"] = str(info["stale"])
+    _cache_headers(response, [home_core.last_served(source) or {}])
     return result.to_legacy()
+
+
+async def _home_all(registry: ProviderRegistry, response: Response | None):
+    async def one(name):
+        try:
+            return name, await asyncio.to_thread(registry.home, name)
+        except Exception as exc:  # ProviderError, or anything a provider let slip
+            logger.warning("Home of %s left out of 'all': %s", name, exc)
+            return name, None
+
+    results = await asyncio.gather(*(one(name) for name in home_core.ALL_SOURCES))
+    ok = [(name, result) for name, result in results if result is not None]
+    _cache_headers(response, [home_core.last_served(name) or {} for name, _ in ok])
+    return {"source": "all",
+            "shelves": home_core.combine_all([(name, result.to_legacy()["shelves"]) for name, result in ok]),
+            "genres": []}
+
+
+def _cache_headers(response: Response | None, infos: list[dict]) -> None:
+    """X-Cache HIT only when every part was cached; the oldest fetch time; the
+    first stale reason."""
+    infos = [info for info in infos if info]
+    if response is None or not infos:
+        return
+    response.headers["X-Cache"] = "HIT" if all(i.get("cached") for i in infos) else "MISS"
+    updated = [i["updated_at"] for i in infos if i.get("updated_at")]
+    if updated:
+        response.headers["X-Cache-Updated"] = str(int(min(updated)))
+    stale = next((i["stale"] for i in infos if i.get("stale")), None)
+    if stale:
+        response.headers["X-Stale"] = str(stale)
 
 
 catalog_router = APIRouter(

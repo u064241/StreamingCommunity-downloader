@@ -535,10 +535,9 @@ async function showStartPage() {
     // A 409 with no domain configured throws like any other refusal, and
     // lands in the catch below, which leaves the same bare search box.
     let stamp = null;
-    // "Tutte le fonti" is a search mode, not a catalogue: its start page is the
-    // StreamingCommunity front page (/api/home has no "all" provider).
-    const homeSource = source === 'all' ? 'streamingcommunity' : source;
-    const body = await api.get('/api/home', {source: homeSource}, {signal: _homeAbort.signal,
+    // "Tutte le fonti": /api/home?source=all stacks StreamingCommunity's
+    // shelves, then AnimeUnity's, each tagged with its source.
+    const body = await api.get('/api/home', {source}, {signal: _homeAbort.signal,
                                                        onHeaders: h => { stamp = _cacheStamp(h); }});
     if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
     if (source === 'animeunity' && !body.shelves?.length) throw new Error(t('title.sourceUnavailable'));
@@ -579,6 +578,17 @@ function _isTop10Shelf(shelf) {
   return !!shelf && (shelf.key === 'top10' || shelf.title === 'Top 10 di oggi');
 }
 
+// A shelf of "Tutte le fonti" carries its source and the unprefixed title:
+// the source's name stays as sent, the rest is translated like any shelf.
+// Elsewhere the title is the shelf's own.
+function _shelfTitleMarkup(shelf) {
+  if (currentSource === 'all' && shelf.source && shelf.base_title) {
+    const prefix = String(shelf.title || '').split(' · ')[0];
+    return `${escapeHtml(prefix)} · ${catalogLabelMarkup(shelf.base_title)}`;
+  }
+  return catalogLabelMarkup(shelf.title);
+}
+
 function renderShelves() {
   const host = document.getElementById('home-shelves');
   const entry = _homeCache[`${currentSource}:${currentDomain || ''}`];
@@ -595,7 +605,7 @@ function renderShelves() {
     const section = document.createElement('div');
     section.className = 'shelf';
     section.innerHTML =
-      `<div class="shelf-head"><div class="shelf-title">${catalogLabelMarkup(shelf.title)}</div></div>` +
+      `<div class="shelf-head"><div class="shelf-title">${_shelfTitleMarkup(shelf)}</div></div>` +
       '<div class="shelf-rail-wrap">' +
         `<button class="shelf-arrow shelf-arrow-prev" hidden data-i18n-aria-label="catalog.previous" aria-label="${t('catalog.previous')}">` +
           '<i class="ti ti-chevron-left"></i></button>' +

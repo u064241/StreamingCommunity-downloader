@@ -248,6 +248,28 @@ def _shelf(source: str, key: str, items: list, fallback: str | None = None) -> d
     }
 
 
+# "Tutte le fonti": the sources whose front pages are stacked, in this order,
+# one block each. RaiPlay is left out on purpose: no reusable front page of it
+# has been verified, and guessing one would mean new requests to it.
+ALL_SOURCES = ("streamingcommunity", "animeunity")
+SOURCE_LABELS = {"streamingcommunity": "StreamingCommunity", "animeunity": "AnimeUnity"}
+
+
+def combine_all(per_source: list[tuple[str, list[dict]]]) -> list[dict]:
+    """Stack each source's shelves into one list, block by block, in the order
+    given. A shelf keeps its ``key`` and gains ``source`` and ``base_title``
+    (the unprefixed title, which the browser translates); ``title`` gets the
+    source's name in front. Pure: no I/O."""
+    combined = []
+    for source, source_shelves in per_source:
+        label = SOURCE_LABELS.get(source, source)
+        for shelf in source_shelves or []:
+            base = shelf.get("title") or shelf.get("key") or ""
+            combined.append({**shelf, "source": source, "base_title": base,
+                             "title": f"{label} · {base}"})
+    return combined
+
+
 def shelves(source: str, domain: str) -> list[dict]:
     """The front-page shelves for *source*, cached for half an hour (±20%).
 
