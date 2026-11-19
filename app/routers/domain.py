@@ -850,9 +850,23 @@ async def refresh_video_encoders():
 
 @router.get("/ytdlp/status", dependencies=CAN_MANAGE)
 async def ytdlp_status():
-    """Installed yt-dlp vs PyPI. Read-only, called on request only."""
+    """Managed yt-dlp.exe vs the latest GitHub release. Read-only, on request only."""
     from app.core import ytdlp_update
     return await asyncio.to_thread(ytdlp_update.status)
+
+
+@router.post("/ytdlp/update", dependencies=CAN_MANAGE)
+async def update_ytdlp():
+    """Install/update yt-dlp.exe from GitHub (SHA-256 verified). Refused while
+    yt-dlp downloads are running."""
+    from app.core import ytdlp_update
+    try:
+        result = await asyncio.to_thread(ytdlp_update.update)
+    except ytdlp_update.YtdlpBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Aggiornamento yt-dlp non riuscito: {exc}") from exc
+    return {**result, "status": await asyncio.to_thread(ytdlp_update.status)}
 
 
 @router.post("/ffmpeg/update", dependencies=CAN_MANAGE)

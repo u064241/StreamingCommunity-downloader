@@ -206,26 +206,37 @@ def test_jobs_use_episode_kind_tv_library_and_season_metadata(monkeypatch, tmp_p
 
 
 def fake_ydl(monkeypatch, info, tmp_path):
-    state = {"extracts": 0, "processed": []}
+    """yt-dlp.exe faked at the subprocess boundary: dump JSON, then download."""
+    from app.core import ytdlp_update
+    state = {"extracts": 0, "processed": [], "argv": []}
+    monkeypatch.setattr(ytdlp_update, "executable", lambda: str(tmp_path / "yt-dlp.exe"))
+    monkeypatch.setattr("app.core.ffmpeg_path.get_ffmpeg_exe", lambda: str(tmp_path / "ffmpeg.exe"))
 
-    class FakeYDL:
-        def __init__(self, opts): state["opts"] = self.opts = opts
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def extract_info(self, url, **kwargs):
-            assert kwargs == {"download": False, "process": False}
-            state["extracts"] += 1
-            return info
-        def process_ie_result(self, info, download):
-            state["processed"].append(info)
-            target = Path(self.opts["outtmpl"].replace("%(ext)s", "mp4").replace("%%", "%"))
+    def run(argv, **kwargs):
+        assert isinstance(argv, list) and kwargs.get("shell") is False and kwargs.get("timeout")
+        assert argv[1:4] == ["--dump-single-json", "--no-playlist", "--no-warnings"]
+        state["extracts"] += 1
+        return SimpleNamespace(returncode=0, stdout=json.dumps(info).encode(), stderr=b"")
+
+    class FakePopen:
+        def __init__(self, argv, **kwargs):
+            assert kwargs.get("shell") is False
+            state["argv"] = argv
+            loaded = json.loads(Path(argv[argv.index("--load-info-json") + 1]).read_text(encoding="utf-8"))
+            state["processed"].append(loaded)
+            template = argv[argv.index("-o") + 1]
+            target = Path(template.replace("%(ext)s", "mp4").replace("%%", "%"))
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"fake media output")
-            for fn in self.opts["post_hooks"]: fn(str(target))
-            return {"filepath": str(target)}
+            self.stdout = iter([b"SCDL-PROGRESS\t50\t100\tNA\t1\n",
+                                f"SCDL-FILE\t{target}\n".encode()])
+            self.returncode = 0
+        def wait(self, timeout=None): return 0
+        def poll(self): return 0
+        def kill(self): pass
 
-    monkeypatch.setattr(raiplay, "yt_dlp", SimpleNamespace(YoutubeDL=FakeYDL))
-    monkeypatch.setattr("app.core.ffmpeg_path.get_ffmpeg_exe", lambda: str(tmp_path / "ffmpeg.exe"))
+    monkeypatch.setattr(raiplay.subprocess, "run", run)
+    monkeypatch.setattr(raiplay.subprocess, "Popen", FakePopen)
     return state
 
 
@@ -244,8 +255,9 @@ def test_engine_downloads_checked_clear_formats_once_and_returns_actual_file(mon
     ]}, tmp_path)
     (tmp_path / "unrelated.mp4").write_bytes(b"old")
     result = raiplay.download(BASE_URL + "/video/test.html", "Test", str(tmp_path), season=6, episode_number="2")
-    assert state["extracts"] == 1 and state["opts"]["noplaylist"] is True
-    assert state["opts"]["ffmpeg_location"] == str(tmp_path / "ffmpeg.exe")
+    assert state["extracts"] == 1 and "--no-playlist" in state["argv"]
+    assert state["argv"][state["argv"].index("--ffmpeg-location") + 1] == str(tmp_path / "ffmpeg.exe")
+    assert "--newline" in state["argv"]
     assert len(state["processed"][0]["formats"]) == 1
     assert Path(result).name == "Test S06E02.mp4" and "Season 06" in result
 

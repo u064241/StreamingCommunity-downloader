@@ -12,6 +12,8 @@ imageio-ffmpeg==0.6.0
 cryptography>=44
 filelock>=3.12.0
 m3u8
+# Not imported by the app: provides the `yt-dlp` CLI on PATH for Docker/POSIX.
+# Windows uses the managed yt-dlp.exe (Impostazioni > Download > Hardware).
 yt-dlp>=2025.1
 fastapi<1
 uvicorn[standard]<1

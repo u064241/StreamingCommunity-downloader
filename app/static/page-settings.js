@@ -1587,7 +1587,8 @@ registerActions({
   'cfg:revokeMcpToken':   () => revokeMcpToken(),
 });
 
-// yt-dlp status. Text is set with textContent: versions come from PyPI.
+// yt-dlp: a standalone yt-dlp.exe, checked against GitHub and swapped only on
+// request. Text is set with textContent: versions come from GitHub.
 async function checkYtdlp() {
   const out = document.getElementById('ytdlp-status');
   if (!out) return;
@@ -1599,14 +1600,41 @@ async function checkYtdlp() {
     const s = await api.get('/api/domain/ytdlp/status');
     if (s.error || !s.latest) {
       out.className = 'form-text text-warning';
-      out.textContent = `yt-dlp ${s.installed || '?'}: impossibile leggere la versione su PyPI.`;
-    } else if (s.update_available) {
-      out.className = 'form-text text-warning';
-      out.textContent = `yt-dlp ${s.installed} installato, ${s.latest} disponibile. Serve una nuova versione del pannello per aggiornarlo.`;
-    } else {
+      out.textContent = s.present
+        ? `yt-dlp ${s.installed || '?'}: impossibile leggere l'ultima versione su GitHub.`
+        : 'yt-dlp non è installato e GitHub non è raggiungibile.';
+      return;
+    }
+    const wanted = !s.present || s.update_available;
+    if (!wanted) {
       out.className = 'form-text text-success';
       out.textContent = `yt-dlp ${s.installed} aggiornato.`;
+      return;
     }
+    if (!s.can_update) {
+      out.className = 'form-text text-warning';
+      out.textContent = s.present
+        ? `yt-dlp ${s.installed} installato, ${s.latest} disponibile: aggiornalo dal sistema.`
+        : 'yt-dlp non è installato: installalo dal sistema.';
+      return;
+    }
+    if (s.busy) {
+      out.className = 'form-text text-warning';
+      out.textContent = `yt-dlp ${s.latest} disponibile: aggiorna quando i download RaiPlay sono terminati.`;
+      return;
+    }
+    const question = s.present
+      ? `Aggiornare yt-dlp ${s.installed} alla ${s.latest}? Il file viene scaricato da GitHub e verificato con SHA-256.`
+      : `Scaricare yt-dlp ${s.latest} da GitHub? Il file viene verificato con SHA-256.`;
+    if (!await scConfirm(question)) {
+      out.className = 'form-text text-warning';
+      out.textContent = s.present ? `yt-dlp ${s.installed} installato, ${s.latest} disponibile.` : 'yt-dlp non è installato.';
+      return;
+    }
+    out.textContent = 'Download e verifica di yt-dlp in corso…';
+    const result = await api.post('/api/domain/ytdlp/update', {});
+    out.className = 'form-text text-success';
+    out.textContent = `yt-dlp ${result.version} installato.`;
   } catch (e) {
     out.className = 'form-text text-danger';
     out.textContent = _settingsError(e, 'Controllo yt-dlp non riuscito.');
