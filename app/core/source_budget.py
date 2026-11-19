@@ -84,6 +84,8 @@ _history_since: float | None = None
 _history_events: list[tuple[float, str]] = []   # persisted pause starts
 # Called as fn(until, reason) each time a new pause starts, outside the lock.
 _backoff_listeners: list[Callable[[], Any]] = []   # weak references
+# Called as fn(what) on every error answer of the source (see add_error_listener).
+_error_listeners: list[Callable[[str], None]] = []
 
 
 class SourceUnavailable(RuntimeError):
@@ -278,6 +280,40 @@ def acquire(what: str = "") -> None:
     logger.debug("Source request: %s", what)
 
 
+def add_error_listener(callback: Callable[[str], None]) -> None:
+    """Call *callback(what)* each time the source answers with an error.
+
+    An error is any non-2xx status read by ``observe`` (a refusal included) or
+    an answer that never came (``report_error``: timeout, dropped connection).
+    The hook exists so that a module this one must not import
+    (``domain_recovery`` imports *us*) can react, e.g. by reading the
+    domain channel at once. Runs on the reporting thread, outside the lock:
+    a listener must return quickly and must never send a request itself.
+    Held strongly, like a module function; remove it with
+    ``remove_error_listener``. Survives ``reset()``: wiring, not state.
+    """
+    with _lock:
+        if callback not in _error_listeners:
+            _error_listeners.append(callback)
+
+
+def remove_error_listener(callback: Callable[[str], None]) -> None:
+    with _lock:
+        if callback in _error_listeners:
+            _error_listeners.remove(callback)
+
+
+def report_error(what: str = "") -> None:
+    """The source answered with an error, or did not answer: tell the listeners."""
+    with _lock:
+        listeners = list(_error_listeners)
+    for listener in listeners:
+        try:
+            listener(what)
+        except Exception:
+            logger.exception("Source error listener failed")
+
+
 def observe(status: int | None, what: str = "") -> None:
     """Read one response status: pushback starts a backoff, success ends the ladder."""
     global _backoff_level
@@ -289,6 +325,10 @@ def observe(status: int | None, what: str = "") -> None:
         with _lock:
             if _backoff_level and _now() >= _backoff_until:
                 _backoff_level = 0
+    # After the backoff is in place: a listener reacting to a refusal must
+    # already find the source paused.
+    if not 200 <= status < 300:
+        report_error(f"HTTP {status} {what}".strip())
 
 
 def report_pushback(reason: str = "") -> float:

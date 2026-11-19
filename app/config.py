@@ -142,10 +142,13 @@ SETTINGS_DEFAULTS = {
     "free_profile_acknowledged": False,
     # Whether to look for a replacement when the source domain stops answering.
     "domain_auto_check_enabled": True,
-    # Whether to adopt the replacement without asking. Off: a domain found on a
-    # page we do not control is proposed to an administrator, never applied on
-    # its own. See app.core.domain_recovery.
-    "domain_auto_apply": False,
+    # Whether to adopt the replacement without asking. On by default: the
+    # panel follows a rotation by itself, but only after the candidate passed
+    # the name pattern, the public-address check, a live verification and the
+    # identity fingerprint of the real site (app.core.domain_recovery), and
+    # every adoption is notified. A default only: a value already saved in
+    # data.json (True or False) is kept as it is.
+    "domain_auto_apply": True,
     # Floored at 30 by app.core.domain_recovery.MIN_WATCH_INTERVAL_MINUTES.
     "domain_check_interval_minutes": 30,
     # The container every download is written into, and whether subtitles are

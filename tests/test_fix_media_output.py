@@ -767,6 +767,9 @@ def telegram(monkeypatch):
     monkeypatch.setattr(domain_recovery.socket, "getaddrinfo",
                         lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))])
     monkeypatch.setattr(domain_recovery, "get_domain_version", lambda host: "v1")
+    # The fake version check fetches no page, so the identity fingerprint read
+    # off that page is granted here (its own tests: test_domain_identity.py).
+    monkeypatch.setattr(domain_recovery, "home_identity", lambda host: True)
     monkeypatch.setattr(domain_recovery, "fetch_telegram_candidates",
                         lambda: ["streamingcommunityz.rodeo"])
     monkeypatch.setattr(domain_recovery, "fetch_candidates", lambda: [])
@@ -780,7 +783,11 @@ def telegram(monkeypatch):
 def test_a_telegram_candidate_is_proposed_when_auto_apply_is_off(telegram):
     """The module's own docstring: propose, do not adopt. A Telegram candidate
     was applied regardless of the setting — a channel edited by strangers
-    deciding where every request and every referer of this panel goes."""
+    deciding where every request and every referer of this panel goes.
+
+    Auto-apply is now on by default (identity fingerprint + notification), so
+    the "off" case is set explicitly instead of relying on the old default."""
+    _configure(domain_auto_apply=False)
     assert not config.get_settings().get("domain_auto_apply")
 
     result = domain_recovery.run_check()

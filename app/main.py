@@ -145,6 +145,8 @@ async def lifespan(app: FastAPI):
     # The task checks the source domain immediately in a worker, without
     # blocking startup, then follows its configured polling interval.
     domain_task = asyncio.create_task(domain_recovery.domain_watch_loop())
+    # And outside that interval, as soon as the source answers with an error.
+    domain_recovery.register_offschedule_trigger()
     portal_task = None
     if os.environ.get("SC_PANEL_PORTAL_TOKEN"):
         portal_task = asyncio.create_task(portal_lifecycle.stop_server_when_idle(app))
@@ -154,6 +156,7 @@ async def lifespan(app: FastAPI):
         async with mcp_http.running():
             yield
     finally:
+        domain_recovery.unregister_offschedule_trigger()
         domain_task.cancel()
         if portal_task is not None:
             portal_task.cancel()

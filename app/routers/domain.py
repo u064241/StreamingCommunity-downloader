@@ -77,8 +77,31 @@ class DomainUpdate(BaseModel):
     domain: str
 
 
+def _domain_status(domain: str) -> str:
+    """How sure the panel is that *domain* is the source right now.
+
+    ``ok`` only when a page of it carried the site version within
+    ``FRESH_VERSION_AGE``: that is a verification. A host that is paused
+    (backoff after a refusal) is ``paused``; one that answered without a
+    version, or could not be asked (budget spent), is ``unverified``. Neither
+    is dead — ``valid`` stays True for them, so no replacement hunt starts —
+    but neither is green either.
+    """
+    age = source_budget.version_age(domain)
+    if age is not None and age < domain_recovery.FRESH_VERSION_AGE:
+        return "ok"
+    return "paused" if source_budget.blocked() == "backoff" else "unverified"
+
+
 @router.get("", dependencies=CAN_READ_DOMAIN)
 async def get_domain():
+    """The configured domain, whether it is alive, and how sure that is.
+
+    ``valid`` means "not dead" (False starts the replacement hunt and the red
+    badge); ``status`` says whether it was actually verified recently: "ok",
+    "unverified", "paused" or "unreachable", with ``verified_age`` the seconds
+    since the last page of it that carried the site version (None if never).
+    """
     data = _read_data()
     domain = data.get("domain", "")
     version = None
@@ -110,7 +133,14 @@ async def get_domain():
         # exactly what the throttle inside run_check() is there to absorb.
         asyncio.create_task(asyncio.to_thread(domain_recovery.run_check))
 
-    return {"domain": domain, "valid": valid, "version": version}
+    age = source_budget.version_age(domain) if domain else None
+    return {
+        "domain": domain,
+        "valid": valid,
+        "version": version,
+        "status": _domain_status(domain) if valid else "unreachable",
+        "verified_age": None if age is None else int(age),
+    }
 
 
 @router.get("/candidate", dependencies=CAN_READ_DOMAIN)

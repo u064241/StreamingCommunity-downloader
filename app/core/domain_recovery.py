@@ -5,14 +5,18 @@ simply stopped working: searches failed, nothing said why, and an administrator
 had to go and find the new address themselves.
 
 A third-party page publishes the current one. This module reads it, checks the
-candidate is plausible, proves it actually serves the source, and — by default —
-*proposes* it rather than adopting it. That default is the whole design. The
-page is editable by people we do not control, and the domain is not a cosmetic
-setting: every search, every image fetch and every download referer goes to
-whatever host is configured here. Adopting one because a web page said so, with
-nobody looking, hands a stranger the ability to point this panel wherever they
-like. `domain_auto_apply` exists for deployments that want it anyway, and is off
-unless asked for.
+candidate is plausible, proves it actually serves the source *and carries the
+real site's identity* (``page.looks_like_home``), and then adopts it
+(``domain_auto_apply``, on by default since the identity check exists) or only
+proposes it (setting off). The page is editable by people we do not control,
+and the domain is not a cosmetic setting: every search, every image fetch and
+every download referer goes to whatever host is configured here. That is why
+nothing is adopted on the page's word alone, and why every adoption is
+notified (``SOURCE_DOMAIN_APPLIED``).
+
+Besides the periodic watcher, an error answer of the source starts one check
+of the channel at once (``_on_source_error``, hooked into
+``source_budget.add_error_listener``), at most every ``OFFSCHEDULE_DEBOUNCE``.
 
 The candidate is held in memory, not in data.json. It is discovery state, not
 configuration, and a candidate frozen across a restart could be applied long
@@ -34,7 +38,7 @@ from bs4 import BeautifulSoup
 from app import config
 from app.core.headers import get_headers
 from app.core import home, metadata, source_budget
-from app.core.page import get_domain_version
+from app.core.page import get_domain_version, home_identity
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +85,14 @@ MIN_WATCH_INTERVAL_MINUTES = 30
 # the source: there is nothing to verify, and no request is sent to find out.
 FRESH_VERSION_AGE = MIN_WATCH_INTERVAL_MINUTES * 60
 
+# An error answer of the source starts a check of the channel at once, outside
+# the periodic schedule, at most once in this many seconds.
+OFFSCHEDULE_DEBOUNCE = 10 * 60
+
 _lock = threading.Lock()
 _pending: dict | None = None
 _last_check_at: float | None = None
+_last_offschedule_at: float | None = None
 _running = False
 _status = "idle"
 
@@ -263,6 +272,13 @@ def verify(host: str) -> str | None:
     return version or None
 
 
+# Why a candidate that answers with a version is still refused: its start page
+# lacks the identity of the real site (app.core.page.looks_like_home). A
+# look-alike domain running some Inertia app passes the name pattern and the
+# version check; it does not carry the Home component with the source's shelves.
+IDENTITY_MISSING = "impronta del sito assente (pagina Home con le vetrine della sorgente)"
+
+
 # ── Pending candidate ─────────────────────────────────────────────────────────
 
 def pending() -> dict | None:
@@ -295,6 +311,8 @@ def apply_candidate(host: str) -> str:
     version = verify(host)
     if version is None:
         raise RuntimeError(f"«{host}» non risponde come la sorgente attesa")
+    if home_identity(host) is not True:
+        raise RuntimeError(f"«{host}» non mostra l'impronta del sito: {IDENTITY_MISSING}")
 
     config.update_data({"domain": host})
     # The shelves and the artwork are the old domain's until they are dropped.
@@ -316,14 +334,14 @@ def _settings() -> dict:
     return config.get_settings()
 
 
-def run_check(force: bool = False) -> dict:
+def run_check(force: bool = False, offschedule: bool = False) -> dict:
     global _running, _status
     with _lock:
         if _running:
             return {"checked": False, "candidate": None, "current_ok": False, "applied": False, "rejected": []}
         _running = True
     try:
-        result = _run_check(force)
+        result = _run_check(force, offschedule)
         if result["checked"]:
             with _lock:
                 _status = "applied" if result["applied"] else "found" if result["candidate"] else "healthy" if result["current_ok"] else "not_found"
@@ -334,12 +352,18 @@ def run_check(force: bool = False) -> dict:
     finally:
         with _lock: _running = False
 
-def _run_check(force: bool = False) -> dict:
+def _run_check(force: bool = False, offschedule: bool = False) -> dict:
     """One pass: is the configured domain alive, and if not, what could replace it.
 
     ``force`` is the "Controlla ora" button: it bypasses the throttle and looks
     for a candidate even when the current domain is working, because an
     administrator who pressed it wants an answer rather than a shrug.
+
+    ``offschedule`` is the check an error answer of the source started
+    (``_on_source_error``): it reads the channel even while the source is
+    paused — the channel is not the source — but it still keeps the throttle,
+    and every probe of the source below still goes through the budget, so a
+    pause means nothing is sent to it.
     """
     global _last_check_at
 
@@ -362,7 +386,7 @@ def _run_check(force: bool = False) -> dict:
     # During a backoff the watcher stays quiet: no request goes to the source,
     # and a pause is not a reason to go looking for a replacement.
     paused = source_budget.blocked()
-    if paused and not force:
+    if paused and not force and not offschedule:
         logger.info("Domain check skipped: source paused (%s)", paused)
         return result
 
@@ -421,6 +445,11 @@ def _run_check(force: bool = False) -> dict:
         if version is None:
             result["rejected"].append({"host": host, "reason": "non verificato"})
             continue
+        if home_identity(host) is not True:
+            # Read off the page verify() just fetched: no request of its own.
+            logger.warning("Rejected candidate %s: %s", host, IDENTITY_MISSING)
+            result["rejected"].append({"host": host, "reason": IDENTITY_MISSING})
+            continue
 
         result["candidate"] = host
         result["version"] = version
@@ -429,10 +458,12 @@ def _run_check(force: bool = False) -> dict:
     if result["candidate"] is None:
         return result
 
-    # Applied only when an administrator asked for that. Telegram is read first
-    # and wins over the other page, but it is still a channel edited by people
-    # we do not control: with ``domain_auto_apply`` off its candidate is
-    # proposed like any other, as the module docstring promises.
+    # Applied when ``domain_auto_apply`` is on (the default). Telegram is read
+    # first and wins over the other page, but it is still a channel edited by
+    # people we do not control: that is why the candidate had to pass the name
+    # pattern, the public-address check, a live verification and the identity
+    # fingerprint above, and why every adoption is announced. With the setting
+    # off the candidate is only proposed.
     if _settings().get("domain_auto_apply"):
         try:
             apply_candidate(result["candidate"])
@@ -497,6 +528,60 @@ def _broadcast_candidate() -> None:
         job_manager.broadcast({"type": "domain_candidate"})
     except Exception:
         logger.debug("Cannot broadcast the domain candidate", exc_info=True)
+
+
+# ── The check outside the schedule ────────────────────────────────────────────
+#
+# source_budget cannot import this module (this module imports it), so the
+# link goes the other way: source_budget keeps a list of error listeners and
+# calls them on every error answer; this module registers one at startup
+# (app.main lifespan) and removes it at shutdown. Registered there and not at
+# import, so a test that merely imports the app never starts a check.
+
+def _spawn(job) -> None:
+    """Start *job* on a daemon thread. Indirected so tests can run it inline."""
+    threading.Thread(target=job, daemon=True, name="domain-offschedule").start()
+
+
+def _on_source_error(what: str) -> None:
+    """An error answer of the source: read the channel now, in background.
+
+    Never blocks the request that got the error, never sends anything itself.
+    Two rules keep it from becoming a loop: an error raised while a check is
+    running (the check's own probes included) starts nothing, and at most one
+    check starts every ``OFFSCHEDULE_DEBOUNCE`` seconds, the stamp being taken
+    when it is started.
+    """
+    global _last_offschedule_at
+    with _lock:
+        if _running:
+            return
+        now = _now()
+        if _last_offschedule_at is not None and now - _last_offschedule_at < OFFSCHEDULE_DEBOUNCE:
+            return
+        _last_offschedule_at = now
+    logger.info("Source error (%s): checking the domain channel now", what)
+    try:
+        _spawn(_offschedule_check)
+    except Exception:
+        logger.exception("Cannot start the off-schedule domain check")
+
+
+def _offschedule_check() -> None:
+    try:
+        if not _settings().get("domain_auto_check_enabled", True):
+            return
+        run_check(offschedule=True)
+    except Exception:
+        logger.exception("Off-schedule domain check failed")
+
+
+def register_offschedule_trigger() -> None:
+    source_budget.add_error_listener(_on_source_error)
+
+
+def unregister_offschedule_trigger() -> None:
+    source_budget.remove_error_listener(_on_source_error)
 
 
 # ── The periodic check ────────────────────────────────────────────────────────

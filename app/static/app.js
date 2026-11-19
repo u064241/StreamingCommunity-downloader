@@ -95,6 +95,13 @@ function loadDomainStatus() {
   return _domainStatusLoading;
 }
 
+function _domainAgeText(seconds) {
+  if (typeof seconds !== 'number' || !isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 60) return '<1 min';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min`;
+  return `${Math.floor(seconds / 3600)} h`;
+}
+
 async function _readDomainStatus() {
   try {
     const data = await api.get('/api/domain');
@@ -105,9 +112,21 @@ async function _readDomainStatus() {
     // configuration is ready; do not make that call wait on itself.
     _domainReady = Promise.resolve();
     const badge = document.getElementById('domain-badge');
-    if (data.valid) {
+    // Green only when the domain was verified recently. Paused or not
+    // verified is alive but unproven: yellow, with how long ago it last was.
+    // A server without `status` (older build) reads as "ok", as before.
+    const status = data.status || 'ok';
+    if (data.valid && status === 'ok') {
       badge.className = 'badge bg-success';
       badge.textContent = currentDomain;
+      badge.title = '';
+    } else if (data.valid) {
+      const age = _domainAgeText(data.verified_age);
+      const key = status === 'paused' ? 'domain.badge.paused' : 'domain.badge.unverified';
+      badge.className = 'badge bg-warning text-dark';
+      badge.textContent = `${currentDomain} · ${window.t(key)}`;
+      badge.title = age ? window.t('domain.badge.verifiedAgo', {age}) : window.t('domain.badge.neverVerified');
+      badge.textContent += age ? ` (${age})` : '';
     } else {
       badge.className = 'badge bg-danger';
       badge.textContent = window.t("dynamic.ui91");

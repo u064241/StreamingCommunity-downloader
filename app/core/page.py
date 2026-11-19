@@ -69,7 +69,13 @@ def _budgeted_get(url: str, **kwargs) -> requests.Response:
     starts (or extends) the backoff.
     """
     source_budget.acquire(urlparse(url).path or "/")
-    response = requests.get(url, **kwargs)
+    try:
+        response = requests.get(url, **kwargs)
+    except Exception:
+        # No answer at all (timeout, dropped connection, DNS): the most likely
+        # sign of a rotated domain, so the error listeners hear about it too.
+        source_budget.report_error(f"no answer {urlparse(url).path}")
+        raise
     source_budget.observe(getattr(response, "status_code", None), urlparse(url).path)
     return response
 
@@ -156,6 +162,7 @@ def get_domain_version(domain: str) -> str | None:
     try:
         response = requests.get(site_url, headers={"user-agent": get_headers()}, timeout=10)
     except Exception as e:
+        source_budget.report_error("no answer / (domain check)")
         raise RuntimeError(f"Cannot reach {domain}: {e}")
     status = getattr(response, "status_code", None)
     source_budget.observe(status, "/ (domain check)")
@@ -167,14 +174,53 @@ def get_domain_version(domain: str) -> str | None:
         raise RuntimeError(f"Cannot reach {domain}: {e}")
 
     try:
-        found = _data_page(response.text).get("version", "")
+        payload = _data_page(response.text)
+        found = payload.get("version", "")
+        _home_identity[domain] = looks_like_home(payload)
         source_budget.note_version(domain, found)
         return found
     except LookupError:
+        _home_identity[domain] = False
+        # A 200 with no payload in it (a parked page, a captive portal) is not
+        # the source either: an answer the panel did not expect.
+        source_budget.report_error("unexpected page / (domain check)")
         return ""
     except Exception as e:
+        _home_identity[domain] = False
+        source_budget.report_error("unexpected page / (domain check)")
         logger.warning("Cannot extract version from %s: %s", domain, e)
         return None
+
+
+# The identity of the real site's start page, read from the payload
+# ``get_domain_version`` already fetched (never a request of its own). Taken
+# from what the panel already depends on, not invented: the Inertia component
+# of the home page (tests/fixtures/sc_home_page.json: ``"component": "Home"``)
+# and its ``props.sliders`` carrying at least one of the machine names the
+# start page is keyed on (``home._LABELS``: trending, latest, top10; the
+# fixture has trending and top10). A page that merely answers as some Inertia
+# app with a version string does not carry them.
+HOME_COMPONENT = "Home"
+HOME_SLIDER_NAMES = frozenset({"trending", "latest", "top10"})
+
+# host -> whether the last home page it served carried the identity.
+_home_identity: dict[str, bool] = {}
+
+
+def looks_like_home(payload) -> bool:
+    """Whether an Inertia payload is the real site's start page. No I/O."""
+    if not isinstance(payload, dict) or payload.get("component") != HOME_COMPONENT:
+        return False
+    props = payload.get("props")
+    sliders = props.get("sliders") if isinstance(props, dict) else None
+    if not isinstance(sliders, list):
+        return False
+    return any(isinstance(s, dict) and s.get("name") in HOME_SLIDER_NAMES for s in sliders)
+
+
+def home_identity(host: str | None) -> bool | None:
+    """Whether *host*'s last home page carried the identity; None if never read."""
+    return _home_identity.get(host) if host else None
 
 
 def _poster(images) -> str | None:

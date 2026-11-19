@@ -48,9 +48,23 @@ def _reset_module_state():
     """The pending candidate and the throttle are process-wide by design."""
     domain_recovery.clear_pending()
     domain_recovery._last_check_at = None
+    domain_recovery._last_offschedule_at = None
     yield
     domain_recovery.clear_pending()
     domain_recovery._last_check_at = None
+    domain_recovery._last_offschedule_at = None
+
+
+@pytest.fixture(autouse=True)
+def _genuine_identity(monkeypatch):
+    """Every verified host here carries the real site's fingerprint.
+
+    These tests fake ``get_domain_version`` and are about other properties
+    (names, addresses, throttle, pause, applying). The fingerprint is read off
+    the page that function fetches, which the fakes never fetch, so it is
+    granted here; the tests at the bottom of this file take it away.
+    """
+    monkeypatch.setattr(domain_recovery, "home_identity", lambda host: True)
 
 
 @pytest.fixture
@@ -199,6 +213,8 @@ def _stored(data_file):
 
 
 def test_a_candidate_is_proposed_and_not_written(broken_source):
+    # Auto-apply is on by default now; the "propose only" case is explicit.
+    config.save_settings({**config.get_settings(), "domain_auto_apply": False})
     result = domain_recovery.run_check()
 
     assert result["candidate"] == "streamingcommunityz.rodeo"
@@ -418,13 +434,17 @@ def test_get_domain_on_a_refusal_does_not_hunt_for_a_replacement(client, monkeyp
     monkeypatch.setattr(domain_recovery, "run_check", lambda *a: checks.append(a))
 
     def refused(host):
-        raise source_budget.SourceRefused(403)
+        # As the real get_domain_version does: observe() starts the pause first.
+        source_budget.observe(403, "/ (domain check)")
+        raise source_budget.SourceRefused(403, source_budget.backoff_until())
 
     monkeypatch.setattr(domain_router, "get_domain_version", refused)
 
     body = client.get("/api/domain").json()
 
+    # Still not dead (no hunt), but no longer green: a refusal is a pause.
     assert body["valid"] is True
+    assert body["status"] == "paused"
     assert checks == []
 
 
@@ -435,7 +455,9 @@ def test_get_domain_reuses_a_recent_version(client, monkeypatch):
 
     body = client.get("/api/domain").json()
 
-    assert body == {"domain": "example.test", "valid": True, "version": "v7"}
+    # status/verified_age are new fields: a version seen moments ago is "ok".
+    assert body == {"domain": "example.test", "valid": True, "version": "v7",
+                    "status": "ok", "verified_age": 0}
 
 
 def test_get_domain_asks_again_once_the_version_is_old(client, monkeypatch):

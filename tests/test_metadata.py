@@ -285,6 +285,8 @@ def test_applying_a_candidate_clears_the_metadata(client, monkeypatch, props):
 
     monkeypatch.setattr(domain_recovery, "is_plausible", lambda host: (True, ""))
     monkeypatch.setattr(domain_recovery, "verify", lambda host: "v9")
+    # verify() is faked, so no page carried the identity fingerprint: grant it.
+    monkeypatch.setattr(domain_recovery, "home_identity", lambda host: True)
     monkeypatch.setattr(domain_recovery.config, "update_data", lambda changes: None)
     domain_recovery.apply_candidate("new.test")
 

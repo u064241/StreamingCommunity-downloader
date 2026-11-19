@@ -96,7 +96,12 @@ def source_page_get(send, path: str, *, what: str):
 
     def once():
         source_budget.acquire(path)
-        response = send()
+        try:
+            response = send()
+        except Exception:
+            # No answer at all: heard by the error listeners like a bad status.
+            source_budget.report_error(f"no answer {what} {path}")
+            raise
         status = getattr(response, "status_code", None)
         source_budget.observe(status, f"{what} {path}")
         if status in source_budget.PUSHBACK_STATUSES:
