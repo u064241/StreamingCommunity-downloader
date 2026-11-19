@@ -640,29 +640,57 @@ function _wireShelfArrows(section) {
   const prev = section.querySelector('.shelf-arrow-prev');
   const next = section.querySelector('.shelf-arrow-next');
 
-  function step() {
-    const cards = [...rail.querySelectorAll('.shelf-item:not(.d-none)')];
-    if (!cards.length) return 132;
-    const current = rail.scrollLeft + 4;
-    const firstVisible = cards.findIndex(card => card.offsetLeft >= current);
-    const index = Math.max(0, firstVisible < 0 ? cards.length - 1 : firstVisible);
-    const visible = Math.max(1, Math.floor(rail.clientWidth / Math.max(1, cards[0].offsetWidth + 12)));
-    return { cards, index, count: Math.max(1, Math.min(3, visible)) };
+  // How many cards fit on screen, capped at three per step.
+  function visibleCount() {
+    const first = rail.children[0];
+    const width = Math.max(1, (first ? first.offsetWidth : 132) + 12);
+    return Math.max(1, Math.min(3, Math.floor(rail.clientWidth / width)));
   }
 
+  // Screen distance from the first card to the card `count` places on.
+  function stepDistance(count) {
+    const kids = [...rail.children];
+    if (kids.length < 2) return 0;
+    const far = kids[Math.min(count, kids.length - 1)];
+    return far.getBoundingClientRect().left - kids[0].getBoundingClientRect().left;
+  }
+
+  // Moves `count` cards from one end of the rail to the other, so the rail is a
+  // loop. An anchor card that stays on screen is held in place with a scroll
+  // correction, so nothing visibly jumps. Forward: the first cards go to the end.
+  // Backward: the last cards come to the front.
+  function rotate(direction, count) {
+    const kids = [...rail.children];
+    if (kids.length <= count) return;
+    const anchor = direction > 0 ? kids[count] : kids[0];
+    const before = anchor.getBoundingClientRect().left;
+    if (direction > 0) {
+      kids.slice(0, count).forEach(node => rail.appendChild(node));
+    } else {
+      const group = kids.slice(kids.length - count);
+      for (let i = group.length - 1; i >= 0; i--) rail.insertBefore(group[i], rail.firstChild);
+    }
+    rail.scrollLeft += anchor.getBoundingClientRect().left - before;
+  }
+
+  // One click moves one step in its direction and never stops at an edge:
+  // at the end the rail rotates so the first cards follow the last ones.
+  let busy = false;
+  let busyTimer = null;
   function scrollByCards(direction) {
+    if (busy) return;
     const max = rail.scrollWidth - rail.clientWidth;
-    // Circular wrap: ">" at the end goes to the start, "<" at the start goes to the end.
-    if (direction > 0 && rail.scrollLeft >= max - 2) { rail.scrollTo({left: 0, behavior: 'smooth'}); return; }
-    if (direction < 0 && rail.scrollLeft <= 2) { rail.scrollTo({left: max, behavior: 'smooth'}); return; }
-    const plan = step();
-    if (!plan.cards) { rail.scrollBy({left: direction * plan, behavior: 'smooth'}); return; }
-    const wanted = plan.index + direction * plan.count;
-    // Reaching the last title means the real end of the rail, not just a card's edge.
-    if (direction > 0 && wanted >= plan.cards.length - 1) { rail.scrollTo({left: max, behavior: 'smooth'}); return; }
-    const target = plan.cards[Math.max(0, Math.min(plan.cards.length - 1, wanted))];
-    const inset = parseFloat(getComputedStyle(rail).paddingLeft) || 0;
-    if (target) rail.scrollTo({left: Math.max(0, target.offsetLeft - inset), behavior: 'smooth'});
+    if (max <= 4) return;
+    const count = visibleCount();
+    const distance = stepDistance(count);
+    if (distance <= 0) return;
+    if (direction > 0 && rail.scrollLeft >= max - 2) rotate(1, count);
+    if (direction < 0 && rail.scrollLeft <= 2) rotate(-1, count);
+    const target = rail.scrollLeft + direction * distance;
+    busy = true;
+    clearTimeout(busyTimer);
+    busyTimer = setTimeout(() => { busy = false; }, 420);
+    rail.scrollTo({left: Math.max(0, Math.min(max, target)), behavior: 'smooth'});
   }
 
   function sync() {

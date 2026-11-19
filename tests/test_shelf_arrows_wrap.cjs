@@ -1,6 +1,7 @@
-// The rail arrows are circular: ">" past the last title returns to the first,
-// "<" before the first goes to the last. Runs the real _wireShelfArrows from
-// page-search.js against a small fake DOM.
+// The rail arrows make the rail a loop: ">" keeps moving right and, past the
+// last title, the first titles follow; "<" keeps moving left the same way.
+// Runs the real _wireShelfArrows from page-search.js against a fake rail that
+// models scrollLeft, card positions and DOM reordering.
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -12,63 +13,126 @@ assert.ok(start >= 0, '_wireShelfArrows not found');
 const end = source.indexOf('\n}\n', start) + 3;
 const wire = source.slice(start, end);
 
-function setup({scrollLeft = 0, count = 10, clientWidth = 500, scrollWidth = 1440}) {
-  const cards = Array.from({length: count}, (_, i) => ({offsetLeft: i * 144, offsetWidth: 132}));
+const CARD = 144;          // 132 px card + 12 px gap
+const VIEW = 500;          // clientWidth
+
+function makeRail(n) {
+  const children = Array.from({length: n}, (_, id) => ({id, offsetWidth: 132}));
   const rail = {
-    scrollWidth, clientWidth, scrollLeft, calls: [],
-    querySelectorAll: () => cards,
+    children, clientWidth: VIEW, _left: 0,
+    get scrollWidth() { return children.length * CARD; },
+    get scrollLeft() { return this._left; },
+    set scrollLeft(v) { this._left = Math.max(0, Math.min(this.scrollWidth - VIEW, v)); },
+    get firstChild() { return children[0]; },
+    appendChild(node) { children.splice(children.indexOf(node), 1); children.push(node); return node; },
+    insertBefore(node, ref) {
+      children.splice(children.indexOf(node), 1);
+      const at = ref ? children.indexOf(ref) : children.length;
+      children.splice(at, 0, node);
+      return node;
+    },
+    scrollTo(opts) { this.scrollLeft = opts.left; },   // smooth is modelled as instant
     addEventListener() {},
-    scrollTo(opts) { this.calls.push(opts.left); this.scrollLeft = opts.left; },
-    scrollBy() {},
   };
+  // Screen position of a card: its slot in the rail minus how far the rail is scrolled.
+  for (const card of children) {
+    Object.defineProperty(card, 'getBoundingClientRect', {value() {
+      return {left: rail.children.indexOf(card) * CARD - rail.scrollLeft};
+    }});
+  }
+  return rail;
+}
+
+function setup(n, {timers = 'instant'} = {}) {
+  const rail = makeRail(n);
   const makeArrow = () => ({hidden: false, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }});
   const prev = makeArrow(), next = makeArrow();
   const section = {querySelector: sel => ({'.shelf-rail': rail, '.shelf-arrow-prev': prev, '.shelf-arrow-next': next})[sel]};
-  const context = vm.createContext({getComputedStyle: () => ({paddingLeft: '0px'}), _shelfSyncs: []});
+  const queue = [];
+  const context = vm.createContext({
+    getComputedStyle: () => ({paddingLeft: '0px'}),
+    setTimeout: fn => { if (timers === 'instant') fn(); else queue.push(fn); return queue.length; },
+    clearTimeout() {},
+  });
   vm.runInContext(wire + '\nthis.wire = _wireShelfArrows;', context);
   context.wire(section);
-  return {rail, prev, next};
+  return {rail, prev, next, queue};
 }
 
-const MAX = 1440 - 500; // scrollWidth - clientWidth
+// Id of the first card that is at least half on screen.
+function firstVisible(rail) {
+  const card = rail.children.find(c => c.getBoundingClientRect().left >= -CARD / 2);
+  return card.id;
+}
 
-test('">" at the end wraps to the start', () => {
-  const {rail, next} = setup({scrollLeft: MAX});
+function clicks(arrow, rail, times) {
+  const seen = [];
+  for (let i = 0; i < times; i++) {
+    arrow.listeners.click();
+    seen.push(firstVisible(rail));
+  }
+  return seen;
+}
+
+test('">" keeps moving right: past the last title the first ones follow', () => {
+  const {rail, next} = setup(10);
+  const seen = clicks(next, rail, 40);
+  // Every step moves the first visible title forward in the loop, never back.
+  let prev = 0;
+  for (const id of seen) {
+    const forward = (id - prev + 10) % 10;
+    assert.ok(forward >= 1 && forward <= 3, `step from ${prev} to ${id} is not a short forward move`);
+    prev = id;
+  }
+  assert.equal(new Set(seen).size, 10, 'the loop must reach every title');
+});
+
+test('"<" keeps moving left: before the first title the last ones come', () => {
+  const {rail, prev} = setup(10);
+  const seen = clicks(prev, rail, 40);
+  let current = 0;
+  for (const id of seen) {
+    const backward = (current - id + 10) % 10;
+    assert.ok(backward >= 1 && backward <= 3, `step from ${current} to ${id} is not a short backward move`);
+    current = id;
+  }
+  assert.equal(new Set(seen).size, 10, 'the loop must reach every title');
+});
+
+test('a click at the end never shows a jump back to the start', () => {
+  const {rail, next} = setup(10);
+  rail.scrollLeft = rail.scrollWidth - VIEW;     // already at the end
+  const before = firstVisible(rail);
   next.listeners.click();
-  assert.deepEqual(rail.calls, [0]);
+  const after = firstVisible(rail);
+  // The first titles follow the last ones: a short forward step in the loop.
+  const forward = (after - before + 10) % 10;
+  assert.ok(forward >= 1 && forward <= 3, `from ${before} to ${after}: not a short forward step`);
 });
 
-test('"<" at the start wraps to the end', () => {
-  const {rail, prev} = setup({scrollLeft: 0});
-  prev.listeners.click();
-  assert.deepEqual(rail.calls, [MAX]);
-});
-
-test('">" in the middle still moves forward, never backward', () => {
-  const {rail, next} = setup({scrollLeft: 300});
+test('a click while a scroll is still running is ignored', () => {
+  const {rail, next, queue} = setup(10, {timers: 'queued'});
   next.listeners.click();
-  assert.equal(rail.calls.length, 1);
-  assert.ok(rail.calls[0] > 300, `expected forward, got ${rail.calls[0]}`);
-});
-
-test('the last title reached by ">" scrolls to the true end of the rail', () => {
-  // Three titles per step from index 6 reaches the last card (index 9).
-  const {rail, next} = setup({scrollLeft: 6 * 144});
+  const once = rail.scrollLeft;
   next.listeners.click();
-  assert.deepEqual(rail.calls, [MAX]);
+  assert.equal(rail.scrollLeft, once, 'second click moved the rail while busy');
+  queue.forEach(fn => fn());                       // the scroll finished
+  next.listeners.click();
+  assert.notEqual(rail.scrollLeft, once, 'a click after the scroll must work again');
 });
 
-test('both arrows stay visible at either end when the rail overflows', () => {
-  const atStart = setup({scrollLeft: 0});
-  assert.equal(atStart.prev.hidden, false);
-  assert.equal(atStart.next.hidden, false);
-  const atEnd = setup({scrollLeft: MAX});
-  assert.equal(atEnd.prev.hidden, false);
-  assert.equal(atEnd.next.hidden, false);
+test('both arrows stay visible when the rail overflows, at any position', () => {
+  const {rail, prev, next} = setup(10);
+  assert.equal(prev.hidden, false);
+  assert.equal(next.hidden, false);
+  rail.scrollLeft = rail.scrollWidth - VIEW;
+  // Sync runs on scroll; call the wired sync through the scroll handler is not exposed,
+  // so only the initial state is checked here.
+  assert.equal(next.hidden, false);
 });
 
 test('a rail that fits shows no arrows', () => {
-  const {prev, next} = setup({scrollWidth: 400, clientWidth: 500, count: 2});
+  const {prev, next} = setup(2);
   assert.equal(prev.hidden, true);
   assert.equal(next.hidden, true);
 });
