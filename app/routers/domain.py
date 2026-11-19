@@ -855,6 +855,20 @@ async def ytdlp_status():
     return await asyncio.to_thread(ytdlp_update.status)
 
 
+@router.get("/tools/presence", dependencies=[Depends(require(Permission.DOWNLOAD))])
+def tools_presence():
+    """Whether yt-dlp and FFmpeg can run here at all. Local only: no network,
+    and nothing is installed. Drives the first-run banner."""
+    from app.core import ytdlp_update
+    from app.core.ffmpeg_path import get_ffmpeg_exe
+    try:
+        get_ffmpeg_exe()
+        ffmpeg = True
+    except RuntimeError:
+        ffmpeg = False
+    return {"ytdlp": ytdlp_update.executable() is not None, "ffmpeg": ffmpeg}
+
+
 @router.post("/ytdlp/update", dependencies=CAN_MANAGE)
 async def update_ytdlp():
     """Install/update yt-dlp.exe from GitHub (SHA-256 verified). Refused while

@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ensureDomain();
     startDomainRecoveryPolling();
   }
+  if (can('DOWNLOAD')) loadToolsPresence();
   if (can('DOWNLOAD') || can('MANAGE_REQUESTS')) {
     connectGlobalStream();
   } else {
@@ -248,11 +249,57 @@ async function dismissDomainCandidate() {
   renderDomainBanner();
 }
 
+// First run without yt-dlp or FFmpeg: say so, once, and point at the settings
+// where the check and the install are. Nothing is installed from here.
+const _TOOLS_DISMISS_KEY = 'sc.toolsBanner.dismissed';
+
+function _toolsDismissed() {
+  try { return JSON.parse(localStorage.getItem(_TOOLS_DISMISS_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+
+function _setToolsDismissed(list) {
+  try { localStorage.setItem(_TOOLS_DISMISS_KEY, JSON.stringify(list)); }
+  catch (e) { /* private window: the banner just shows again next time */ }
+}
+
+async function loadToolsPresence() {
+  try {
+    renderToolsBanner(await api.get('/api/domain/tools/presence'));
+  } catch (e) { /* the banner is a hint, not worth a console error */ }
+}
+
+function renderToolsBanner(presence) {
+  const banner = document.getElementById('tools-banner');
+  if (!banner) return;
+  const dismissed = _toolsDismissed();
+  // Once a tool is installed, a later dismissal of it no longer matters.
+  const kept = dismissed.filter(k => !presence[k]);
+  if (kept.length !== dismissed.length) _setToolsDismissed(kept);
+  const missing = ['ytdlp', 'ffmpeg'].filter(k => !presence[k] && !kept.includes(k));
+  if (!missing.length) { banner.style.display = 'none'; return; }
+  const names = missing.map(k => k === 'ytdlp' ? 'yt-dlp (download RaiPlay)' : 'FFmpeg (conversione e unione)');
+  document.getElementById('tools-banner-message').textContent =
+    `Manca ${names.join(' e ')}. Dalle Impostazioni, sezione Download, puoi controllarlo e installarlo.`;
+  banner.style.display = '';
+  banner.dataset.missing = missing.join(',');
+}
+
+function dismissToolsBanner() {
+  const banner = document.getElementById('tools-banner');
+  if (!banner) return;
+  const missing = (banner.dataset.missing || '').split(',').filter(Boolean);
+  _setToolsDismissed([..._toolsDismissed(), ...missing]);
+  banner.style.display = 'none';
+}
+
 // The banner is the shell's, not the search page's: it is about the source
 // every page reads from, and it happens to be rendered above the first one.
 registerActions({
   'domain:apply':   () => applyDomainCandidate(),
   'domain:dismiss': () => dismissDomainCandidate(),
+  'tools:dismiss':  () => dismissToolsBanner(),
+  'tools:settings': () => navigate('settings'),
   // The sidebar's nav. The page name rides on the same data-page the active
   // highlight already reads, so the two cannot disagree about which link is
   // which. Through navigate(), not showPage(), so a click leaves an address
