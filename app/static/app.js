@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ensureDomain();
     startDomainRecoveryPolling();
   }
-  if (can('DOWNLOAD')) loadToolsPresence();
+  if (can('DOWNLOAD')) { _toolsPresenceArmed = true; loadToolsPresence(); }
   if (can('DOWNLOAD') || can('MANAGE_REQUESTS')) {
     connectGlobalStream();
   } else {
@@ -263,21 +263,46 @@ function _setToolsDismissed(list) {
   catch (e) { /* private window: the banner just shows again next time */ }
 }
 
+// Armed by the boot once it knows this user may download; from then on every
+// page change and every successful install re-checks, so an installed tool
+// takes the banner down without a reload. Before that, showPage() stays quiet:
+// the boot's own call is the first one.
+let _toolsPresenceArmed = false;
+// Only the newest answer may paint: a slow reply from before an install must
+// not put the banner back after a newer one took it down.
+let _toolsPresenceSeq = 0;
+
 async function loadToolsPresence() {
+  const seq = ++_toolsPresenceSeq;
   try {
-    renderToolsBanner(await api.get('/api/domain/tools/presence'));
+    const presence = await api.get('/api/domain/tools/presence');
+    if (seq === _toolsPresenceSeq) renderToolsBanner(presence);
   } catch (e) { /* the banner is a hint, not worth a console error */ }
+}
+
+/** Pure: which tools the banner names, and which dismissals survive. */
+function toolsBannerState(presence, dismissed) {
+  presence = presence || {};
+  // Once a tool is installed, a later dismissal of it no longer matters.
+  const kept = (dismissed || []).filter(k => !presence[k]);
+  const missing = ['ytdlp', 'ffmpeg'].filter(k => !presence[k] && !kept.includes(k));
+  return {kept, missing};
+}
+
+// The banner points at the Download tab: its first section, Hardware, holds
+// "Controlla yt-dlp" and "Aggiorna FFmpeg". Same #/settings/<tab> address a
+// pasted link uses, so the router picks the tab, not a second mechanism.
+function openToolsSettings() {
+  navigate('settings', ['download']);
 }
 
 function renderToolsBanner(presence) {
   const banner = document.getElementById('tools-banner');
   if (!banner) return;
   const dismissed = _toolsDismissed();
-  // Once a tool is installed, a later dismissal of it no longer matters.
-  const kept = dismissed.filter(k => !presence[k]);
+  const {kept, missing} = toolsBannerState(presence, dismissed);
   if (kept.length !== dismissed.length) _setToolsDismissed(kept);
-  const missing = ['ytdlp', 'ffmpeg'].filter(k => !presence[k] && !kept.includes(k));
-  if (!missing.length) { banner.style.display = 'none'; return; }
+  if (!missing.length) { banner.style.display = 'none'; banner.dataset.missing = ''; return; }
   const names = missing.map(k => k === 'ytdlp' ? 'yt-dlp (download RaiPlay)' : 'FFmpeg (conversione e unione)');
   document.getElementById('tools-banner-message').textContent =
     `Manca ${names.join(' e ')}. Dalle Impostazioni, sezione Download, puoi controllarlo e installarlo.`;
@@ -299,7 +324,7 @@ registerActions({
   'domain:apply':   () => applyDomainCandidate(),
   'domain:dismiss': () => dismissDomainCandidate(),
   'tools:dismiss':  () => dismissToolsBanner(),
-  'tools:settings': () => navigate('settings'),
+  'tools:settings': () => openToolsSettings(),
   // The sidebar's nav. The page name rides on the same data-page the active
   // highlight already reads, so the two cannot disagree about which link is
   // which. Through navigate(), not showPage(), so a click leaves an address
@@ -356,6 +381,8 @@ function showPage(page, params = null) {
   if (page === 'files') loadFiles();
   if (page === 'requests') loadRequestQueue();
   if (page === 'my-requests') loadMyRequests();
+  // A local check (no network): picks up a tool installed meanwhile.
+  if (_toolsPresenceArmed) loadToolsPresence();
   // Every page has an address now. This used to do the opposite — strip the
   // hash on the way out of the two pages that had one — because they were the
   // only two, and leaving a stale title in the bar meant the next reload

@@ -1635,12 +1635,19 @@ async function checkYtdlp() {
     const result = await api.post('/api/domain/ytdlp/update', {});
     out.className = 'form-text text-success';
     out.textContent = `yt-dlp ${result.version} installato.`;
+    _refreshToolsBanner();
   } catch (e) {
     out.className = 'form-text text-danger';
     out.textContent = _settingsError(e, 'Controllo yt-dlp non riuscito.');
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+// After an install the shell's "tool missing" banner re-checks, so it comes
+// down without a reload. Guarded: app.js owns the banner.
+function _refreshToolsBanner() {
+  if (typeof loadToolsPresence === 'function') loadToolsPresence();
 }
 
 async function updateFfmpeg() {
@@ -1651,6 +1658,7 @@ async function updateFfmpeg() {
   try {
     const result = await api.post('/api/domain/ffmpeg/update', {});
     _feedback('ffmpeg-update-feedback', `FFmpeg ${result.version} installato. Rileva nuovamente gli encoder.`, 'success');
+    _refreshToolsBanner();
     await loadVideoEncoders(true);
     _clearFfmpegFeedbackLater();
   } catch (e) {
