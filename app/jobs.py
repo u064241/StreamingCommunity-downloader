@@ -863,6 +863,9 @@ class JobManager:
         self._slots.wake()
         self._emit(job, {"type": "error", "message": "Annullato"})
         if orphaned:
+            # A paused job cancelled while parked never reaches _run_download,
+            # so its staging segments would stay in TMP_DIR until a restart.
+            _cleanup_temp_dir(str(TMP_DIR / job.job_id))
             self._finish(job)
         return True
 

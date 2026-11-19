@@ -268,7 +268,6 @@ def download(url: str, title: str, output_dir: str, *, temp_dir=None,
     target_dir.mkdir(parents=True, exist_ok=True)
     work_dir = Path(temp_dir) if temp_dir else target_dir
     work_dir.mkdir(parents=True, exist_ok=True)
-
     def run_once() -> str:
         try:
             with ytdlp_update.in_use():
@@ -280,12 +279,48 @@ def download(url: str, title: str, output_dir: str, *, temp_dir=None,
             raise RaiPlayDownloadError(str(exc)) from exc
 
     try:
-        return run_once()
-    except YtdlpEngineError as first:
-        if cancel_event and cancel_event.is_set():
-            raise DownloadCancelledError() from first
-        # One update, one retry, never a loop: the retry's failure is final.
-        if not ytdlp_update.update_for_retry():
-            raise
-        logger.info("RaiPlay download failed (%s): yt-dlp updated, retrying once", first)
-        return run_once()
+        try:
+            return run_once()
+        except YtdlpEngineError as first:
+            if cancel_event and cancel_event.is_set():
+                raise DownloadCancelledError() from first
+            # One update, one retry, never a loop: the retry's failure is final.
+            # Partials are kept across the retry, so yt-dlp can resume them.
+            if not ytdlp_update.update_for_retry():
+                raise
+            logger.info("RaiPlay download failed (%s): yt-dlp updated, retrying once", first)
+            return run_once()
+    except BaseException:
+        # Final failure or cancel: a partial file is not a download. Runs after
+        # _run_download has killed yt-dlp, so the files are no longer held open.
+        discard_partials(target_dir, stem)
+        raise
+
+
+_PARTIAL_NAME = re.compile(r"\.(part|ytdl)$|\.temp\.[^.]+$|\.f\d+\.[^.]+(\.part)?$", re.IGNORECASE)
+
+
+def discard_partials(target_dir: Path, stem: str) -> list[str]:
+    """Delete yt-dlp's partial files for *stem*.
+
+    Covers ``stem.mp4.part``, ``stem.mp4.ytdl``, merge temporaries
+    ``stem.temp.mp4`` and separate streams ``stem.f137.mp4`` (also ``.part``).
+    A finished video is never matched: it carries no partial marker.
+    """
+    removed: list[str] = []
+    try:
+        names = os.listdir(target_dir)
+    except OSError:
+        return removed
+    for name in names:
+        if not name.startswith(stem + ".") or not _PARTIAL_NAME.search(name):
+            continue
+        path = Path(target_dir) / name
+        try:
+            path.unlink()
+            removed.append(str(path))
+        except OSError as exc:
+            logger.warning("Could not remove partial %s: %s", path, exc)
+    if removed:
+        logger.info("Removed %d partial file(s) of an interrupted RaiPlay download", len(removed))
+    return removed
