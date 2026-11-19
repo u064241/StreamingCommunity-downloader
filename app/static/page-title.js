@@ -729,7 +729,7 @@ function _tpRenderEpisodes() {
         </div>
         ${dur}${owned}
         <button class="btn btn-sm ${wants ? 'btn-outline-primary' : 'btn-primary'} th-ep-action"
-                data-action="${_tp.source === 'raiplay' ? 'tp:raiplayEpisode' : 'tp:episode'}" data-index="${i}">
+                data-action="${_tp.source === 'raiplay' ? 'tp:raiEpisode' : 'tp:episode'}" data-index="${i}">
           <i class="ti ${wants ? 'ti-send' : 'ti-download'} me-1"></i>${wants ? t('title.request') : t('title.download')}
         </button>
       </div>`;
