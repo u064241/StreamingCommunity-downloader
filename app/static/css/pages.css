@@ -205,6 +205,8 @@
       justify-content: center;
       padding: 0;
       border: 0;
+      /* Transparent strip: the chip below is the only visible surface. */
+      background: transparent;
       /* Hovered cards rise to z-index 5 and scale beyond the rail. Keep the
          controls above the enlarged artwork so they remain clickable. */
       z-index: 10;
@@ -241,6 +243,9 @@
     .shelf-arrow-prev { left: 0; }
     .shelf-arrow-next { right: 0; }
     .shelf-arrow:hover { color: var(--accent); }
+    /* layout.css paints every button accent on hover: keep the strip clear. */
+    .page-scroll .shelf-arrow:hover:not(:disabled),
+    .page-scroll .shelf-arrow:focus-visible:not(:disabled) { background: transparent; }
     /* Nothing hovers on a touch screen, and a finger already scrolls the rail. */
     @media (hover: none) { .shelf-arrow { display: none !important; } }
 
