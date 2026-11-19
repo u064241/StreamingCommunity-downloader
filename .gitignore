@@ -36,6 +36,8 @@ build/
 # Managed FFmpeg binary and version stamp, written by app/core/ffmpeg_update.py.
 # Runtime cache, not source: never committed.
 ffmpeg/
+# Managed yt-dlp.exe, written by app/core/ytdlp_update.py (same place as ffmpeg/).
+yt-dlp/
 
 # Runtime state, never committed
 panel.db.bak-*
