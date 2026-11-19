@@ -1,48 +1,41 @@
-# Aggiornamenti della distribuzione Windows u064241
+# Aggiornamenti della distribuzione Windows
 
-La build inserisce `sc-distribution.json` nello ZIP portable e nella cartella
-scelta dal wizard. Il wizard scrive `mode: portable` oppure `mode: installed`,
-con schema 1 e repository `u064241/StreamingCommunity-downloader`.
-La posizione sotto Program Files non determina l'idoneità all'update:
-senza marker valido la sostituzione è disabilitata. Le vecchie distribuzioni
-devono essere aggiornate manualmente una prima volta con un nuovo pacchetto.
+**Stato: chiuso in questa versione.** Il pannello non offre più l'aggiornamento
+in-place della versione portable. Nessuno ZIP portable è pubblicato come asset
+di release, quindi non c'è un pacchetto da scaricare e verificare.
 
-Il pulsante **Aggiorna portable**, nella finestra delle novità, richiede
-`MANAGE_SETTINGS`. Gli endpoint `/api/updates/portable`,
-`/api/updates/portable/prepare` e `/api/updates/portable/apply` sono accessibili
-solo tramite loopback con Host locale. I POST richiedono Origin corrispondente
-e token locale, anche in modalità aperta; resta valido il controllo CSRF della
-sessione quando l'autenticazione è attiva. Le richieste inoltrate da proxy
-sono rifiutate.
+## Come aggiornare
 
-La preparazione seleziona Latest dal fork, esclude prerelease/draft e scarica
-manifest e pacchetto dalla stessa release. Il manifest deve dichiarare schema,
-variante, canale, repository, versione, dimensione e SHA256 compatibili con gli
-asset GitHub. Tutti i redirect vengono verificati prima della richiesta.
-Lo ZIP deve contenere solo EXE principale, helper e marker portable alla radice.
-Si estrae soltanto l'EXE principale in staging temporaneo. Nessun percorso
-fornito dal browser viene accettato.
+Scarica il setup dell'ultima release dalla pagina Releases del repository e
+installalo come la prima volta, seguendo il wizard. Il pannello segnala la
+nuova versione nella finestra delle novità, ma non la installa da solo.
 
-Dopo la seconda conferma, il server ricontrolla modalità e lavori pendenti,
-avvia l'helper e attende la conferma che questo abbia verificato il PID e
-preparato la sostituzione. La preparazione dura 30 minuti, è legata all'utente
-e il token è utilizzabile una volta sola. Chiudere poi tutte le schede entro
-5 minuti, attendere l'uscita del processo e riaprire manualmente il programma.
-L'helper non termina processi. Se l'app rimane aperta oltre il timeout,
-l'EXE resta invariato; riavviare l'app prima di riprovare.
+## Cosa resta nel codice
 
-Il backup `StreamingCommunityDownloader.previous-<id>.exe` resta nella cartella
-portable. Il rollback automatico copre errori di verifica dopo la sostituzione;
-non verifica l'avvio della nuova applicazione. Per un recupero manuale,
-chiudere l'app, conservare l'EXE problematico e ripristinare il backup al nome
-originale. Un lock residuo dopo un crash richiede controllo manuale che nessun
-helper sia ancora in esecuzione.
+- La build scrive `sc-distribution.json` nella cartella portable e nel
+  pacchetto. Il marker dichiara modalità (`portable` o `installed`), schema e
+  repository.
+- Gli endpoint `/api/updates/portable`, `/api/updates/portable/prepare` e
+  `/api/updates/portable/apply` restano, ma `prepare` e `apply` rispondono 409
+  finché `PORTABLE_ZIP_PUBLISHED` non è `True` (`app/routers/updates.py`).
+  Lo stato riporta `available: false`.
+- Il meccanismo completo (manifest validato, SHA256, firma Authenticode,
+  helper, backup `StreamingCommunityDownloader.previous-<id>.exe`, rollback
+  sugli errori di verifica) è ancora nel codice, ma non è raggiungibile.
 
-Limiti: il flusso sostituisce solo il programma principale. L'helper e altre
-componenti richiedono distribuzione manuale se cambiano protocollo o formato.
-Installazioni sorgente e installabili usano il collegamento alla release;
-Inno Setup rimane guidato. Non vengono modificati database, configurazioni
-o download. Non c'è riavvio automatico né rollback delle migrazioni dati:
-pubblicare su questo canale solo release compatibili con i dati esistenti.
-SHA256 garantisce corrispondenza al manifest pubblicato su GitHub, ma non
-sostituisce una firma del produttore.
+## Condizioni per riaprirlo
+
+Il canale può tornare attivo solo se tutte queste condizioni sono vere:
+
+1. Una release pubblica include uno ZIP portable firmato, con manifest e SHA256.
+2. `PORTABLE_ZIP_PUBLISHED` passa a `True`, con un commit dedicato.
+3. Questo documento viene riscritto, con la procedura di prova.
+
+## Limiti da ricordare se si riapre
+
+- Il flusso sostituisce solo il programma principale. Helper e altre componenti
+  richiedono distribuzione manuale se cambiano protocollo o formato.
+- Non c'è riavvio automatico né rollback delle migrazioni dati. Pubblicare solo
+  release compatibili con i dati esistenti.
+- SHA256 garantisce la corrispondenza con il manifest pubblicato su GitHub, ma
+  non sostituisce una firma del produttore.

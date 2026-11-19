@@ -128,7 +128,7 @@
 - Floating up/down arrows for quick navigation through long card lists
 - Portable mode inside the Windows setup wizard
 - Update badge, release notes and manual update check from the panel
-- Portable updates with manifest validation, SHA-256 verification, backup and rollback
+- Portable in-place updates are closed in this version: install the latest setup to update (see [docs/portable-updates.md](docs/portable-updates.md))
 - Release artifacts for this fork are published independently from the upstream project
 
 ---
