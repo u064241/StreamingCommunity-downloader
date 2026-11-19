@@ -195,12 +195,13 @@ def get_domain_version(domain: str) -> str | None:
 # The identity of the real site's start page, read from the payload
 # ``get_domain_version`` already fetched (never a request of its own). Taken
 # from what the panel already depends on, not invented: the Inertia component
-# of the home page (tests/fixtures/sc_home_page.json: ``"component": "Home"``)
+# of the home page (tests/fixtures/sc_home_page.json: ``"component": "Home/Home"``)
 # and its ``props.sliders`` carrying at least one of the machine names the
 # start page is keyed on (``home._LABELS``: trending, latest, top10; the
 # fixture has trending and top10). A page that merely answers as some Inertia
 # app with a version string does not carry them.
-HOME_COMPONENT = "Home"
+# The real site reports the start page as "Home/Home" (checked 2026-11-19).
+HOME_COMPONENTS = frozenset({"Home", "Home/Home"})
 HOME_SLIDER_NAMES = frozenset({"trending", "latest", "top10"})
 
 # host -> whether the last home page it served carried the identity.
@@ -209,7 +210,7 @@ _home_identity: dict[str, bool] = {}
 
 def looks_like_home(payload) -> bool:
     """Whether an Inertia payload is the real site's start page. No I/O."""
-    if not isinstance(payload, dict) or payload.get("component") != HOME_COMPONENT:
+    if not isinstance(payload, dict) or payload.get("component") not in HOME_COMPONENTS:
         return False
     props = payload.get("props")
     sliders = props.get("sliders") if isinstance(props, dict) else None

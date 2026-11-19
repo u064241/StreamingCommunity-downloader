@@ -1,5 +1,5 @@
 {
-  "component": "Home",
+  "component": "Home/Home",
   "url": "/it",
   "version": "fixture-version-1",
   "props": {
