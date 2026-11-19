@@ -636,6 +636,14 @@ function renderShelves() {
 let _shelfSyncs = [];
 
 function _wireShelfArrows(section) {
+  // A section can be wired again: the title page's "Correlati" rail is rebuilt
+  // and wired on every render, over the same buttons. Without tearing down the
+  // previous wiring each click ran once per wiring, so the rail stuttered.
+  if (section._shelfArrowsAbort) section._shelfArrowsAbort.abort();
+  const wiring = new AbortController();
+  section._shelfArrowsAbort = wiring;
+  const signal = wiring.signal;
+
   const rail = section.querySelector('.shelf-rail');
   const prev = section.querySelector('.shelf-arrow-prev');
   const next = section.querySelector('.shelf-arrow-next');
@@ -741,14 +749,22 @@ function _wireShelfArrows(section) {
     next.hidden = !scrollable;
   }
 
-  prev.addEventListener('click', () => scrollByCards(-1));
-  next.addEventListener('click', () => scrollByCards(1));
-  rail.addEventListener('scroll', sync, {passive: true});
+  prev.addEventListener('click', () => scrollByCards(-1), {signal});
+  next.addEventListener('click', () => scrollByCards(1), {signal});
+  rail.addEventListener('scroll', sync, {passive: true, signal});
   // A rail is measured before its posters have loaded and while the page is
   // still laying out, so the arrows of later rows were left hidden. Measure
   // again when the rail resizes and whenever an image inside it finishes.
-  rail.addEventListener('load', sync, true);
-  if (typeof ResizeObserver === 'function') new ResizeObserver(sync).observe(rail);
+  rail.addEventListener('load', sync, {capture: true, signal});
+  let observer = null;
+  if (typeof ResizeObserver === 'function') {
+    observer = new ResizeObserver(sync);
+    observer.observe(rail);
+  }
+  signal.addEventListener('abort', () => {
+    stopGlide();
+    if (observer) observer.disconnect();
+  });
   sync();
   return sync;
 }

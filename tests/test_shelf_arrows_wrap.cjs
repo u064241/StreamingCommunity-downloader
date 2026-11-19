@@ -48,9 +48,18 @@ function makeRail(n) {
   return rail;
 }
 
-function setup(n) {
+function setup(n, wirings = 1) {
   const rail = makeRail(n);
-  const makeArrow = () => ({hidden: false, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }});
+  // Every live handler runs on a click, like the DOM; a handler whose signal
+  // was aborted by a later wiring is gone.
+  const makeArrow = () => ({
+    hidden: false, handlers: {}, listeners: {},
+    addEventListener(type, fn, opts = {}) {
+      const list = (this.handlers[type] ||= []);
+      list.push({fn, signal: opts.signal});
+      this.listeners[type] = () => list.filter(h => !h.signal?.aborted).forEach(h => h.fn());
+    },
+  });
   const prev = makeArrow(), next = makeArrow();
   const section = {querySelector: sel => ({'.shelf-rail': rail, '.shelf-arrow-prev': prev, '.shelf-arrow-next': next})[sel]};
 
@@ -60,12 +69,13 @@ function setup(n) {
   let frames = [];
   const context = vm.createContext({
     getComputedStyle: () => ({paddingLeft: '0px'}),
+    AbortController,
     performance: {now: () => clock},
     requestAnimationFrame: fn => { frames.push(fn); return frames.length; },
     cancelAnimationFrame: id => { if (frames[id - 1]) frames[id - 1] = null; },
   });
   vm.runInContext(wire + '\nthis.wire = _wireShelfArrows;', context);
-  context.wire(section);
+  for (let i = 0; i < wirings; i++) context.wire(section);
   const flush = () => {
     let guard = 0;
     while (frames.some(Boolean) && guard++ < 100) {
@@ -155,4 +165,13 @@ test('a rail that fits shows no arrows', () => {
   const {prev, next} = setup(2);
   assert.equal(prev.hidden, true);
   assert.equal(next.hidden, true);
+});
+
+test('wiring the same rail again does not double the step of a click', () => {
+  const once = setup(10, 1);
+  const twice = setup(10, 2);
+  once.next.listeners.click(); once.flush();
+  twice.next.listeners.click(); twice.flush();
+  assert.equal(twice.rail._left, once.rail._left);
+  assert.equal(firstVisible(twice.rail), firstVisible(once.rail));
 });
