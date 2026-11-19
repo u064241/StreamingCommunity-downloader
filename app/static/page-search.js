@@ -630,8 +630,9 @@ function renderShelves() {
 
 // The arrows scroll a few titles at a time rather than a whole screenful: the
 // rail is a browse, and losing your place in it is worse than taking two clicks.
-// Each one hides itself at the end it points at, so a rail that already fits
-// shows neither.
+// The rail is circular: past the last title ">" returns to the first, and
+// before the first "<" goes to the last. Both stay visible whenever the rail
+// overflows; a rail that already fits shows neither.
 let _shelfSyncs = [];
 
 function _wireShelfArrows(section) {
@@ -650,10 +651,16 @@ function _wireShelfArrows(section) {
   }
 
   function scrollByCards(direction) {
+    const max = rail.scrollWidth - rail.clientWidth;
+    // Circular wrap: ">" at the end goes to the start, "<" at the start goes to the end.
+    if (direction > 0 && rail.scrollLeft >= max - 2) { rail.scrollTo({left: 0, behavior: 'smooth'}); return; }
+    if (direction < 0 && rail.scrollLeft <= 2) { rail.scrollTo({left: max, behavior: 'smooth'}); return; }
     const plan = step();
     if (!plan.cards) { rail.scrollBy({left: direction * plan, behavior: 'smooth'}); return; }
-    const target = plan.cards[Math.max(0, Math.min(plan.cards.length - 1,
-      plan.index + direction * plan.count))];
+    const wanted = plan.index + direction * plan.count;
+    // Reaching the last title means the real end of the rail, not just a card's edge.
+    if (direction > 0 && wanted >= plan.cards.length - 1) { rail.scrollTo({left: max, behavior: 'smooth'}); return; }
+    const target = plan.cards[Math.max(0, Math.min(plan.cards.length - 1, wanted))];
     const inset = parseFloat(getComputedStyle(rail).paddingLeft) || 0;
     if (target) rail.scrollTo({left: Math.max(0, target.offsetLeft - inset), behavior: 'smooth'});
   }
@@ -661,8 +668,9 @@ function _wireShelfArrows(section) {
   function sync() {
     const max = rail.scrollWidth - rail.clientWidth;
     const scrollable = max > 4;   // a couple of pixels of rounding is not overflow
-    prev.hidden = !scrollable || rail.scrollLeft <= 2;
-    next.hidden = !scrollable || rail.scrollLeft >= max - 2;
+    // Never hidden at an end: the arrows wrap, so both are always usable here.
+    prev.hidden = !scrollable;
+    next.hidden = !scrollable;
   }
 
   prev.addEventListener('click', () => scrollByCards(-1));
