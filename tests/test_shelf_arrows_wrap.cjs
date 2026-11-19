@@ -167,6 +167,32 @@ test('a rail that fits shows no arrows', () => {
   assert.equal(next.hidden, true);
 });
 
+// The title page's "Correlati" rail holds at most 8 titles, so it can scroll
+// less than one three-card step. Rotating three cards there needed a scroll
+// correction larger than the scroll position: the browser clamped it at 0 and
+// the cards on screen jumped back on every click (154 px at 1400 px wide).
+test('a short rail never makes the cards on screen jump when it wraps', () => {
+  const {rail, next, prev: back, flush} = setup(6);   // 6 * 144 - 500 = 364 px of scroll
+  assert.ok(rail.scrollWidth - VIEW < 3 * CARD, 'the rail must be shorter than a full step');
+  const onScreen = x => x > -CARD && x < VIEW;
+  for (const arrow of [next, back]) {
+    const seen = new Set();
+    for (let i = 0; i < 12; i++) {
+      const before = new Map(rail.children.map(c => [c.id, c.getBoundingClientRect().left]));
+      arrow.listeners.click();
+      // The click itself (rotation included) must not move anything on screen:
+      // only the glide that follows does.
+      for (const card of rail.children) {
+        const was = before.get(card.id), now = card.getBoundingClientRect().left;
+        if (onScreen(was) && onScreen(now)) assert.equal(now, was, `card ${card.id} jumped on click ${i}`);
+      }
+      flush();
+      rail.children.forEach(c => { if (onScreen(c.getBoundingClientRect().left)) seen.add(c.id); });
+    }
+    assert.equal(seen.size, 6, 'the loop must bring every title on screen');
+  }
+});
+
 test('wiring the same rail again does not double the step of a click', () => {
   const once = setup(10, 1);
   const twice = setup(10, 2);

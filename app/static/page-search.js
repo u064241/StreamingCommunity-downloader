@@ -678,7 +678,9 @@ function _wireShelfArrows(section) {
       const group = kids.slice(kids.length - count);
       for (let i = group.length - 1; i >= 0; i--) rail.insertBefore(group[i], rail.firstChild);
     }
-    rail.scrollLeft += anchor.getBoundingClientRect().left - before;
+    const shift = anchor.getBoundingClientRect().left - before;
+    rail.scrollLeft += shift;
+    return shift;
   }
 
   // The glide moves the rail frame by frame with an ease-in-out curve, so the
@@ -723,20 +725,32 @@ function _wireShelfArrows(section) {
   function scrollByCards(direction) {
     const max = rail.scrollWidth - rail.clientWidth;
     if (max <= 4) return;
-    const count = visibleCount();
+    // A step never longer than the rail can scroll. A short rail (the title
+    // page's "Correlati" holds 8 titles) cannot absorb the scroll correction
+    // of a longer rotation: the browser clamps it and the cards jump.
+    let count = visibleCount();
+    while (count > 1 && stepDistance(count) > max) count--;
     const distance = stepDistance(count);
     if (distance <= 0) return;
     // Snap off before any scroll position is set, including the rotation below:
     // with snap on, the browser re-aligns the cards and the rail visibly shifts.
     rail.classList.add('is-gliding');
     let position = glideState ? glideState.to : rail.scrollLeft;
+    // Rotate as soon as the step would be cut short by the end of the rail,
+    // provided the correction fits both the rail now and where it is heading;
+    // at the very end rotate anyway, so the rail still loops.
+    const live = rail.scrollLeft;
+    const clipped = direction > 0 ? position + distance > max + 2 : position - distance < -2;
+    const room = direction > 0
+      ? Math.min(position, live) >= distance - 2
+      : Math.max(position, live) + distance <= max + 2;
     const atEdge = direction > 0 ? position >= max - 2 : position <= 2;
-    if (atEdge) {
-      stopGlide();
-      rail.classList.add('is-gliding');
-      rail.scrollLeft = position;
-      rotate(direction > 0 ? 1 : -1, count);
-      position = rail.scrollLeft;
+    if (clipped && (room || atEdge)) {
+      if (!room) { stopGlide(); rail.classList.add('is-gliding'); rail.scrollLeft = position; }
+      // The glide below restarts from the rail's live position, so a glide in
+      // progress needs no correction of its own.
+      const shift = rotate(direction > 0 ? 1 : -1, count) || 0;
+      position = room ? position + shift : rail.scrollLeft;
     }
     glideTo(Math.max(0, Math.min(max, position + direction * distance)));
   }
