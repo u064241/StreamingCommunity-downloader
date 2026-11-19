@@ -184,18 +184,22 @@
        column, so the arrows land where the screen actually ends. Without this
        the right-hand one sat inside the column, and on a narrow window it
        could fall outside the visible area entirely. */
+    /* The arrows sit in a gutter beside the rail, centred on the cards, so they
+       never cover a title. The rail itself keeps the full card width. */
     .shelf-rail-wrap {
       position: relative;
       margin-inline: 0;
       min-width: 0;
+      padding-inline: 52px;
     }
     .shelf-arrow {
       position: absolute;
-      top: 8px;
-      bottom: 10px;              /* clear of the rail's own padding */
-      /* The whole strip is the target, full rail height by this width — the
-         chip below is only what you see of it. */
-      width: 72px;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 96px;
+      /* The whole strip is the target: the gutter width by the height above —
+         the chip below is only what you see of it. */
+      width: 52px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -214,9 +218,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 72px;
-      height: 72px;
-      font-size: 46px;           /* the chevron itself, not just its chip */
+      width: 46px;
+      height: 46px;
+      font-size: 28px;           /* the chevron itself, not just its chip */
       line-height: 1;
       border-radius: 50%;
       background: var(--bg-raised);
@@ -234,14 +238,8 @@
     /* Pushed out into the page gutter so they sit where the content actually
        ends. Inset by a few pixels they read as part of the rail and get lost
        against the posters. */
-    .shelf-arrow-prev {
-      left: -4px;
-      background: linear-gradient(to right, var(--bg-base) 45%, rgba(7,10,18,0));
-    }
-    .shelf-arrow-next {
-      right: -4px;
-      background: linear-gradient(to left, var(--bg-base) 45%, rgba(7,10,18,0));
-    }
+    .shelf-arrow-prev { left: 0; }
+    .shelf-arrow-next { right: 0; }
     .shelf-arrow:hover { color: var(--accent); }
     /* Nothing hovers on a touch screen, and a finger already scrolls the rail. */
     @media (hover: none) { .shelf-arrow { display: none !important; } }
