@@ -1140,6 +1140,13 @@ class M3U8_Segments:
                 )
 
             self._retry_failed_sequentially(progress_counter)
+            # Every phase reports, clean or not: the recovery pass returns early
+            # when nothing was lost, so the line cannot live inside it.
+            elapsed = max(time.monotonic() - getattr(self, "_phase_started", time.monotonic()), 1e-6)
+            mb = self._bytes_fetched / (1024 * 1024)
+            logger.info("Segments %s: %d of %d, %.1f MB in %.0f s = %.2f MB/s, %d lost",
+                        self.phase or "video", len(self.segments) - len(self._failed_segments),
+                        len(self.segments), mb, elapsed, mb / elapsed, len(self._failed_segments))
             self._require_every_segment()
         finally:
             # Closed here and not before the retry pass: a segment recovered
@@ -1208,11 +1215,6 @@ class M3U8_Segments:
                 still_failed.add(index)
                 logger.error("Segment %d permanently failed", index)
         self._failed_segments = still_failed
-        elapsed = max(time.monotonic() - getattr(self, "_phase_started", time.monotonic()), 1e-6)
-        mb = self._bytes_fetched / (1024 * 1024)
-        logger.info("Segments %s: %d of %d, %.1f MB in %.0f s = %.2f MB/s, %d lost",
-                    self.phase or "video", len(self.segments) - len(still_failed), len(self.segments),
-                    mb, elapsed, mb / elapsed, len(still_failed))
 
     def _missing_segments(self) -> list[int]:
         """Which segments are not on disk.
