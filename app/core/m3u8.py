@@ -234,6 +234,12 @@ MIN_SEGMENT_ALLOWANCE = 2
 # moment. One cut per this many seconds, and the rest of the burst is absorbed.
 PENALTY_INTERVAL = 2.0
 
+# A refused or timed-out connection halves the allowance at once, but it only
+# pauses the page requests after this many in a row with no segment in between.
+# A single dropped connection on a CDN that answers the next request fine is not
+# the source refusing us; a run of them is the signal the page pause is for.
+SOFT_FAILURES_BEFORE_PAUSE = 3
+
 # Retry-After is the source saying exactly how long to wait. Honoured, but not
 # unboundedly: a very long value is a fetch that will outlive the segment's
 # attempts anyway, and the sequential pass is a better place to arrive late.
@@ -288,6 +294,8 @@ class AdaptiveLimiter:
         self._in_flight = 0
         self._served = 0
         self._last_penalty = None
+        # Failures in a row that were connection errors or timeouts, not refusals.
+        self._soft_run = 0
 
     @property
     def allowance(self) -> int:
@@ -333,14 +341,27 @@ class AdaptiveLimiter:
             self._cond.notify()
         return False
 
-    def penalise(self) -> None:
-        """The source pushed back. Ask it for half as much."""
+    def penalise(self, refusal: bool = True) -> None:
+        """The source pushed back. Ask it for half as much.
+
+        *refusal* is the source answering no (429, 5xx). A soft failure (a
+        refused or timed-out connection) halves the allowance too, but opens the
+        page pause only after SOFT_FAILURES_BEFORE_PAUSE of them in a row.
+        """
         with self._cond:
             now = self._now()
             if self._last_penalty is not None and now - self._last_penalty < PENALTY_INTERVAL:
                 return
             self._last_penalty = now
             self._served = 0
+            if refusal:
+                self._soft_run = 0
+                pause = True
+            else:
+                self._soft_run += 1
+                pause = self._soft_run >= SOFT_FAILURES_BEFORE_PAUSE
+                if pause:
+                    self._soft_run = 0
             floor = min(MIN_SEGMENT_ALLOWANCE, self.maximum)
             before = self._allowance
             self._allowance = max(floor, before // 2)
@@ -353,7 +374,8 @@ class AdaptiveLimiter:
                         before, after, ceiling)
             # The same signal pauses the page requests too (source_budget's
             # backoff): the source refusing segments is refusing us.
-            source_budget.report_pushback("download pipeline")
+            if pause:
+                source_budget.report_pushback("download pipeline")
 
     def reward(self) -> None:
         """A segment arrived. One extra slot per allowance served, no more.
@@ -363,6 +385,7 @@ class AdaptiveLimiter:
         width before it widens.
         """
         with self._cond:
+            self._soft_run = 0
             if self._allowance >= self.maximum:
                 return
             self._served += 1
@@ -870,7 +893,7 @@ class M3U8_Segments:
                 # A refused or timed-out connection under load says the same
                 # thing a 503 does, and used to be the one form of pushback the
                 # limiter never heard about.
-                self._budget.penalise()
+                self._budget.penalise(refusal=False)
                 logger.warning("Segment exception (attempt %d/%d): %s",
                                attempt + 1, self.max_retry, redact(e))
             else:

@@ -518,3 +518,50 @@ def test_a_segment_fetch_carries_both_timeouts(tmp_path, workers, monkeypatch, p
 
     connect, read = seen[0]
     assert connect > 0 and read > 0
+
+
+def test_a_lone_dropped_connection_does_not_pause_the_pages(monkeypatch):
+    """One timeout halves the allowance, but the page requests keep flowing."""
+    pauses = []
+    monkeypatch.setattr(m3u8.source_budget, "report_pushback", lambda where: pauses.append(where))
+    clock = _Clock()
+    limiter = m3u8.AdaptiveLimiter(16, now=clock)
+
+    limiter.penalise(refusal=False)
+    assert limiter.allowance == 8
+    assert pauses == []
+
+
+def test_consecutive_dropped_connections_pause_the_pages(monkeypatch):
+    pauses = []
+    monkeypatch.setattr(m3u8.source_budget, "report_pushback", lambda where: pauses.append(where))
+    clock = _Clock()
+    limiter = m3u8.AdaptiveLimiter(16, now=clock)
+
+    for _ in range(m3u8.SOFT_FAILURES_BEFORE_PAUSE):
+        limiter.penalise(refusal=False)
+        clock.advance(m3u8.PENALTY_INTERVAL)
+    assert pauses == ["download pipeline"]
+
+
+def test_a_segment_in_between_resets_the_soft_run(monkeypatch):
+    pauses = []
+    monkeypatch.setattr(m3u8.source_budget, "report_pushback", lambda where: pauses.append(where))
+    clock = _Clock()
+    limiter = m3u8.AdaptiveLimiter(16, now=clock)
+
+    for _ in range(m3u8.SOFT_FAILURES_BEFORE_PAUSE - 1):
+        limiter.penalise(refusal=False)
+        clock.advance(m3u8.PENALTY_INTERVAL)
+    limiter.reward()
+    limiter.penalise(refusal=False)
+    assert pauses == []
+
+
+def test_a_refusal_pauses_the_pages_at_once(monkeypatch):
+    pauses = []
+    monkeypatch.setattr(m3u8.source_budget, "report_pushback", lambda where: pauses.append(where))
+    limiter = m3u8.AdaptiveLimiter(16, now=_Clock())
+
+    limiter.penalise()
+    assert pauses == ["download pipeline"]
