@@ -622,6 +622,9 @@ class M3U8_Segments:
         self.referer = referer
         self._cancel = cancel_event
         self.phase = phase
+        # Why each segment failed, by URL, for the line that says it was lost.
+        self._reasons = {}
+        self._bytes_fetched = 0
         self.emit_join_phase = emit_join_phase
 
         # What each segment needs beyond its URL (see M3U8_Parser.segment_info);
@@ -893,6 +896,7 @@ class M3U8_Segments:
                 # A refused or timed-out connection under load says the same
                 # thing a 503 does, and used to be the one form of pushback the
                 # limiter never heard about.
+                self._reasons[ts_url] = f"{type(e).__name__}: {redact(e)}"[:160]
                 self._budget.penalise(refusal=False)
                 logger.warning("Segment exception (attempt %d/%d): %s",
                                attempt + 1, self.max_retry, redact(e))
@@ -901,6 +905,8 @@ class M3U8_Segments:
                 if content is not None:
                     self._budget.reward()
                     return content
+                self._reasons[ts_url] = (f"HTTP {response.status_code}" if response.status_code != 200
+                                         else "corpo incompleto (lunghezza diversa da Content-Length)")
                 logger.warning("Segment HTTP %d (attempt %d/%d): ...%s", response.status_code,
                                attempt + 1, self.max_retry, redact(ts_url)[-60:])
                 if response.status_code not in RETRIABLE_SEGMENT_STATUS | {200, 206}:
@@ -1002,7 +1008,9 @@ class M3U8_Segments:
             self._failure_streak += 1
             streak = self._failure_streak
             lost = len(self._failed_segments)
-        logger.warning("Segment %d failed after all retries: ...%s", index, redact(ts_url)[-60:])
+        reason = self._reasons.pop(ts_url, "nessuna risposta registrata")
+        logger.warning("Segment %d failed after all retries (%s): ...%s", index, reason,
+                       redact(ts_url)[-60:])
 
         if streak < FAILURE_ABORT_STREAK or self._abort.is_set():
             return
@@ -1053,10 +1061,14 @@ class M3U8_Segments:
         # bar to 100% on a download that had saved barely half its segments,
         # and — worse — kept feeding the watchdog below, so a source failing
         # every single request still looked like it was making progress.
+        with self._failed_lock:
+            self._bytes_fetched += downloaded_bytes
         progress_counter.update(1, bytes=downloaded_bytes)
 
     def download_ts(self):
         self._failed_segments = set()
+        self._bytes_fetched = 0
+        self._phase_started = time.monotonic()
         self._saved_count = 0
         self._failure_streak = 0
         self._abort.clear()
@@ -1187,6 +1199,8 @@ class M3U8_Segments:
                     logger.warning("Segment %d could not be written: %s", index, redact(e))
             if recovered:
                 streak = 0
+                with self._failed_lock:
+                    self._bytes_fetched += len(ts_content)
                 progress_counter.update(1, bytes=len(ts_content))
                 logger.info("Segment %d recovered on retry", index)
             else:
@@ -1194,6 +1208,11 @@ class M3U8_Segments:
                 still_failed.add(index)
                 logger.error("Segment %d permanently failed", index)
         self._failed_segments = still_failed
+        elapsed = max(time.monotonic() - getattr(self, "_phase_started", time.monotonic()), 1e-6)
+        mb = self._bytes_fetched / (1024 * 1024)
+        logger.info("Segments %s: %d of %d, %.1f MB in %.0f s = %.2f MB/s, %d lost",
+                    self.phase or "video", len(self.segments) - len(still_failed), len(self.segments),
+                    mb, elapsed, mb / elapsed, len(still_failed))
 
     def _missing_segments(self) -> list[int]:
         """Which segments are not on disk.
