@@ -1069,6 +1069,8 @@ class M3U8_Segments:
         self._failed_segments = set()
         self._bytes_fetched = 0
         self._phase_started = time.monotonic()
+        logger.info("Segment fetch %s: %d segments, connections cap %d, workers %d",
+                    self.phase or "video", len(self.segments), _SOURCE_MAX_CONNECTIONS, self._workers)
         self._saved_count = 0
         self._failure_streak = 0
         self._abort.clear()
