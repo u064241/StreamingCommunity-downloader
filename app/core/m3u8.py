@@ -1196,7 +1196,12 @@ class M3U8_Segments:
                 )
             if self._wait(0.5):
                 raise DownloadCancelledError("Download annullato dall'utente")
-            ts_content = self.get_req_ts(self.segments[index], self._info(index).get("byterange"))
+            # The recovery pass is still part of the same download budget.
+            # Keep the source gate around the actual request only (get_req_ts
+            # releases it between attempts/backoff), so recovery cannot burst
+            # past the configured process-wide cap while another job is active.
+            with _SOURCE_SLOTS:
+                ts_content = self.get_req_ts(self.segments[index], self._info(index).get("byterange"))
             if self._fatal:
                 raise RuntimeError(f"Download interrotto: {self._fatal}")
             recovered = False
