@@ -1107,6 +1107,7 @@ class JobManager:
 
     def _attempt(self, job: DownloadJob, fn, args, kwargs) -> str:
         """Run the download once. Returns _FINISHED, _RETRY or _PARKED."""
+        from app.core.transcode import on_conversion_admitted
         while not self._slots.acquire(job, on_queued=self._announce_queued):
             if self._park(job, fn, args, kwargs):
                 return _PARKED
@@ -1118,6 +1119,15 @@ class JobManager:
                 self._emit(job, {"type": "error", "message": "Annullato"})
                 return _FINISHED
             # Resumed before it could park: straight back in line.
+        owns_download_slot = True
+
+        def release_download_slot():
+            nonlocal owns_download_slot
+            if owns_download_slot:
+                owns_download_slot = False
+                self._slots.release()
+
+        token = on_conversion_admitted.set(release_download_slot)
         try:
             with self._lock:
                 # It won its slot, so a pause arriving now is too late for it:
@@ -1183,7 +1193,8 @@ class JobManager:
                     logger.exception(f"Job {job.job_id} failed: {e}")
                     self._emit(job, {"type": "error", "message": str(e)})
         finally:
-            self._slots.release()
+            on_conversion_admitted.reset(token)
+            release_download_slot()
         return _FINISHED
 
     def _announce_queued(self, job: DownloadJob) -> None:

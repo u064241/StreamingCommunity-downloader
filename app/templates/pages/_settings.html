@@ -438,7 +438,7 @@
       </div>
       <div class="settings-section">
         <p class="settings-section-label" data-i18n="settings.video.conversion.after.download">Conversione video dopo il download</p>
-        <p class="settings-section-hint" data-i18n="settings.original.mode.preserves.source.quality.conversion.is.optional">La modalità Originale conserva la qualità della sorgente. La conversione è facoltativa, richiede tempo e può ridurre qualità e dimensioni. Si applica ai nuovi download; audio e sottotitoli vengono conservati. Una conversione alla volta.</p>
+        <p class="settings-section-hint" data-i18n="settings.original.mode.preserves.source.quality.conversion.is.optional">La modalità Originale conserva la qualità della sorgente. La conversione è facoltativa, richiede tempo e può ridurre qualità e dimensioni. Si applica ai nuovi download; audio e sottotitoli vengono conservati.</p>
         <div class="row g-3">
           <div class="col-sm-6"><label for="video-conversion" class="form-label">Video</label>
             <select id="video-conversion" class="form-select">
@@ -461,6 +461,11 @@
               <option value="compact" data-i18n="settings.compact.higher.compression">Compatta — maggiore compressione</option>
             </select>
           </div>
+          <div class="col-sm-6"><label for="video-parallel" class="form-label" data-i18n="settings.parallelConversions">Conversioni GPU simultanee (CPU: 1)</label>
+            <select id="video-parallel" class="form-select">
+              <option>1</option><option selected>2</option>
+            </select>
+          </div>
         </div>
         <label class="form-check mt-3"><input id="video-cpu-fallback" type="checkbox" class="form-check-input" checked>
           <span class="form-check-label" data-i18n="settings.use.the.cpu.if.the.gpu.is.unavailable">Usa la CPU se la GPU non è disponibile o la conversione GPU fallisce</span>
@@ -480,13 +485,13 @@
           <div class="col-sm-6">
             <label class="form-label" for="setting-performance-profile">Profilo sorgente</label>
             <select id="setting-performance-profile" class="form-select" data-change="cfg:performanceProfile">
-              <option value="conservative">Conservativo</option><option value="balanced">Bilanciato</option>
+              <option value="conservative">Conservativo</option><option value="balanced" selected>Bilanciato</option>
               <option value="fast">Veloce</option><option value="free">Libero</option>
             </select>
           </div>
           <div class="col-sm-6">
             <label class="form-label" for="setting-source-requests">Richieste alla sorgente / ora</label>
-            <input type="number" id="setting-source-requests" class="form-control" min="0" max="120" value="60">
+            <input type="number" id="setting-source-requests" class="form-control" min="0" max="120" value="90">
             <div class="form-text">0 = nessun limite applicativo. Il backoff per errori della sorgente resta attivo.</div>
           </div>
         </div>
@@ -501,7 +506,7 @@
               <span data-i18n="settings.concurrent.downloads">Download contemporanei</span>
               <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(1–32)</span>
             </label>
-            <input type="number" id="setting-max-concurrent" class="form-control" min="1" max="32" value="3">
+            <input type="number" id="setting-max-concurrent" class="form-control" min="1" max="32" value="1">
             <div class="form-text" data-i18n="settings.recommended.2.4.higher.values.increase.network.and">Suggerito: 2–4. Valori alti aumentano l'uso di rete e RAM.</div>
           </div>
           <div class="col-sm-6">
@@ -509,7 +514,7 @@
               <span data-i18n="settings.parallel.segments">Segmenti in parallelo</span>
               <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(1–128)</span>
             </label>
-            <input type="number" id="setting-max-workers" class="form-control" min="1" max="128" value="16">
+            <input type="number" id="setting-max-workers" class="form-control" min="1" max="128" value="6">
             <div class="form-text" data-i18n="settings.overall.panel.limit.not.per.download.if.the">Tetto massimo complessivo del pannello, non per singolo download. Se la fonte risponde 503 il pannello scende sotto questo valore da solo e risale quando torna a servire. Suggerito: 8–16.</div>
           </div>
         </div>

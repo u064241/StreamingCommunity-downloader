@@ -29,7 +29,7 @@ CLEAN_WEEK = {"pushbacks_last_72h": 0, "pushbacks_last_7d": 0, "history_hours": 
 @pytest.mark.parametrize("threads,ram,gpus,preset", [
     (16, 16 * GIB, [], "fast"),                   # strong
     (4, 8 * GIB, [], "balanced"),                 # medium
-    (4, 4 * GIB, GPU, "balanced"),                # little RAM, but a GPU
+    (4, 4 * GIB, GPU, "conservative"),            # RAM constrains downloads regardless of GPU
     (4, 4 * GIB, [], "conservative"),             # no GPU and under 8 GiB
     (2, 32 * GIB, GPU, "conservative"),           # under 4 cores
     (None, None, GPU, "conservative"),            # not enough data
@@ -67,7 +67,7 @@ def test_no_source_history_is_not_enough_data():
     (CLEAN_WEEK, "fast", "7 giorni"),
 ])
 def test_strong_hardware_is_fast_only_after_a_clean_week(source, preset, why):
-    chosen, reasons = hw.choose_preset({"physical_cores": 16}, {"total_bytes": 64 * GIB}, GPU, [], source)
+    chosen, reasons = hw.choose_preset({"physical_cores": 16}, {"total_bytes": 64 * GIB}, source)
     assert chosen == preset
     assert why in " ".join(reasons)
 
@@ -84,14 +84,11 @@ def test_no_automatic_choice_goes_past_the_fast_preset():
             assert result["source_requests_per_hour"] <= 120
 
 
-def test_a_basic_display_adapter_is_not_a_gpu():
-    preset, _ = hw.choose_preset({"physical_cores": 4}, {"total_bytes": 4 * GIB},
-                                 [{"name": "Microsoft Basic Display Adapter"}], [], CLEAN_WEEK)
-    assert preset == "conservative"
-    # A verified hardware encoder counts as a GPU even when none is listed.
-    preset, _ = hw.choose_preset({"physical_cores": 4}, {"total_bytes": 4 * GIB}, [],
-                                 [{"backend": "qsv", "codec": "h264", "available": True}], CLEAN_WEEK)
-    assert preset == "balanced"
+def test_encoder_probe_does_not_decide_download_preset():
+    cpu, memory = {"physical_cores": 4}, {"total_bytes": 4 * GIB}
+    qsv = [{"backend": "qsv", "codec": "hevc", "available": True}]
+    for encoders, adapters in (([], []), (qsv, GPU)):
+        assert hw.recommendations(cpu, memory, encoders, adapters, CLEAN_WEEK)["preset"] == "conservative"
 
 
 def test_only_verified_encoders_are_recommended():
@@ -313,11 +310,13 @@ def test_the_diagnosis_never_writes_more_than_the_chosen_preset(monkeypatch):
 
 def test_the_diagnosis_does_not_touch_the_video_output(monkeypatch):
     config.save_settings({**config.get_settings(), "video_conversion": "copy",
-                          "video_encoder": "auto", "video_quality": "high"})
+                          "video_encoder": "auto", "video_quality": "high", "max_parallel_conversions": 1})
     _fake_probe(monkeypatch, *STRONG)
     result = hw.diagnose()
     assert result["recommendations"]["video_encoder"] == "nvenc"   # suggested only
+    assert result["recommendations"]["max_parallel_conversions"] == 2
     stored = config.get_settings()
+    assert stored["max_parallel_conversions"] == 1
     assert (stored["video_conversion"], stored["video_encoder"], stored["video_quality"]) == (
         "copy", "auto", "high")
 

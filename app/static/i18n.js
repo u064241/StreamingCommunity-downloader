@@ -86,7 +86,8 @@
 "settings.hardware.gpu": {it:"GPU: {name} — VRAM: {vram}",en:"GPU: {name} — VRAM: {vram}"},
 "settings.hardware.noGpu": {it:"GPU: non rilevata (non implica assenza di encoder hardware)",en:"GPU: not detected (hardware encoders may still be available)"},
 "settings.hardware.encoders": {it:"Encoder verificati: {encoders}",en:"Verified encoders: {encoders}"},
-"settings.hardware.conversion": {it:"Conversione suggerita: {encoder}, {codec}, qualità bilanciata. Conversioni simultanee supportate: {count}.",en:"Suggested conversion: {encoder}, {codec}, balanced quality. Supported concurrent conversions: {count}."},
+"settings.hardware.conversion": {it:"Conversione suggerita: {encoder}, {codec}, qualità bilanciata. Parallelismo iniziale consigliato: {count}.",en:"Suggested conversion: {encoder}, {codec}, balanced quality. Suggested initial concurrency: {count}."},
+"settings.parallelConversions": {it:"Conversioni GPU simultanee (CPU: 1)",en:"Concurrent GPU conversions (CPU: 1)"},
 "settings.hardware.downloads": {it:"Punto di partenza: {count} download simultanei, {workers} segmenti complessivi, {connections} connessioni alla sorgente, {requests} richieste/ora.",en:"Starting point: {count} concurrent downloads, {workers} segments overall, {connections} source connections, {requests} requests/hour."},
 "settings.hardware.applied": {it:"Impostazioni consigliate applicate: {count} download simultanei e {workers} segmenti in parallelo.",en:"Recommended settings applied: {count} concurrent downloads and {workers} parallel segments."},
 "settings.hardware.advice": {it:"Mantieni Originale per evitare la ricodifica. Per convertire, scegli manualmente l'encoder suggerito e usa il fallback CPU solo se risulta disponibile. Rete, sorgente e disco possono richiedere limiti inferiori; non sono stati misurati.",en:"Keep Original to avoid re-encoding. To convert, manually select the suggested encoder and enable CPU fallback only if available. Network, source and disk may require lower limits; they have not been measured."},
@@ -806,8 +807,8 @@
   },
   {
     "key": "settings.original.mode.preserves.source.quality.conversion.is.optional",
-    "it": "La modalità Originale conserva la qualità della sorgente. La conversione è facoltativa, richiede tempo e può ridurre qualità e dimensioni. Si applica ai nuovi download; audio e sottotitoli vengono conservati. Una conversione alla volta.",
-    "en": "Original mode preserves source quality. Conversion is optional, takes time and can reduce quality and file size. It applies to new downloads; audio and subtitles are preserved. One conversion runs at a time."
+    "it": "La modalità Originale conserva la qualità della sorgente. La conversione è facoltativa, richiede tempo e può ridurre qualità e dimensioni. Si applica ai nuovi download; audio e sottotitoli vengono conservati.",
+    "en": "Original mode preserves source quality. Conversion is optional, takes time and can reduce quality and file size. It applies to new downloads; audio and subtitles are preserved."
   },
   {
     "key": "settings.original.no.re.encoding",

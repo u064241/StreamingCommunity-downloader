@@ -116,22 +116,13 @@ GIB = 1024**3
 # name explicitly; "strong" is the line above which three downloads of sixteen
 # segments do not compete with the rest of the PC.
 WEAK_CORES = 4
-WEAK_RAM_WITHOUT_GPU = 8 * GIB
+WEAK_RAM = 8 * GIB
 STRONG_CORES = 8
 STRONG_RAM = 16 * GIB
-# Display adapters that are not a GPU anyone can encode or decode on.
-_NOT_A_GPU = ("basic display", "basic render", "remote display", "virtual display", "hyper-v")
 
 
 def _cores(cpu):
     return _positive(cpu.get("physical_cores")) or _positive(cpu.get("logical_threads"))
-
-
-def _has_gpu(gpus, encoders):
-    real = [g for g in gpus or [] if not any(word in str(g.get("name", "")).casefold() for word in _NOT_A_GPU)]
-    hardware_encoder = any(row.get("available") and row.get("backend") in ("nvenc", "qsv", "amf")
-                           for row in encoders or [])
-    return bool(real) or hardware_encoder
 
 
 SIGNAL_HOURS = 72        # any refusal in this window -> conservative
@@ -153,7 +144,7 @@ def _hours(source):
         return None
 
 
-def choose_preset(cpu, memory, gpus, encoders, source):
+def choose_preset(cpu, memory, source):
     """Pick a performance preset. Returns ``(preset, reasons)``.
 
     Never above "fast" (the most a preset may ask). In order, the first rule
@@ -164,7 +155,7 @@ def choose_preset(cpu, memory, gpus, encoders, source):
     2. no source history, or one covering less than 72 hours -> conservative
        (not enough data to say the source is calm);
     3. cores or total RAM unknown -> conservative (not enough data);
-    4. fewer than 4 cores, or no GPU and less than 8 GiB -> conservative;
+    4. fewer than 4 cores or less than 8 GiB -> conservative;
     5. at least 8 cores and 16 GiB, a history of at least 7 days with no
        refusal in it, and the hourly budget not spent -> fast;
     6. otherwise -> balanced.
@@ -172,7 +163,6 @@ def choose_preset(cpu, memory, gpus, encoders, source):
     source = source or {}
     cores = _cores(cpu or {})
     ram = _positive((memory or {}).get("total_bytes"))
-    gpu = _has_gpu(gpus, encoders)
     recent = _count(source, "pushbacks_last_72h")
     week = _count(source, "pushbacks_last_7d")
     hours = _hours(source)
@@ -189,8 +179,8 @@ def choose_preset(cpu, memory, gpus, encoders, source):
         return "conservative", ["Dati hardware insufficienti (core o RAM non rilevati)."]
     if cores < WEAK_CORES:
         return "conservative", [f"Hardware limitato: {cores} core (meno di {WEAK_CORES})."]
-    if not gpu and ram < WEAK_RAM_WITHOUT_GPU:
-        return "conservative", [f"Hardware limitato: nessuna GPU e {ram / GIB:.1f} GiB di RAM (meno di 8)."]
+    if ram < WEAK_RAM:
+        return "conservative", [f"Hardware limitato: {ram / GIB:.1f} GiB di RAM (meno di 8)."]
     if cores >= STRONG_CORES and ram >= STRONG_RAM:
         if week:
             return "balanced", [f"Hardware potente, ma la sorgente ha rifiutato richieste negli "
@@ -202,7 +192,7 @@ def choose_preset(cpu, memory, gpus, encoders, source):
             return "balanced", ["Hardware potente, ma il budget orario di richieste alla sorgente è esaurito."]
         return "fast", [f"Hardware potente ({cores} core, {ram / GIB:.1f} GiB) e nessun rifiuto "
                         f"dalla sorgente negli ultimi 7 giorni."]
-    return "balanced", [f"Hardware medio ({cores} core, {ram / GIB:.1f} GiB{', GPU' if gpu else ''}) "
+    return "balanced", [f"Hardware medio ({cores} core, {ram / GIB:.1f} GiB) "
                         f"e nessun rifiuto dalla sorgente nelle ultime {SIGNAL_HOURS} ore."]
 
 
@@ -212,11 +202,11 @@ def recommendations(cpu, memory, encoders, gpus=None, source=None):
     The download limits are those of a preset (app.config.PERFORMANCE_PRESETS)
     chosen by ``choose_preset``; the video encoder is only ever suggested.
     """
-    from app.config import PERFORMANCE_PRESETS
+    from app.config import MAX_PARALLEL_CONVERSIONS, PERFORMANCE_PRESETS
     available = [row for row in encoders if row.get("available")]
     backend = next((name for name in ("nvenc", "qsv", "amf", "cpu")
                     if any(row.get("backend") == name for row in available)), None)
-    preset, reasons = choose_preset(cpu, memory, gpus, encoders, source)
+    preset, reasons = choose_preset(cpu, memory, source)
     values = PERFORMANCE_PRESETS[preset]
     return {
         "video_encoder": backend,
@@ -224,7 +214,7 @@ def recommendations(cpu, memory, encoders, gpus=None, source=None):
                             if any(row.get("backend") == backend and row.get("codec") == codec for row in available)), None),
         "video_quality": "balanced",
         "video_cpu_fallback": any(row.get("backend") == "cpu" for row in available),
-        "max_parallel_conversions": 1,  # Actual transcode semaphore capacity.
+        "max_parallel_conversions": MAX_PARALLEL_CONVERSIONS if backend in ("nvenc", "qsv", "amf") else 1,
         "preset": preset,
         "preset_label": values["label"],
         "reasons": reasons,

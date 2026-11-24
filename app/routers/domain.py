@@ -319,6 +319,7 @@ class SettingsUpdate(BaseModel):
     video_encoder: Literal["auto", "nvenc", "qsv", "amf", "cpu"] | None = None
     video_quality: Literal["high", "balanced", "compact"] | None = None
     video_cpu_fallback: bool | None = None
+    max_parallel_conversions: int | None = Field(default=None, strict=True)
     mcp_enabled: bool | None = None
     confirmations_enabled: bool | None = None
     free_profile_acknowledged: bool | None = None
@@ -530,6 +531,9 @@ def restore_settings_backup(body: SettingsBackup):
 
     # Merge, so a backup from an older version cannot erase unrelated state.
     config.update_data(restored)
+    if "settings" in restored:
+        from app.core.transcode import conversion_slots
+        conversion_slots.refresh()
     if "animeunity_domain" in restored:
         animeunity.forget_csrf()
         home.clear_cache("animeunity")
@@ -580,6 +584,7 @@ def get_app_settings():
 # Range checks, as (field, low, high). A settings key with no sensible bounds
 # is simply absent here.
 _SETTING_RANGES = (
+    ("max_parallel_conversions", 1, config.MAX_PARALLEL_CONVERSIONS),
     ("max_concurrent_downloads", 1, 32),
     ("max_segment_workers", 1, 128),
     ("source_max_connections", 1, config.SOURCE_MAX_CONNECTIONS_CEILING),
@@ -629,6 +634,9 @@ def set_app_settings(body: SettingsUpdate):
         except (TranscodeError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_settings(new_settings)
+    if "max_parallel_conversions" in provided:
+        from app.core.transcode import conversion_slots
+        conversion_slots.refresh()
     _sync_job_limit(new_settings)
     return new_settings
 

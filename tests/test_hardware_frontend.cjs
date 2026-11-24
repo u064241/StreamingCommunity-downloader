@@ -9,6 +9,7 @@ function setup(get, post = async () => ({})) {
   const button = {disabled: false};
   const target = {children: [], replaceChildren() { this.children = []; }, appendChild(node) { this.children.push(node); }};
   const inputs = {'setting-max-concurrent': {value: ''}, 'setting-max-workers': {value: ''},
+    'setting-source-requests': {value: ''}, 'setting-performance-profile': {value: ''},
     'reset-conservative': {hidden: true, disabled: false},
     'source-protection-status': {hidden: true, textContent: ''}};
   const feedback = [];
@@ -42,7 +43,7 @@ function diagnosed() {
     source: {pushbacks_last_24h: 0, requests_last_hour: 3, limit_per_hour: 120, backoff_active: false},
     applied: {preset: 'balanced', label: 'Bilanciato', reasons: ['Hardware medio.'],
       values: {max_concurrent_downloads: 2, max_segment_workers: 8, source_max_connections: 6}},
-    settings: {max_concurrent_downloads: 2, max_segment_workers: 8, source_max_connections: 6}};
+    settings: {max_concurrent_downloads: 2, max_segment_workers: 8, source_max_connections: 6, source_requests_per_hour: 90}};
 }
 
 // The diagnosis applies its preset on the server (POST .../hardware/diagnose)
@@ -60,6 +61,8 @@ test('on-demand diagnosis, busy state, safe text and the applied preset explaine
   assert.deepEqual(calls, ['/api/domain/hardware/diagnose']);
   assert.equal(app.inputs['setting-max-concurrent'].value, 2);
   assert.equal(app.inputs['setting-max-workers'].value, 8);
+  assert.equal(app.inputs['setting-performance-profile'].value, 'balanced');
+  assert.equal(app.inputs['setting-source-requests'].value, 90);
   assert.equal(app.inputs['reset-conservative'].hidden, false);
   assert.equal(app.feedback.length, 1);
   assert.match(app.feedback[0].text, /settings.hardware.presetApplied/);

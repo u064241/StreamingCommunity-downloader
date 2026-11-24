@@ -1,8 +1,8 @@
 import os
+import logging
 import secrets
 import sys
 import threading
-import time
 import webbrowser
 from pathlib import Path
 
@@ -57,6 +57,32 @@ def run_server(server) -> int:
             pass  # A windowed build may have no usable stdout.
     return 0
 
+
+def open_panel_when_ready(server, stopped) -> None:
+    """Open once during startup, never after shutdown or browser closure."""
+    while not server.started:
+        if server.should_exit or server.force_exit or stopped.wait(0.1):
+            return
+    # Uvicorn leaves `started` true during/after shutdown. A delayed launcher
+    # thread must not mistake that flag for a server still accepting work.
+    if stopped.is_set() or server.should_exit or server.force_exit:
+        return
+    browser_host = {"": "127.0.0.1", "0.0.0.0": "127.0.0.1", "::": "::1"}.get(HOST, HOST)
+    if ":" in browser_host and not browser_host.startswith("["):
+        browser_host = f"[{browser_host}]"
+    url = f"http://{browser_host}:{PORT}/"
+    try:
+        if os.name == "nt":
+            # Dispatch to the Windows URL association without waiting for the
+            # browser. webbrowser.open can wait for a command-based controller
+            # to exit, then open the URL again through a fallback controller.
+            os.startfile(url)
+        else:
+            webbrowser.open(url)
+    except OSError:
+        logging.getLogger(__name__).warning("Cannot open portal browser: %s", url, exc_info=True)
+
+
 if __name__ == "__main__":
     from app.windows_registration import register_portable
     register_portable()
@@ -82,16 +108,13 @@ if __name__ == "__main__":
     )
     app.state.uvicorn_server = server
 
-    def open_panel_when_ready():
-        while not server.started and not server.should_exit:
-            time.sleep(0.1)
-        if server.started:
-            browser_host = {"": "127.0.0.1", "0.0.0.0": "127.0.0.1", "::": "::1"}.get(HOST, HOST)
-            if ":" in browser_host and not browser_host.startswith("["):
-                browser_host = f"[{browser_host}]"
-            webbrowser.open(f"http://{browser_host}:{PORT}/")
-
+    stopped = threading.Event()
     if (os.environ.get("SC_PANEL_OPEN_BROWSER", "1") != "0"
             and os.environ.get("SC_PANEL_RESTART") != "1"):
-        threading.Thread(target=open_panel_when_ready, daemon=True).start()
-    sys.exit(run_server(server))
+        threading.Thread(target=lambda: open_panel_when_ready(server, stopped), daemon=True).start()
+    try:
+        exit_code = run_server(server)
+    finally:
+        # Also wake/cancel the opener if startup fails before `started` is set.
+        stopped.set()
+    sys.exit(exit_code)

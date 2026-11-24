@@ -18,6 +18,10 @@ DATA_FILE = Path(os.getenv("DATA_FILE", "data.json"))
 SCHEDULE_FILE = Path(os.getenv("SCHEDULE_FILE", "schedule.json"))
 TMP_DIR = Path(os.getenv("TMP_DIR", "tmp"))
 
+# Last known compatible wheel for Pascal/R580 (FFmpeg 7.1). Updates still try
+# the latest release first; this is a hardware-tested fallback, not a ceiling.
+FFMPEG_COMPATIBLE_FALLBACK = "0.6.0"
+
 # ── Panel database (requests, notifications, settings) ────────────────────────
 # Must live on a persistent volume when running in Docker, and must not be
 # served to clients: it holds notification and hook URLs, which carry secrets.
@@ -76,7 +80,7 @@ PERFORMANCE_PRESETS = {
 }
 # Least aggressive first: what "more aggressive than" is measured against.
 PRESET_ORDER = ("conservative", "balanced", "fast")
-DEFAULT_PERFORMANCE_PRESET = "conservative"
+DEFAULT_PERFORMANCE_PRESET = "balanced"
 
 # Hard ceilings on what the settings may ask of the source. No preset goes
 # above them, the settings API refuses more, and a stored value above them (an
@@ -88,14 +92,14 @@ SOURCE_REQUESTS_PER_HOUR_CEILING = 120
 # What an installation that predates the presets was running with. Applied only
 # when data.json exists but has never stored these keys: an existing install
 # keeps its 3/16 until the user runs the diagnosis. A new one gets the preset
-# above written at its first save (update_data), so it stays conservative.
+# above written at its first save (update_data).
 # The source side is not kept as it was: the connection cap is at the ceiling
-# (it used to be 6) and the hourly budget, absent here, is the conservative
-# preset's (SETTINGS_DEFAULTS).
+# (it used to be 6). Preserve the historical hourly budget on legacy installs.
 LEGACY_PERFORMANCE_DEFAULTS = {
     "max_concurrent_downloads": 3,
     "max_segment_workers": 16,
     "source_max_connections": SOURCE_MAX_CONNECTIONS_CEILING,
+    "source_requests_per_hour": PERFORMANCE_PRESETS["conservative"]["source_requests_per_hour"],
 }
 
 
@@ -137,6 +141,14 @@ def matching_preset(settings: dict) -> str | None:
     return None
 
 
+MAX_PARALLEL_CONVERSIONS = 2
+
+
+def conversion_limit() -> int:
+    value = get_settings().get("max_parallel_conversions", MAX_PARALLEL_CONVERSIONS)
+    return value if type(value) is int and 1 <= value <= MAX_PARALLEL_CONVERSIONS else 1
+
+
 SETTINGS_DEFAULTS = {
     **preset_values(DEFAULT_PERFORMANCE_PRESET),
     "free_profile_acknowledged": False,
@@ -159,6 +171,7 @@ SETTINGS_DEFAULTS = {
     "video_encoder": "auto",
     "video_quality": "balanced",
     "video_cpu_fallback": True,
+    "max_parallel_conversions": MAX_PARALLEL_CONVERSIONS,
     "output_container": "mkv",
     "subtitle_mode": "embed",
     # The MCP endpoint at /mcp. Off by default: it lets an agent act as a user.

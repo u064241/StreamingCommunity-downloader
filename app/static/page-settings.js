@@ -912,15 +912,16 @@ async function testNotificationChannel(id) {
 async function loadPerfSettings() {
   const data = await _loadAppSettings();
   if (!data) return;
-  document.getElementById('setting-max-concurrent').value = data.max_concurrent_downloads ?? 3;
-  document.getElementById('setting-max-workers').value = data.max_segment_workers ?? 16;
+  document.getElementById('setting-max-concurrent').value = data.max_concurrent_downloads ?? 1;
+  document.getElementById('setting-max-workers').value = data.max_segment_workers ?? 6;
   const requests = document.getElementById('setting-source-requests');
-  if (requests) requests.value = data.source_requests_per_hour ?? 60;
+  if (requests) requests.value = data.source_requests_per_hour ?? 90;
   const profile = document.getElementById('setting-performance-profile');
   if (profile) profile.value = Number(data.source_requests_per_hour) === 0 ? 'free' : (Number(data.source_requests_per_hour) <= 60 ? 'conservative' : (Number(data.source_requests_per_hour) <= 90 ? 'balanced' : 'fast'));
   const ack = document.getElementById('free-profile-ack');
   if (ack) ack.checked = data.free_profile_acknowledged === true;
-  selectPerformanceProfile(profile?.value || 'conservative');
+  const disclaimer = document.getElementById('free-profile-disclaimer');
+  if (disclaimer) disclaimer.hidden = profile?.value !== 'free';
 }
 
 function selectPerformanceProfile(profile) {
@@ -1305,7 +1306,7 @@ async function savePerfSettings() {
   const concurrent = parseInt(document.getElementById('setting-max-concurrent').value, 10);
   const workers = parseInt(document.getElementById('setting-max-workers').value, 10);
   const requests = parseInt(document.getElementById('setting-source-requests').value, 10);
-  const profile = document.getElementById('setting-performance-profile')?.value || 'conservative';
+  const profile = document.getElementById('setting-performance-profile')?.value || 'balanced';
   if (!concurrent || !workers) {
     _feedback('perf-settings-feedback', t('settings.invalid.values'), 'danger'); return;
   }
@@ -1791,12 +1792,19 @@ function renderHardwareResults(data) {
 }
 
 // The values of the preset now in force, in the performance form below.
-function _showPerformanceValues(values) {
+function _showPerformanceValues(values, preset) {
   if (!values) return;
   const concurrent = document.getElementById('setting-max-concurrent');
   const workers = document.getElementById('setting-max-workers');
   if (concurrent && values.max_concurrent_downloads != null) concurrent.value = values.max_concurrent_downloads;
   if (workers && values.max_segment_workers != null) workers.value = values.max_segment_workers;
+  const requests = document.getElementById('setting-source-requests');
+  if (requests && values.source_requests_per_hour != null) requests.value = values.source_requests_per_hour;
+  const profile = document.getElementById('setting-performance-profile');
+  if (profile && preset) profile.value = preset;
+  const disclaimer = document.getElementById('free-profile-disclaimer');
+  if (disclaimer && preset) disclaimer.hidden = preset !== 'free';
+  _appSettingsPromise = null;
 }
 
 // The diagnosis applies its preset on the server (download limits only; the
@@ -1811,7 +1819,7 @@ async function probeHardware() {
     _hardwareData = await api.post('/api/domain/hardware/diagnose', {});
     const applied = _hardwareData.applied;
     if (applied) {
-      _showPerformanceValues(_hardwareData.settings || applied.values);
+      _showPerformanceValues(_hardwareData.settings || applied.values, applied.preset);
       _feedback('hardware-preset-feedback', t('settings.hardware.presetApplied', {
         preset: applied.label,
         count: applied.values.max_concurrent_downloads,
@@ -1837,7 +1845,7 @@ async function resetConservativePreset() {
   if (button) button.disabled = true;
   try {
     const result = await api.post('/api/domain/performance-preset', {preset: 'conservative'});
-    _showPerformanceValues(result.settings);
+    _showPerformanceValues(result.settings, result.preset);
     _feedback('hardware-preset-feedback', t('settings.hardware.conservativeRestored', {
       count: result.settings.max_concurrent_downloads,
       workers: result.settings.max_segment_workers,
@@ -1878,6 +1886,7 @@ async function loadVideoSettings() {
     document.getElementById('video-conversion').value = data.video_conversion || 'copy';
     document.getElementById('video-encoder').value = data.video_encoder || 'auto';
     document.getElementById('video-quality').value = data.video_quality || 'balanced';
+    document.getElementById('video-parallel').value = data.max_parallel_conversions ?? 2;
     document.getElementById('video-cpu-fallback').checked = data.video_cpu_fallback !== false;
   }
   await loadVideoEncoders();
@@ -1917,6 +1926,7 @@ async function saveVideoSettings() {
       video_conversion: document.getElementById('video-conversion').value,
       video_encoder: document.getElementById('video-encoder').value,
       video_quality: document.getElementById('video-quality').value,
+      max_parallel_conversions: Number(document.getElementById('video-parallel').value),
       video_cpu_fallback: document.getElementById('video-cpu-fallback').checked,
     });
     _appSettingsPromise = null;

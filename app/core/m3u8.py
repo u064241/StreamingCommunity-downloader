@@ -880,7 +880,7 @@ class M3U8_Segments:
                 # The slot is held around the request alone. A thread waiting
                 # out its backoff below must not occupy one the source is
                 # willing to give to someone else.
-                with self._budget:
+                with self._budget, _SOURCE_SLOTS:
                     response = hosts.safe_get(
                         self._session.get, ts_url, headers=headers, timeout=SEGMENT_TIMEOUT
                     )
@@ -1031,8 +1031,7 @@ class M3U8_Segments:
         # A resumed segment has to have something in it: a zero-byte file left
         # by an earlier attempt is not a segment that is present.
         if not self._have_segment(index):
-            with _SOURCE_SLOTS:
-                ts_content = self.get_req_ts(ts_url, self._info(index).get("byterange"))
+            ts_content = self.get_req_ts(ts_url, self._info(index).get("byterange"))
             # Empty content counts as a failure: it would otherwise write a
             # zero-byte file, which then looks like a segment that is present.
             if not ts_content:
@@ -1196,12 +1195,8 @@ class M3U8_Segments:
                 )
             if self._wait(0.5):
                 raise DownloadCancelledError("Download annullato dall'utente")
-            # The recovery pass is still part of the same download budget.
-            # Keep the source gate around the actual request only (get_req_ts
-            # releases it between attempts/backoff), so recovery cannot burst
-            # past the configured process-wide cap while another job is active.
-            with _SOURCE_SLOTS:
-                ts_content = self.get_req_ts(self.segments[index], self._info(index).get("byterange"))
+            # get_req_ts owns both gates, releasing them before retry sleeps.
+            ts_content = self.get_req_ts(self.segments[index], self._info(index).get("byterange"))
             if self._fatal:
                 raise RuntimeError(f"Download interrotto: {self._fatal}")
             recovered = False

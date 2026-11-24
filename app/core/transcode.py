@@ -9,20 +9,64 @@ import tempfile
 import threading
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
+from app import config
 from app.core.ffmpeg_path import get_ffmpeg_exe, ffmpeg_file_arg, hidden_process_options
 from app.progress import DownloadCancelledError
 
 logger = logging.getLogger(__name__)
 _probe_lock = threading.Lock()
-_conversion_slot = threading.Semaphore(1)
+# Set only for the duration of a JobManager attempt on its worker thread.
+on_conversion_admitted = ContextVar("on_conversion_admitted", default=None)
 BACKENDS = {"nvenc": "NVIDIA NVENC", "qsv": "Intel Quick Sync", "amf": "AMD AMF", "cpu": "CPU"}
 QUALITY = {"high": 20, "balanced": 24, "compact": 28}
 
 
 class TranscodeError(RuntimeError):
     pass
+
+
+def _check_cancel(event):
+    if event is not None and event.is_set():
+        raise DownloadCancelledError("Conversione annullata")
+
+
+class ConversionSlots:
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._active = {"cpu": 0, "gpu": 0}
+        self._gpu_limit = 1
+
+    def refresh(self):
+        with self._condition:
+            self._gpu_limit = config.conversion_limit()
+            self._condition.notify_all()
+
+    @contextmanager
+    def hold(self, backend, cancel_event):
+        lane = "cpu" if backend == "cpu" else "gpu"
+        if lane == "gpu":
+            self.refresh()  # Includes persisted settings after a restart.
+        with self._condition:
+            while True:
+                _check_cancel(cancel_event)
+                limit = self._gpu_limit if lane == "gpu" else 1
+                if self._active[lane] < limit:
+                    self._active[lane] += 1
+                    break
+                self._condition.wait(timeout=0.2)
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._active[lane] -= 1
+                self._condition.notify_all()
+
+
+conversion_slots = ConversionSlots()
 
 
 def encoder_name(codec, backend):
@@ -168,28 +212,36 @@ def convert_video(path, settings, progress_factory=None, cancel_event=None):
     if settings.get("video_conversion", "copy") == "copy":
         return path
     path = Path(path)
-    acquired = False
     staged = path.with_name(f".{path.stem}.converting-{uuid.uuid4().hex}{path.suffix}")
     bar = progress_factory(total=1000, phase="converting") if progress_factory else None
     if bar is not None and hasattr(bar, "emit_status"):
         bar.emit_status("converting")
     try:
-        while not acquired:
-            if cancel_event is not None and cancel_event.is_set():
-                raise DownloadCancelledError("Conversione annullata")
-            acquired = _conversion_slot.acquire(timeout=0.2)
+        _check_cancel(cancel_event)
         backend = select_backend(settings)
+        _check_cancel(cancel_event)
         duration = _duration(path)
-        if bar is not None and hasattr(bar, "emit_conversion"):
-            bar.emit_conversion(0, duration, BACKENDS[backend], 0)
+
+        def encode_with_slot(selected):
+            with conversion_slots.hold(selected, cancel_event):
+                admitted = on_conversion_admitted.get()
+                if admitted is not None:
+                    admitted()  # Idempotent callback owned by this download attempt.
+                if bar is not None and hasattr(bar, "emit_conversion"):
+                    bar.emit_conversion(0, duration, BACKENDS[selected], 0)
+                _check_cancel(cancel_event)
+                _encode(path, staged, settings, selected, duration, bar, cancel_event)
+
         try:
-            _encode(path, staged, settings, backend, duration, bar, cancel_event)
+            encode_with_slot(backend)
         except TranscodeError:
             if backend == "cpu" or not settings.get("video_cpu_fallback", True):
                 raise
             logger.warning("GPU conversion failed; retrying conversion on CPU (original preserved)")
             backend = "cpu"
-            _encode(path, staged, settings, backend, duration, bar, cancel_event)
+            if bar is not None and hasattr(bar, "emit_status"):
+                bar.emit_status("converting")  # Clear GPU progress while waiting for the CPU.
+            encode_with_slot(backend)
         if cancel_event is not None and cancel_event.is_set():
             raise DownloadCancelledError("Conversione annullata")
         if not staged.exists() or staged.stat().st_size == 0:
@@ -206,6 +258,3 @@ def convert_video(path, settings, progress_factory=None, cancel_event=None):
             staged.unlink(missing_ok=True)
         except OSError as exc:
             logger.warning("Cannot remove conversion staging file %s: %s", staged, exc)
-        finally:
-            if acquired:
-                _conversion_slot.release()

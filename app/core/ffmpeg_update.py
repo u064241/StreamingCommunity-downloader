@@ -8,6 +8,8 @@ import shutil
 import tempfile
 import zipfile
 import subprocess
+import platform
+import threading
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -15,6 +17,11 @@ from app import config
 
 PACKAGE = "imageio-ffmpeg"
 PYPI_URL = "https://pypi.org/pypi/imageio-ffmpeg/json"
+_update_lock = threading.Lock()
+
+
+class HardwareCompatibilityError(RuntimeError):
+    """A valid candidate that would remove working encoder support."""
 
 
 def _root() -> Path:
@@ -23,21 +30,22 @@ def _root() -> Path:
     return root
 
 
-def _wheel_info() -> dict:
-    req = Request(PYPI_URL, headers={"User-Agent": "StreamingCommunityDownloader/ffmpeg-update"})
+def _wheel_info(version: str | None = None) -> dict:
+    url = PYPI_URL if version is None else f"https://pypi.org/pypi/{PACKAGE}/{version}/json"
+    req = Request(url, headers={"User-Agent": "StreamingCommunityDownloader/ffmpeg-update"})
     with urlopen(req, timeout=20) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def _select_wheel(info: dict) -> dict:
-    tags = ("win_amd64", "win32", "win_arm64")
-    candidates = [f for f in info["urls"] if f["packagetype"] == "bdist_wheel" and any(t in f["filename"] for t in tags)]
+    machine = platform.machine().lower()
+    arch = {"amd64": "win_amd64", "x86_64": "win_amd64", "arm64": "win_arm64",
+            "aarch64": "win_arm64", "x86": "win32", "i386": "win32"}.get(machine)
+    candidates = [f for f in info["urls"] if f["packagetype"] == "bdist_wheel"
+                  and not f.get("yanked") and arch and f["filename"].endswith(f"-{arch}.whl")]
     if not candidates:
         raise RuntimeError("PyPI non offre un wheel FFmpeg compatibile con Windows")
-    # Prefer the native architecture when possible; imageio wheels contain the
-    # executable and expose the SHA-256 digest in the PyPI JSON API.
-    arch = "win_arm64" if "ARM64" in os.environ.get("PROCESSOR_ARCHITECTURE", "") else "win_amd64"
-    return next((f for f in candidates if arch in f["filename"]), candidates[0])
+    return candidates[0]
 
 
 def status() -> dict:
@@ -56,28 +64,59 @@ def _test_hardware_compatibility(executable: Path) -> dict:
     from app.core import transcode
     settings = config.get_settings()
     current_rows = transcode.capabilities(refresh=True)["encoders"]
+    # A managed binary may already be broken. Also protect the working bundled
+    # baseline, so a CPU fallback cannot hide loss of NVENC on Pascal/R580.
+    import imageio_ffmpeg
+    baseline = transcode._detect(imageio_ffmpeg.get_ffmpeg_exe())
     rows = transcode._detect(str(executable))
-    codec = settings.get("video_conversion", "h264")
+    available = {(r["codec"], r["backend"]) for r in rows if r["available"]}
+    required = {(r["codec"], r["backend"]) for r in current_rows + baseline if r["available"]}
+    required.update({("h264", "cpu"), ("hevc", "cpu")})
+    missing = required - available
+    if missing:
+        names = ", ".join(f"{c}/{b}" for c, b in sorted(missing))
+        raise HardwareCompatibilityError(f"Il nuovo FFmpeg perde encoder funzionanti: {names}")
+    codec = settings.get("video_conversion", "copy")
     requested = settings.get("video_encoder", "auto")
     gpu_rows = [r for r in rows if r["codec"] == codec and r["backend"] in ("nvenc", "qsv", "amf") and r["available"]]
     active_backend = requested
     if requested == "auto":
         active_backend = next((b for b in ("nvenc", "qsv", "amf")
                                if any(r["backend"] == b and r["codec"] == codec and r["available"] for r in current_rows)), "cpu")
-    if active_backend != "cpu":
+    if codec == "copy":
+        ok = True  # Both codecs and all working backends were checked above.
+    elif active_backend != "cpu":
         ok = any(r["backend"] == active_backend for r in gpu_rows)
     else:
         # Auto may legitimately fall back to CPU; require the selected GPU
         # only when the current hardware profile explicitly has one available.
         ok = bool(gpu_rows) or any(r["codec"] == codec and r["backend"] == "cpu" and r["available"] for r in rows)
     if not ok:
-        raise RuntimeError(f"Il nuovo FFmpeg non supera il test encoder {codec}/{requested}")
+        raise HardwareCompatibilityError(f"Il nuovo FFmpeg non supera il test encoder {codec}/{requested}")
     return {"codec": codec, "requested": requested, "active_backend": active_backend,
             "encoders": [r["encoder"] for r in gpu_rows]}
 
 
 def update() -> dict:
-    info = _wheel_info()
+    if not _update_lock.acquire(blocking=False):
+        raise RuntimeError("Aggiornamento FFmpeg già in corso")
+    try:
+        info = _wheel_info()
+        try:
+            return _install(info)
+        except HardwareCompatibilityError as exc:
+            # Only hardware rejection triggers fallback. Integrity/network
+            # failures stay visible; never silently accept an unverified wheel.
+            if info["info"]["version"] == config.FFMPEG_COMPATIBLE_FALLBACK:
+                raise
+            result = _install(_wheel_info(config.FFMPEG_COMPATIBLE_FALLBACK))
+            return {**result, "fallback": True, "latest_version": info["info"]["version"],
+                    "rejected_reason": str(exc)}
+    finally:
+        _update_lock.release()
+
+
+def _install(info: dict) -> dict:
     wheel = _select_wheel(info)
     target = _root() / "ffmpeg.exe"
     with tempfile.TemporaryDirectory(prefix="sc-ffmpeg-") as tmp:
@@ -114,28 +153,40 @@ def update() -> dict:
             staged.unlink()
         shutil.copy2(extracted, staged)
         previous = _root() / "ffmpeg.previous.exe"
-        replaced = False
+        marker_path = _root() / "version.json"
+        old_marker = marker_path.read_text(encoding="utf-8") if marker_path.exists() else None
+        marker = {"version": info["info"]["version"], "wheel": wheel["filename"], "sha256": wheel["digests"]["sha256"]}
+        moved_previous = False
+        installed = False
         try:
             if target.exists():
                 if previous.exists():
                     previous.unlink()
                 target.replace(previous)
+                moved_previous = True
             staged.replace(target)
-            replaced = True
+            installed = True
+            config.atomic_write_text(marker_path, json.dumps(marker, indent=2))
         except Exception:
-            if target.exists() and not previous.exists():
+            if installed:
                 target.unlink()
-            if previous.exists() and not target.exists():
+            if moved_previous:
                 previous.replace(target)
+            if installed:
+                if old_marker is None:
+                    marker_path.unlink(missing_ok=True)
+                else:
+                    config.atomic_write_text(marker_path, old_marker)
             raise
         finally:
             if staged.exists():
                 staged.unlink()
-        if not replaced:
-            raise RuntimeError("Sostituzione FFmpeg non completata")
         # The previous binary is only a rollback aid for this transaction.
         if previous.exists():
             previous.unlink()
-    marker = {"version": info["info"]["version"], "wheel": wheel["filename"], "sha256": wheel["digests"]["sha256"]}
-    (_root() / "version.json").write_text(json.dumps(marker, indent=2), encoding="utf-8")
+    from app.core.ffmpeg_path import get_ffmpeg_exe, get_ffprobe_exe
+    from app.core import transcode
+    get_ffmpeg_exe.cache_clear()
+    get_ffprobe_exe.cache_clear()
+    transcode._detect.cache_clear()
     return {"ok": True, **marker, "path": str(target), "compatibility": compatibility}

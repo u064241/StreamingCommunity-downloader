@@ -1,7 +1,7 @@
-"""Performance presets: conservative by default, existing installs untouched.
+"""Performance presets: balanced by default, existing installs untouched.
 
 The presets live in app.config. A new installation (no data.json) starts on
-"Conservativo" and its first save pins it there; an installation that predates
+"Bilanciato" and its first save pins it there; an installation that predates
 the presets keeps the 3/16 it was running with until the user runs the
 diagnosis. The global source cap (m3u8) reads the same setting, and the
 environment variable still wins when it is set.
@@ -70,22 +70,29 @@ def test_the_hourly_budget_is_read_from_the_settings(monkeypatch):
     assert source_budget.status()["limit_from_env"] is True
 
 
-def test_a_new_installation_is_conservative_by_default(_configured_domain):
+def test_a_new_installation_is_balanced_by_default(_configured_domain):
     _configured_domain.unlink()
-    assert config.DEFAULT_PERFORMANCE_PRESET == "conservative"
-    assert _perf(config.get_settings()) == config.preset_values("conservative")
-    assert config.matching_preset(config.get_settings()) == "conservative"
+    assert config.DEFAULT_PERFORMANCE_PRESET == "balanced"
+    assert _perf(config.get_settings()) == config.preset_values("balanced")
+    assert config.matching_preset(config.get_settings()) == "balanced"
 
 
-def test_the_first_save_of_a_new_installation_pins_the_conservative_preset(_configured_domain):
+def test_the_first_save_of_a_new_installation_pins_the_balanced_preset(_configured_domain):
     _configured_domain.unlink()
     config.update_data({"domain": "new.test"})   # e.g. the first-run domain setup
 
     stored = json.loads(_configured_domain.read_text(encoding="utf-8"))
     assert stored["domain"] == "new.test"
-    assert stored["settings"] == config.preset_values("conservative")
-    # Now that data.json exists it is still read as conservative, not legacy.
-    assert _perf(config.get_settings()) == config.preset_values("conservative")
+    assert stored["settings"] == config.preset_values("balanced")
+    assert _perf(config.get_settings()) == config.preset_values("balanced")
+
+
+@pytest.mark.parametrize("name", config.PERFORMANCE_PRESETS)
+def test_explicit_preset_survives_restart_and_unrelated_save(_configured_domain, name):
+    values = config.preset_values(name)
+    _configured_domain.write_text(json.dumps({"settings": values}), encoding="utf-8")
+    config.update_data({"domain": "new.test"})
+    assert _perf(config.get_settings()) == values
 
 
 def test_an_existing_installation_keeps_its_values_and_is_not_rewritten(_configured_domain):
@@ -195,7 +202,7 @@ def test_the_gate_follows_the_setting_at_the_next_download(monkeypatch):
 def test_source_cap_default_follows_the_preset(monkeypatch, _configured_domain):
     monkeypatch.delenv("SC_SOURCE_MAX_CONNECTIONS", raising=False)
     _configured_domain.unlink()
-    assert m3u8._source_max_connections() == 2               # new install: conservative
+    assert m3u8._source_max_connections() == 3               # new install: balanced
     _configured_domain.write_text(json.dumps({"domain": "old.test"}), encoding="utf-8")
     assert m3u8._source_max_connections() == 4               # existing install: the ceiling
 
