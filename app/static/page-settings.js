@@ -1319,12 +1319,22 @@ async function savePerfSettings() {
   btn.disabled = true;
   _feedback('perf-settings-feedback', t('settings.saving'));
   try {
-    await api.put('/api/domain/settings', {
-      max_concurrent_downloads: concurrent,
-      max_segment_workers: workers,
-      source_requests_per_hour: requests,
-      free_profile_acknowledged: document.getElementById('free-profile-ack')?.checked === true,
-    });
+    const acknowledged = document.getElementById('free-profile-ack')?.checked === true;
+    if (profile === 'conservative' || profile === 'balanced' || profile === 'fast' || profile === 'free') {
+      // The profile endpoint is authoritative: it writes all four limits and
+      // resizes the live source gate immediately. Previously this form only
+      // saved workers and hourly requests, leaving the selected profile and
+      // its connection cap unchanged.
+      await api.post('/api/domain/performance-preset', {preset: profile});
+      await loadPerfSettings();
+    } else {
+      await api.put('/api/domain/settings', {
+        max_concurrent_downloads: concurrent,
+        max_segment_workers: workers,
+        source_requests_per_hour: requests,
+        free_profile_acknowledged: acknowledged,
+      });
+    }
     _feedback('perf-settings-feedback', t('settings.saved'), 'success');
     showToast(t('settings.performance.settings.saved'), 'success');
   } catch (e) { _feedback('perf-settings-feedback', _settingsError(e, t('settings.failed.to.save')), 'danger'); }
