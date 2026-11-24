@@ -72,10 +72,10 @@ PERFORMANCE_PRESETS = {
                  "max_segment_workers": 6, "source_max_connections": 3,
                  "source_requests_per_hour": 90},
     "fast": {"label": "Veloce", "max_concurrent_downloads": 2,
-             "max_segment_workers": 8, "source_max_connections": 4,
+             "max_segment_workers": 8, "source_max_connections": 8,
              "source_requests_per_hour": 120},
     "free": {"label": "Libero", "max_concurrent_downloads": 4,
-             "max_segment_workers": 16, "source_max_connections": 4,
+             "max_segment_workers": 16, "source_max_connections": 8,
              "source_requests_per_hour": 0},
 }
 # Least aggressive first: what "more aggressive than" is measured against.
@@ -86,7 +86,7 @@ DEFAULT_PERFORMANCE_PRESET = "balanced"
 # above them, the settings API refuses more, and a stored value above them (an
 # old data.json, a hand edit) is clamped when read. Only the environment
 # overrides above can go past them, on purpose.
-SOURCE_MAX_CONNECTIONS_CEILING = 4
+SOURCE_MAX_CONNECTIONS_CEILING = 8
 SOURCE_REQUESTS_PER_HOUR_CEILING = 120
 
 # What an installation that predates the presets was running with. Applied only

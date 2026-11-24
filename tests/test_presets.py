@@ -28,17 +28,17 @@ def test_the_presets_are_the_documented_values():
         "max_concurrent_downloads": 1, "max_segment_workers": 6, "source_max_connections": 3,
         "source_requests_per_hour": 90}
     assert config.preset_values("fast") == {
-        "max_concurrent_downloads": 2, "max_segment_workers": 8, "source_max_connections": 4,
+        "max_concurrent_downloads": 2, "max_segment_workers": 8, "source_max_connections": 8,
         "source_requests_per_hour": 120}
     assert config.PRESET_ORDER == ("conservative", "balanced", "fast")
 
 
 def test_no_preset_goes_above_the_source_ceilings():
-    assert config.SOURCE_MAX_CONNECTIONS_CEILING == 4
+    assert config.SOURCE_MAX_CONNECTIONS_CEILING == 8
     assert config.SOURCE_REQUESTS_PER_HOUR_CEILING == 120
     for name in config.PRESET_ORDER:
         values = config.preset_values(name)
-        assert values["source_max_connections"] <= 4
+        assert values["source_max_connections"] <= 8
         assert values["source_requests_per_hour"] <= 120
     # Each step is at least as gentle as the next one.
     for gentler, harder in zip(config.PRESET_ORDER, config.PRESET_ORDER[1:]):
@@ -52,7 +52,7 @@ def test_a_stored_cap_above_the_ceiling_is_clamped_when_read(monkeypatch):
     from app.core import source_budget
     config.save_settings({**config.get_settings(), "source_max_connections": 32,
                           "source_requests_per_hour": 5000})
-    assert m3u8._source_max_connections() == 4
+    assert m3u8._source_max_connections() == 8
     assert source_budget.limit() == 120
 
 
@@ -103,7 +103,7 @@ def test_an_existing_installation_keeps_its_values_and_is_not_rewritten(_configu
     perf = _perf(config.get_settings())
     assert {k: perf[k] for k in config.LEGACY_PERFORMANCE_DEFAULTS} == config.LEGACY_PERFORMANCE_DEFAULTS
     # The source side is not "as before": cap at the ceiling, conservative budget.
-    assert perf["source_max_connections"] == 4
+    assert perf["source_max_connections"] == 8
     assert perf["source_requests_per_hour"] == 60
     assert config.matching_preset(config.get_settings()) is None
     assert config.get_settings()["max_concurrent_downloads"] == 3
@@ -204,7 +204,7 @@ def test_source_cap_default_follows_the_preset(monkeypatch, _configured_domain):
     _configured_domain.unlink()
     assert m3u8._source_max_connections() == 3               # new install: balanced
     _configured_domain.write_text(json.dumps({"domain": "old.test"}), encoding="utf-8")
-    assert m3u8._source_max_connections() == 4               # existing install: the ceiling
+    assert m3u8._source_max_connections() == 8               # existing install: the ceiling
 
 
 # ── API ───────────────────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ def test_settings_api_accepts_the_source_cap_and_a_backup_restores_it(client, ad
     assert config.get_settings()["source_max_connections"] == 3
     assert client.put("/api/domain/settings", json={"source_max_connections": 0}).status_code == 400
     # Above the ceilings: refused by the API.
-    assert client.put("/api/domain/settings", json={"source_max_connections": 5}).status_code == 400
+    assert client.put("/api/domain/settings", json={"source_max_connections": 9}).status_code == 400
     assert client.put("/api/domain/settings", json={"source_requests_per_hour": 121}).status_code == 400
     assert client.put("/api/domain/settings", json={"source_requests_per_hour": 90}).status_code == 200
     assert config.get_settings()["source_requests_per_hour"] == 90
@@ -226,11 +226,11 @@ def test_settings_api_accepts_the_source_cap_and_a_backup_restores_it(client, ad
     response = client.post("/api/domain/settings/restore", json=backup)
     assert response.status_code == 200, response.text
 
-    # A backup from before the ceilings (6 connections) is lowered, not refused.
-    backup["data"]["settings"]["source_max_connections"] = 6
+    # A backup from before the ceilings (10 connections) is lowered, not refused.
+    backup["data"]["settings"]["source_max_connections"] = 10
     response = client.post("/api/domain/settings/restore", json=backup)
     assert response.status_code == 200, response.text
-    assert config.get_settings()["source_max_connections"] == 4
+    assert config.get_settings()["source_max_connections"] == 8
 
 
 def test_source_protection_endpoint_reports_the_current_preset(client, admin_credentials):

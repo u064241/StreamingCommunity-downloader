@@ -80,7 +80,7 @@ def test_no_automatic_choice_goes_past_the_fast_preset():
             assert result["preset"] in config.PRESET_ORDER
             for key in config.PERFORMANCE_KEYS:
                 assert result[key] <= fast[key]
-            assert result["source_max_connections"] <= 4
+            assert result["source_max_connections"] <= 8
             assert result["source_requests_per_hour"] <= 120
 
 
@@ -227,7 +227,7 @@ def test_strong_hardware_after_a_clean_week_is_fast(monkeypatch):
     assert result["source"]["pushbacks_last_7d"] == 0
     stored = config.get_settings()
     assert {k: stored[k] for k in config.PERFORMANCE_KEYS} == config.preset_values("fast")
-    assert result["applied"]["values"]["source_max_connections"] == 4
+    assert result["applied"]["values"]["source_max_connections"] == 8
     assert result["applied"]["values"]["source_requests_per_hour"] == 120
 
 
@@ -334,7 +334,7 @@ def test_diagnose_endpoint_applies_the_preset_and_resizes_the_queue(client, admi
     assert response.json()["applied"]["source_cap_from_env"] is False
     assert job_manager._slots._limit == 2
     from app.core import m3u8
-    assert m3u8._SOURCE_SLOTS.maximum == 4
+    assert m3u8._SOURCE_SLOTS.maximum == 8
     response = client.post("/api/domain/performance-preset", json={"preset": "conservative"})
     assert response.status_code == 200
     assert response.json()["settings"] == config.preset_values("conservative")

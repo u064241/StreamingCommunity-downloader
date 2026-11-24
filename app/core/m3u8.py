@@ -238,7 +238,6 @@ PENALTY_INTERVAL = 2.0
 # pauses the page requests after this many in a row with no segment in between.
 # A single dropped connection on a CDN that answers the next request fine is not
 # the source refusing us; a run of them is the signal the page pause is for.
-SOFT_FAILURES_BEFORE_PAUSE = 3
 
 # Retry-After is the source saying exactly how long to wait. Honoured, but not
 # unboundedly: a very long value is a fetch that will outlive the segment's
@@ -294,8 +293,6 @@ class AdaptiveLimiter:
         self._in_flight = 0
         self._served = 0
         self._last_penalty = None
-        # Failures in a row that were connection errors or timeouts, not refusals.
-        self._soft_run = 0
 
     @property
     def allowance(self) -> int:
@@ -344,9 +341,9 @@ class AdaptiveLimiter:
     def penalise(self, refusal: bool = True) -> None:
         """The source pushed back. Ask it for half as much.
 
-        *refusal* is the source answering no (429, 5xx). A soft failure (a
-        refused or timed-out connection) halves the allowance too, but opens the
-        page pause only after SOFT_FAILURES_BEFORE_PAUSE of them in a row.
+        *refusal* is the source answering no (429, 503). Any other pushback
+        (a timeout, a dropped connection, a 500/502/504) halves the allowance
+        and leaves the pages alone: only a refusal pauses the page requests.
         """
         with self._cond:
             now = self._now()
@@ -354,14 +351,7 @@ class AdaptiveLimiter:
                 return
             self._last_penalty = now
             self._served = 0
-            if refusal:
-                self._soft_run = 0
-                pause = True
-            else:
-                self._soft_run += 1
-                pause = self._soft_run >= SOFT_FAILURES_BEFORE_PAUSE
-                if pause:
-                    self._soft_run = 0
+            pause = refusal
             floor = min(MIN_SEGMENT_ALLOWANCE, self.maximum)
             before = self._allowance
             self._allowance = max(floor, before // 2)
@@ -385,7 +375,6 @@ class AdaptiveLimiter:
         width before it widens.
         """
         with self._cond:
-            self._soft_run = 0
             if self._allowance >= self.maximum:
                 return
             self._served += 1
@@ -912,7 +901,7 @@ class M3U8_Segments:
                 if response.status_code not in RETRIABLE_SEGMENT_STATUS | {200, 206}:
                     # A verdict, not congestion: nothing to back off from.
                     return None
-                self._budget.penalise()
+                self._budget.penalise(refusal=response.status_code in (429, 503))
                 asked_for = _retry_after(response)
             if attempt < self.max_retry - 1:
                 # Waiting is pointless once the source has been written off, but

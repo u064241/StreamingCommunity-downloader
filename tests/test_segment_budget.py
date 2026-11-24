@@ -532,29 +532,16 @@ def test_a_lone_dropped_connection_does_not_pause_the_pages(monkeypatch):
     assert pauses == []
 
 
-def test_consecutive_dropped_connections_pause_the_pages(monkeypatch):
+def test_dropped_connections_never_pause_the_pages(monkeypatch):
+    """Timeouts and dropped connections halve the allowance; the pages keep flowing."""
     pauses = []
     monkeypatch.setattr(m3u8.source_budget, "report_pushback", lambda where: pauses.append(where))
     clock = _Clock()
     limiter = m3u8.AdaptiveLimiter(16, now=clock)
 
-    for _ in range(m3u8.SOFT_FAILURES_BEFORE_PAUSE):
+    for _ in range(5):
         limiter.penalise(refusal=False)
         clock.advance(m3u8.PENALTY_INTERVAL)
-    assert pauses == ["download pipeline"]
-
-
-def test_a_segment_in_between_resets_the_soft_run(monkeypatch):
-    pauses = []
-    monkeypatch.setattr(m3u8.source_budget, "report_pushback", lambda where: pauses.append(where))
-    clock = _Clock()
-    limiter = m3u8.AdaptiveLimiter(16, now=clock)
-
-    for _ in range(m3u8.SOFT_FAILURES_BEFORE_PAUSE - 1):
-        limiter.penalise(refusal=False)
-        clock.advance(m3u8.PENALTY_INTERVAL)
-    limiter.reward()
-    limiter.penalise(refusal=False)
     assert pauses == []
 
 
