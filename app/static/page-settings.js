@@ -119,10 +119,21 @@ async function loadSoftEtherStatus(openManager = false) {
     open.disabled = !available || state === 'visible';
     open.textContent = t(state === 'tray' ? 'softether.showManager' : 'softether.openManager');
     if (close) close.textContent = t('softether.closeManager');
+    // One button, two states: with the window open it hides the manager to the
+    // tray; with the manager only in the tray it brings the window back.
     const hide = document.getElementById('softether-hide');
     if (hide) {
-      hide.disabled = !available || state !== 'visible';
-      hide.textContent = t('softether.hideManager');
+      if (state === 'tray') {
+        hide.dataset.action = 'cfg:softetherOpen';
+        hide.textContent = t('softether.showManager');
+        hide.title = t('softether.showManager');
+        hide.disabled = !available;
+      } else {
+        hide.dataset.action = 'cfg:softetherHide';
+        hide.textContent = t('softether.hideManager');
+        hide.title = t('softether.hideManagerTitle');
+        hide.disabled = !available || state !== 'visible';
+      }
     }
     if (close && !available) close.disabled = true;
     refresh.disabled = false;

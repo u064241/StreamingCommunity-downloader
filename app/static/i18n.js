@@ -1574,6 +1574,7 @@
     'softether.showManager': ['Mostra gestore VPN', 'Show VPN manager'],
     'softether.closeManager': ['Chiudi gestore VPN', 'Close VPN manager'],
     'softether.hideManager': ['Nascondi nella tray', 'Hide to tray'],
+    'softether.hideManagerTitle': ['Riporta il gestore nella tray. Il programma resta in esecuzione.', 'Send the manager back to the tray. The program keeps running.'],
     'softether.hidden': ['Gestore VPN riportato nella tray.', 'VPN manager sent back to the tray.'],
     'softether.notVisible': ['Il gestore VPN non è visibile: è già nella tray.', 'The VPN manager is not visible: it is already in the tray.'],
     'softether.closeHint': ['Chiude solo la finestra del gestore SoftEther. Una connessione VPN attiva resta attiva.', 'Closes only the SoftEther manager window. An active VPN connection stays up.'],
