@@ -78,8 +78,11 @@ async function loadSoftEtherStatus(openManager = false) {
   const refresh = document.getElementById('softether-refresh');
   const install = document.getElementById('softether-install');
   const updateCheck = document.getElementById('softether-update-check');
+  const vpnGateShow = document.getElementById('softether-vpngate-show');
   open.disabled = true;
   refresh.disabled = true;
+  // The server list is only useful with SoftEther installed: off until the status says so.
+  if (vpnGateShow) vpnGateShow.disabled = true;
   _feedback('softether-status', t('softether.checking'));
   let available = false;
   let state = 'stopped';
@@ -90,6 +93,10 @@ async function loadSoftEtherStatus(openManager = false) {
     if (close) close.disabled = state !== 'visible';
     if (install) install.hidden = available || !status.vpngate_available || (!_softetherBlockDetected && !_softetherTestMode);
     if (updateCheck) updateCheck.disabled = !available;
+    if (vpnGateShow) {
+      vpnGateShow.disabled = !available;
+      vpnGateShow.title = available ? '' : t('softether.install');
+    }
     const bundledHint = document.getElementById('softether-bundled-hint');
     if (bundledHint) bundledHint.hidden = available || !status.vpngate_available || (!_softetherBlockDetected && !_softetherTestMode);
     const key = !status.supported ? 'softether.unsupported'
@@ -404,6 +411,9 @@ async function loadVpnGateServers(options) {
   const target = document.getElementById('softether-vpngate-list');
   const hide = document.getElementById('softether-vpngate-hide');
   if (!target) return;
+  // Without SoftEther the list cannot be used, and its IP check would still reach out.
+  const showButton = document.getElementById('softether-vpngate-show');
+  if (showButton && showButton.disabled) return;
   if (!keepFeedback) _feedback('softether-vpngate-feedback');
   _settingsText(target, t('softether.vpngateChecking'));
   try {
