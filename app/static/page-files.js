@@ -74,7 +74,7 @@ function setupFileManager() {
   document.addEventListener('dragenter', (e) => {
     const zone = dropZoneAt(e.target);
     if (!zone || !_draggedPaths.length) return;
-    const dest = zone.dataset.dropPath;
+    const dest = dropDestFor(zone);
     // Prevent dropping into any of the dragged items
     if (_draggedPaths.some(p => dest===p || dest.startsWith(p+'/'))) return;
     e.preventDefault();
@@ -89,7 +89,7 @@ function setupFileManager() {
     const zone = dropZoneAt(e.target);
     if (!zone) return;
     e.preventDefault(); zone.classList.remove('drag-over');
-    const destDirPath = zone.dataset.dropPath;
+    const destDirPath = dropDestFor(zone);
     if (!_draggedPaths.length||destDirPath===undefined) return;
     if (_draggedPaths.some(p => destDirPath===p||destDirPath.startsWith(p+'/'))) return;
     if (_draggedPaths.length > 1) {
@@ -329,6 +329,17 @@ function dropZoneAt(target) {
   const pane = target.closest('#files-left-pane');
   if (pane && !target.closest('[data-drag-path]')) return pane.querySelector('.fm-root-zone');
   return null;
+}
+
+// Where a drop on this zone lands. Dropping items on the folder that already
+// holds all of them takes them one level out (into that folder's parent), so
+// files can leave a sub-folder without a trip to the root row.
+function dropDestFor(zone) {
+  const dest = zone.dataset.dropPath;
+  if (dest === undefined || !_draggedPaths.length) return dest;
+  const parentOf = (p) => (p.includes('/') ? p.substring(0, p.lastIndexOf('/')) : '');
+  if (dest && _draggedPaths.every(p => parentOf(p) === dest)) return parentOf(dest);
+  return dest;
 }
 
 function renderFileTree(tree) {
