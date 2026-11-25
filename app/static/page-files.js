@@ -58,11 +58,21 @@ function setupFileManager() {
     _draggedPaths=[];
   });
   document.addEventListener('dragover', (e) => {
-    if (!e.target.closest('.fm-drop-zone')) return;
+    // Near the top or bottom edge of the tree, scroll it: the root row is
+    // reachable without a precise aim at the top of a long list.
+    const pane = document.getElementById('files-left-pane');
+    if (pane && _draggedPaths.length) {
+      const box = pane.getBoundingClientRect();
+      if (e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom) {
+        if (e.clientY - box.top < 48) pane.scrollTop -= 14;
+        else if (box.bottom - e.clientY < 48) pane.scrollTop += 14;
+      }
+    }
+    if (!dropZoneAt(e.target)) return;
     e.preventDefault(); e.dataTransfer.dropEffect='move';
   });
   document.addEventListener('dragenter', (e) => {
-    const zone = e.target.closest('.fm-drop-zone');
+    const zone = dropZoneAt(e.target);
     if (!zone || !_draggedPaths.length) return;
     const dest = zone.dataset.dropPath;
     // Prevent dropping into any of the dragged items
@@ -72,11 +82,11 @@ function setupFileManager() {
     zone.classList.add('drag-over');
   });
   document.addEventListener('dragleave', (e) => {
-    const zone = e.target.closest('.fm-drop-zone');
+    const zone = dropZoneAt(e.target);
     if (zone && !zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
   });
   document.addEventListener('drop', (e) => {
-    const zone = e.target.closest('.fm-drop-zone');
+    const zone = dropZoneAt(e.target);
     if (!zone) return;
     e.preventDefault(); zone.classList.remove('drag-over');
     const destDirPath = zone.dataset.dropPath;
@@ -308,6 +318,17 @@ async function loadFiles() {
   } catch(e) {
     pane.innerHTML=`<div class="text-danger text-center py-4">${escapeHtml(errText(e))}</div>`;
   }
+}
+
+// The drop target under the pointer. A gap in the tree (padding, the space
+// under the last row) means the library root, as does the root row itself; a
+// file row is not a destination and stays without a drop target.
+function dropZoneAt(target) {
+  const zone = target.closest('.fm-drop-zone');
+  if (zone) return zone;
+  const pane = target.closest('#files-left-pane');
+  if (pane && !target.closest('[data-drag-path]')) return pane.querySelector('.fm-root-zone');
+  return null;
 }
 
 function renderFileTree(tree) {

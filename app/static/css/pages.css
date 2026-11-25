@@ -631,6 +631,10 @@
     }
 
     .fm-root-zone {
+      /* Stays visible while the tree scrolls, so it is always a drop target. */
+      position: sticky;
+      top: 0;
+      z-index: 2;
       border-bottom: 1px solid var(--border);
       background: var(--bg-raised);
       border-radius: 0;
