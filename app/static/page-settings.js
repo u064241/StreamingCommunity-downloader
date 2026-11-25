@@ -439,9 +439,12 @@ async function loadVpnGateServers(options) {
         + localProfiles.map(name => renderVpnGateProfileRow(name, profileDetails[name])).join('')
       : '';
     const visibleServers = servers.slice(0, 15);
-    const serversHtml = visibleServers.length
+    // A server that already has a registered profile is listed above, under
+    // "Profili registrati", with its actions: not a second time here.
+    const publicRows = visibleServers.map((s, i) => ({s, i})).filter(({s}) => !s.registered_profile);
+    const serversHtml = publicRows.length
       ? `<div class="softether-vpngate-section">${escapeHtml(t('softether.serversTitle'))}</div>`
-        + visibleServers.map((s, i) => renderVpnGateServerRow(s, i, profileDetails, showServerActions)).join('')
+        + publicRows.map(({s, i}) => renderVpnGateServerRow(s, i, profileDetails, showServerActions)).join('')
       : '';
     target.innerHTML = ipBanner + `<div class="softether-vpngate-list">${profilesHtml}${serversHtml}</div><small>${escapeHtml(t('softether.vpngateNotice'))}</small>`;
     if (hide) hide.hidden = false;

@@ -94,7 +94,7 @@
         <div id="softether-block-notice" class="alert alert-warning py-2 mb-2" role="status" aria-live="polite" hidden>
           <span data-i18n="softether.blockNotice">La sorgente ha bloccato le richieste da questo IP. Puoi cambiare IP usando la VPN: apri il gestore VPN e scegli un profilo.</span>
           <div class="settings-actions mt-2">
-            <button type="button" class="btn btn-primary btn-sm" data-action="cfg:softetherOpen"
+            <button type="button" class="btn btn-primary btn-sm" data-action="cfg:softetherOpen" hidden
                     data-i18n="softether.openManager">Apri gestore VPN</button>
             <button type="button" class="btn btn-outline-dark btn-sm" id="softether-block-ip-check"
                     data-action="cfg:softetherBlockIp" data-i18n="softether.checkPublicIp">Controlla IP pubblico</button>
@@ -107,7 +107,7 @@
              data-i18n="softether.wizard.checking">1. Verifica installazione VPN…</div>
         <div class="settings-actions">
           <button type="button" class="btn btn-primary btn-sm" id="softether-open"
-                  data-action="cfg:softetherOpen" disabled>Apri gestore VPN</button>
+                  data-action="cfg:softetherOpen" disabled hidden>Apri gestore VPN</button>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="softether-close"
                   data-action="cfg:softetherClose" disabled
                   title="Termina il gestore SoftEther e ne toglie l’icona dalla tray. Una connessione VPN attiva resta attiva.">Chiudi gestore VPN</button>

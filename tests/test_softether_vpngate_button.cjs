@@ -25,3 +25,13 @@ test('the list does not load while the button is off', () => {
   assert.match(body, /if \(showButton && showButton\.disabled\) return;/);
   assert.ok(body.indexOf('showButton.disabled') < body.indexOf('softetherApi.vpngate()'));
 });
+
+test('the SoftEther manager buttons are hidden: the panel is the only UI', () => {
+  const openers = html.match(/<button[^>]*data-action="cfg:softetherOpen"[^>]*>/g) || [];
+  assert.ok(openers.length >= 1);
+  for (const tag of openers) assert.match(tag, /\shidden[\s>]/, tag);
+});
+
+test('a server with a registered profile is not listed twice', () => {
+  assert.match(js, /filter\(\(\{s\}\) => !s\.registered_profile\)/);
+});

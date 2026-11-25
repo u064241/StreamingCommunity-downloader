@@ -56,6 +56,9 @@ _public_ip_lock = threading.Lock()
 _original_public_ip = None
 
 
+# No console window for the SoftEther command-line helpers: the user sees the panel only.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 def _loopback(host):
     try:
         return ipaddress.ip_address(host).is_loopback
@@ -143,7 +146,7 @@ def _manager_state(manager):
             ["tasklist.exe", "/FI", f"IMAGENAME eq {manager.name}", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, encoding="mbcs", errors="replace",
             timeout=5, check=False,
-        )
+         creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError, TypeError):
         return "stopped"
     pids = set()
@@ -192,12 +195,12 @@ def _ensure_client_service():
         return
     for service in ("sevpnclient", "vpnclient"):
         query = subprocess.run(["sc.exe", "query", service], capture_output=True,
-                               text=True, timeout=8, check=False)
+                               text=True, timeout=8, check=False, creationflags=_NO_WINDOW)
         if query.returncode != 0:
             continue
         if "RUNNING" not in query.stdout.upper():
             started = subprocess.run(["sc.exe", "start", service], capture_output=True,
-                                     text=True, timeout=15, check=False)
+                                     text=True, timeout=15, check=False, creationflags=_NO_WINDOW)
             if started.returncode != 0:
                 raise RuntimeError("SoftEther client service is not running")
         return
@@ -402,7 +405,7 @@ def _download_vpngate_installer(job_id):
                  '--retry', '5', '--retry-delay', '3', '--retry-all-errors',
                  '--output', str(archive), url],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+             creationflags=_NO_WINDOW)
             _set_vpngate_job(job_id, process=completed)
             while completed.poll() is None:
                 if _job_cancelled(job_id):
@@ -719,13 +722,13 @@ async def download_update(request: Request):
              "--proto", "=https", "--proto-redir", "=https",
              "--max-time", "120", "--output", str(target), release["asset_url"]],
             check=False, capture_output=True, text=True, timeout=130,
-        )
+         creationflags=_NO_WINDOW)
         if completed.returncode or not target.is_file() or not target.stat().st_size:
             raise RuntimeError("curl failed")
         if target.stat().st_size > release["size_limit"]:
             raise RuntimeError("asset too large")
         verify_authenticode(target, softether_trust.SOFTETHER_SIGNER_THUMBPRINTS)
-        process = subprocess.Popen([str(target)], executable=str(target), cwd=str(target.parent), shell=False, close_fds=True)
+        process = subprocess.Popen([str(target)], executable=str(target), cwd=str(target.parent), shell=False, close_fds=True, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         shutil.rmtree(temp_root, ignore_errors=True)
         logger.warning("SoftEther update failed: %r", exc)
@@ -819,7 +822,7 @@ def _account_connected(name):
     try:
         result = subprocess.run([str(cmd), "/client", "localhost", "/cmd", "AccountStatusGet", name],
                                 capture_output=True, text=True, encoding="mbcs", errors="replace",
-                                timeout=20, check=False, stdin=subprocess.DEVNULL)
+                                timeout=20, check=False, stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
     return _parse_connected((result.stdout or "") + "\n" + (result.stderr or ""), result.returncode)
@@ -850,7 +853,7 @@ def _read_vpngate_profiles():
         _ensure_client_service()
         result = subprocess.run([str(cmd), "/client", "localhost", "/cmd", "AccountList"],
                                 capture_output=True, text=True, encoding="mbcs", errors="replace",
-                                timeout=20, check=False, stdin=subprocess.DEVNULL)
+                                timeout=20, check=False, stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         raise HTTPException(503, "softether.serviceUnavailable") from exc
     if result.returncode != 0:
@@ -936,7 +939,7 @@ def _run_vpncmd(*args):
         _ensure_client_service()
         result = subprocess.run([str(cmd), "/client", "localhost", "/cmd", *args],
                                 capture_output=True, text=True, encoding="mbcs", errors="replace",
-                                timeout=30, check=False, stdin=subprocess.DEVNULL)
+                                timeout=30, check=False, stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         raise HTTPException(503, "softether.serviceUnavailable") from exc
     if result.returncode != 0:
@@ -954,7 +957,7 @@ def delete_vpngate_profile(body: VpnGateProfileDelete):
         _ensure_client_service()
         result = subprocess.run([str(cmd), "/client", "localhost", "/cmd", "AccountDelete", name],
                                 capture_output=True, text=True, encoding="mbcs", errors="replace",
-                                timeout=20, check=False, stdin=subprocess.DEVNULL)
+                                timeout=20, check=False, stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         raise HTTPException(503, "softether.serviceUnavailable") from exc
     if result.returncode != 0:
@@ -1004,7 +1007,7 @@ async def create_vpngate_profile(body: VpnGateProfile, request: Request):
             body.name, "/SERVER:" + f"{body.host}:{body.port}", "/HUB:VPNGATE",
             "/USERNAME:vpn", "/NICNAME:VPN",
         ], capture_output=True, text=True, encoding="mbcs", errors="replace", timeout=20, check=False,
-            stdin=subprocess.DEVNULL)
+            stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         raise HTTPException(503, "softether.serviceUnavailable") from exc
     if result.returncode != 0:
@@ -1014,7 +1017,7 @@ async def create_vpngate_profile(body: VpnGateProfile, request: Request):
             str(cmd), "/client", "localhost", "/cmd", "AccountPasswordSet",
             body.name, "/PASSWORD:vpn", "/TYPE:standard",
         ], capture_output=True, text=True, encoding="mbcs", errors="replace", timeout=20, check=False,
-            stdin=subprocess.DEVNULL)
+            stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         raise HTTPException(503, "softether.serviceUnavailable") from exc
     if password.returncode != 0:
@@ -1022,7 +1025,7 @@ async def create_vpngate_profile(body: VpnGateProfile, request: Request):
     verify = subprocess.run([
         str(cmd), "/client", "localhost", "/cmd", "AccountGet", body.name,
     ], capture_output=True, text=True, encoding="mbcs", errors="replace", timeout=20, check=False,
-        stdin=subprocess.DEVNULL)
+        stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
     if verify.returncode != 0:
         raise HTTPException(502, "softether.profileFailed")
     # The profile is never connected automatically, so it normally is not
@@ -1076,7 +1079,7 @@ async def open_manager(request: Request):
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = show_command
         subprocess.Popen([str(manager)], cwd=str(manager.parent),
-                         shell=False, close_fds=True, startupinfo=startupinfo)
+                         shell=False, close_fds=True, startupinfo=startupinfo, creationflags=_NO_WINDOW)
     except OSError as exc:
         raise HTTPException(503, "softether.openFailed") from exc
     return {"opened": True}
@@ -1108,7 +1111,7 @@ def _hide_manager_windows(manager) -> int:
     for row in csv.reader(
         (subprocess.run(["tasklist.exe", "/FI", f"IMAGENAME eq {manager.name}", "/FO", "CSV", "/NH"],
                         capture_output=True, text=True, encoding="mbcs", errors="replace",
-                        timeout=5, check=False).stdout or "").splitlines()
+                        timeout=5, check=False, creationflags=_NO_WINDOW).stdout or "").splitlines()
     ):
         if len(row) >= 2 and row[0].lower() == manager.name.lower():
             try:
@@ -1153,7 +1156,7 @@ async def close_manager(request: Request):
     # service, so it stays up after this call.
     try:
         result = subprocess.run(["taskkill.exe", "/F", "/IM", manager.name, "/T"],
-                                capture_output=True, text=True, timeout=10, check=False)
+                                capture_output=True, text=True, timeout=10, check=False, creationflags=_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         raise HTTPException(503, "softether.closeFailed") from exc
     # taskkill exits 128 when no such process exists: nothing was open to close.
