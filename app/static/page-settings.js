@@ -971,6 +971,7 @@ async function loadOutputSettings() {
   if (!data) return;
   document.getElementById('setting-output-container').value = data.output_container || 'mkv';
   document.getElementById('setting-subtitle-mode').value = data.subtitle_mode || 'embed';
+  document.getElementById('setting-hls-use-ytdlp').checked = data.hls_use_ytdlp === true;
 }
 
 async function saveOutputSettings() {
@@ -985,6 +986,7 @@ async function saveOutputSettings() {
     await api.put('/api/domain/settings', {
       output_container: outputContainer,
       subtitle_mode: subtitleMode,
+      hls_use_ytdlp: document.getElementById('setting-hls-use-ytdlp').checked,
     });
     _feedback('output-feedback', t('settings.saved'), 'success');
     showToast(t('settings.output.format.saved'), 'success');

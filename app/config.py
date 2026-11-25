@@ -174,6 +174,9 @@ SETTINGS_DEFAULTS = {
     "max_parallel_conversions": MAX_PARALLEL_CONVERSIONS,
     "output_container": "mkv",
     "subtitle_mode": "embed",
+    # Downloads HLS playlists with the managed yt-dlp.exe instead of the built-in
+    # segment downloader (app/core/hls_ytdlp.py). Off by default: experimental.
+    "hls_use_ytdlp": False,
     # The MCP endpoint at /mcp. Off by default: it lets an agent act as a user.
     "mcp_enabled": False,
     "confirmations_enabled": True,

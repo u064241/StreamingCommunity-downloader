@@ -561,6 +561,14 @@
             </div>
           </div>
         </div>
+        <div class="form-check form-switch mt-3">
+          <input class="form-check-input" type="checkbox" id="setting-hls-use-ytdlp">
+          <label class="form-check-label" for="setting-hls-use-ytdlp">Scarica i flussi HLS con yt-dlp (sperimentale)</label>
+          <div class="form-text">
+            Usa yt-dlp.exe al posto del downloader interno per i segmenti dei flussi. Stesso numero
+            di connessioni del profilo sorgente. Se yt-dlp fallisce, quel flusso viene riscaricato con il downloader interno.
+          </div>
+        </div>
         <p class="settings-section-hint settings-warn">
           <i class="ti ti-alert-triangle me-1"></i>
           <span data-i18n="settings.previously.downloaded.files.are.not.converted.they.keep">I file gi&agrave; scaricati non vengono convertiti: restano nel contenitore con cui
