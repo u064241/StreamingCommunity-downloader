@@ -486,13 +486,13 @@
             <label class="form-label" for="setting-performance-profile">Profilo sorgente</label>
             <select id="setting-performance-profile" class="form-select" data-change="cfg:performanceProfile">
               <option value="conservative">Conservativo</option><option value="balanced" selected>Bilanciato</option>
-              <option value="fast">Veloce</option><option value="free">Libero</option>
+              <option value="fast">Veloce</option><option value="free">Libero</option><option value="custom" hidden>Personalizzato</option>
             </select>
           </div>
           <div class="col-sm-6">
             <label class="form-label" for="setting-source-requests">Richieste alla sorgente / ora</label>
-            <input type="number" id="setting-source-requests" class="form-control" min="0" max="120" value="90">
-            <div class="form-text">0 = nessun limite applicativo. Il backoff per errori della sorgente resta attivo.</div>
+            <input type="number" id="setting-source-requests" class="form-control" min="0" max="300" value="90">
+            <div class="form-text">0 = nessun limite applicativo (solo con il consenso del profilo Libero, 300). Il backoff per errori della sorgente resta attivo.</div>
           </div>
         </div>
         <div id="free-profile-disclaimer" class="alert alert-warning py-2 px-3 small" hidden>

@@ -1,5 +1,6 @@
 import logging
 import os
+from contextlib import contextmanager
 import random
 import sys
 import shutil
@@ -95,6 +96,25 @@ class SourceSlots:
             self._in_flight -= 1
             self._cond.notify()
         return False
+
+    @contextmanager
+    def hold(self, count: int):
+        """Hold *count* slots for the whole block (a yt-dlp process with -N count).
+
+        Waits until that many are free at once, so the process-wide cap also
+        covers engines that open their own connections.
+        """
+        with self._cond:
+            count = max(1, min(int(count), self.maximum))
+            while self._in_flight + count > self.maximum:
+                self._cond.wait(0.5)
+            self._in_flight += count
+        try:
+            yield count
+        finally:
+            with self._cond:
+                self._in_flight -= count
+                self._cond.notify_all()
 
 
 _SOURCE_MAX_CONNECTIONS = _source_max_connections()
@@ -1415,11 +1435,15 @@ class M3U8_Downloader:
             return False
         if get_settings().get("hls_use_ytdlp") is not True:
             return False
+        work_dir = os.path.join(self.temp_dir, f"ytdlp_{phase}")
         try:
-            hls_ytdlp.download_playlist(url, out_path, ext=ext, referer=self.referer,
-                                        connections=_source_max_connections(),
-                                        cancel_event=self.cancel_event,
-                                        progress_factory=self.progress_factory, phase=phase)
+            # Holds the same number of source slots as yt-dlp's -N, so every
+            # other download in the process shares what is left under the cap.
+            with _SOURCE_SLOTS.hold(hls_ytdlp.connections_for(_source_max_connections())) as held:
+                hls_ytdlp.download_playlist(url, out_path, work_dir=work_dir, ext=ext,
+                                            referer=self.referer, connections=held,
+                                            cancel_event=self.cancel_event,
+                                            progress_factory=self.progress_factory, phase=phase)
             logger.info("%s scaricato con yt-dlp", phase)
             return True
         except hls_ytdlp.HlsEngineError as exc:

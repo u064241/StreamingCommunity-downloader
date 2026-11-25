@@ -943,8 +943,11 @@ async function loadPerfSettings() {
   const requests = document.getElementById('setting-source-requests');
   if (requests) requests.value = data.source_requests_per_hour ?? 90;
   const profile = document.getElementById('setting-performance-profile');
-  const matched = matchPerformanceProfile(data);
-  if (profile && matched) profile.value = matched;
+  const matched = matchPerformanceProfile(data) || 'custom';
+  if (profile) {
+    profile.querySelector('option[value="custom"]').hidden = matched !== 'custom';
+    profile.value = matched;
+  }
   const ack = document.getElementById('free-profile-ack');
   if (ack) ack.checked = data.free_profile_acknowledged === true;
   const disclaimer = document.getElementById('free-profile-disclaimer');
@@ -973,8 +976,8 @@ const PERFORMANCE_PROFILE_VALUES = {
   free: {max_concurrent_downloads: 4, max_segment_workers: 16, source_max_connections: 8, source_requests_per_hour: 300},
 };
 
-// The profile whose four values equal the stored ones. No match (a custom mix):
-// null, and the select keeps what it shows rather than inventing one.
+// The profile whose four values equal the stored ones, or 'custom' for a mix
+// that matches none (the select then shows it instead of inventing a profile).
 function matchPerformanceProfile(data) {
   for (const [name, values] of Object.entries(PERFORMANCE_PROFILE_VALUES)) {
     if (Object.keys(values).every(key => Number(data[key]) === values[key])) return name;
@@ -1354,8 +1357,8 @@ async function savePerfSettings() {
   if (!concurrent || !workers) {
     _feedback('perf-settings-feedback', t('settings.invalid.values'), 'danger'); return;
   }
-  if (Number.isNaN(requests) || requests < 0 || requests > 120) {
-    _feedback('perf-settings-feedback', 'Le richieste/ora devono essere comprese tra 0 e 120.', 'danger'); return;
+  if (Number.isNaN(requests) || requests < 0 || requests > 300) {
+    _feedback('perf-settings-feedback', 'Le richieste/ora devono essere comprese tra 0 e 300.', 'danger'); return;
   }
   if (profile === 'free' && !document.getElementById('free-profile-ack')?.checked) {
     _feedback('perf-settings-feedback', 'Per usare il profilo Libero devi accettare il disclaimer.', 'danger'); return;
@@ -1370,6 +1373,8 @@ async function savePerfSettings() {
       // saved workers and hourly requests, leaving the selected profile and
       // its connection cap unchanged.
       await api.post('/api/domain/performance-preset', {preset: profile});
+      // Drop the cached settings first: loadPerfSettings must read what was just saved.
+      _appSettingsPromise = null;
       await loadPerfSettings();
     } else {
       await api.put('/api/domain/settings', {
