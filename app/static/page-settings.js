@@ -90,7 +90,9 @@ async function loadSoftEtherStatus(openManager = false) {
     const status = await softetherApi.status();
     available = status.supported && status.installed;
     state = status.manager_state || (status.running ? 'visible' : 'stopped');
-    if (close) close.disabled = state !== 'visible';
+    // Chiudi works on the process, so it is on whenever the Manager runs,
+    // window open or only in the tray. Off only when nothing is running.
+    if (close) close.disabled = !available || state === 'stopped';
     if (install) install.hidden = available || !status.vpngate_available || (!_softetherBlockDetected && !_softetherTestMode);
     if (updateCheck) updateCheck.disabled = !available;
     if (vpnGateShow) {
