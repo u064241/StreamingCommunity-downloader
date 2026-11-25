@@ -35,7 +35,7 @@ def test_the_presets_are_the_documented_values():
 
 def test_no_preset_goes_above_the_source_ceilings():
     assert config.SOURCE_MAX_CONNECTIONS_CEILING == 8
-    assert config.SOURCE_REQUESTS_PER_HOUR_CEILING == 120
+    assert config.SOURCE_REQUESTS_PER_HOUR_CEILING == 300
     for name in config.PRESET_ORDER:
         values = config.preset_values(name)
         assert values["source_max_connections"] <= 8
@@ -53,7 +53,7 @@ def test_a_stored_cap_above_the_ceiling_is_clamped_when_read(monkeypatch):
     config.save_settings({**config.get_settings(), "source_max_connections": 32,
                           "source_requests_per_hour": 5000})
     assert m3u8._source_max_connections() == 8
-    assert source_budget.limit() == 120
+    assert source_budget.limit() == 300
 
 
 def test_the_hourly_budget_is_read_from_the_settings(monkeypatch):
@@ -217,7 +217,7 @@ def test_settings_api_accepts_the_source_cap_and_a_backup_restores_it(client, ad
     assert client.put("/api/domain/settings", json={"source_max_connections": 0}).status_code == 400
     # Above the ceilings: refused by the API.
     assert client.put("/api/domain/settings", json={"source_max_connections": 9}).status_code == 400
-    assert client.put("/api/domain/settings", json={"source_requests_per_hour": 121}).status_code == 400
+    assert client.put("/api/domain/settings", json={"source_requests_per_hour": 301}).status_code == 400
     assert client.put("/api/domain/settings", json={"source_requests_per_hour": 90}).status_code == 200
     assert config.get_settings()["source_requests_per_hour"] == 90
 

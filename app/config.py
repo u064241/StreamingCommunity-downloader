@@ -76,7 +76,7 @@ PERFORMANCE_PRESETS = {
              "source_requests_per_hour": 120},
     "free": {"label": "Libero", "max_concurrent_downloads": 4,
              "max_segment_workers": 16, "source_max_connections": 8,
-             "source_requests_per_hour": 0},
+             "source_requests_per_hour": 300},
 }
 # Least aggressive first: what "more aggressive than" is measured against.
 PRESET_ORDER = ("conservative", "balanced", "fast")
@@ -87,7 +87,7 @@ DEFAULT_PERFORMANCE_PRESET = "balanced"
 # old data.json, a hand edit) is clamped when read. Only the environment
 # overrides above can go past them, on purpose.
 SOURCE_MAX_CONNECTIONS_CEILING = 8
-SOURCE_REQUESTS_PER_HOUR_CEILING = 120
+SOURCE_REQUESTS_PER_HOUR_CEILING = 300
 
 # What an installation that predates the presets was running with. Applied only
 # when data.json exists but has never stored these keys: an existing install
