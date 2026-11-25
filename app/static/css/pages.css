@@ -1694,6 +1694,6 @@ html[data-theme="contrast"] .source-btn, html[data-theme="contrast"] .queue-filt
  #softether-close, #softether-hide { color:#fff5df !important; background:#76531b !important; border-color:#e4ba5c !important; }
  #probe-hardware, #refresh-video-encoders { color:#e9fff4 !important; background:#176146 !important; border-color:#57c89b !important; }
  #notif-channel-add-btn, #hook-add-btn { color:#f1eaff !important; background:#4b347e !important; border-color:#a48ade !important; }
- #setting-mcp-enabled + .form-check-label { color:#dff5ff !important; background:#174b63; border:1px solid #4fa5c5; border-radius:.4rem; padding:.35rem .65rem; }
+ #setting-mcp-enabled + .form-check-label { color:#ffffff !important; background:#1d6b8a !important; border:1px solid #6fd0f0; border-radius:.35rem; padding:.15rem .45rem; font-size:.8rem; font-weight:600; line-height:1.25; }
  #mcp-regen-btn { color:#fff7dd !important; background:#785719 !important; border-color:#e6c05d !important; }
  #mcp-token-once .input-group .btn, [data-action="cfg:copyMcpSnippet"] { color:#e6f4ff !important; background:#255275 !important; border-color:#67a6c9 !important; }
