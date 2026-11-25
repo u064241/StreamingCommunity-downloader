@@ -142,6 +142,13 @@ def _checked(info: dict) -> dict:
 def _stop(process) -> None:
     if process.poll() is not None:
         return
+    if os.name == "nt":
+        # yt-dlp may have an ffmpeg child (remux) that would keep the files
+        # open after the parent dies: end the whole tree.
+        with contextlib.suppress(Exception):
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                           capture_output=True, timeout=10, check=False,
+                           **ytdlp_update.hidden_process_options())
     process.kill()
     with contextlib.suppress(Exception):
         process.wait(timeout=10)

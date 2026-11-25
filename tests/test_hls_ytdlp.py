@@ -199,3 +199,24 @@ def test_hold_never_asks_more_than_the_cap():
     with slots.hold(8) as held:
         assert held == 2
     assert slots.in_flight == 0
+
+
+def test_video_only_format_selection(tmp_path, fake_exe):
+    hls_ytdlp.download_playlist("https://cdn.example/a.m3u8", str(tmp_path / "v.mkv"),
+                                work_dir=str(tmp_path / "w"), ext="mkv", referer=None, connections=2)
+    argv = fake_exe["argv"]
+    assert argv[argv.index("-f") + 1] == "bv*/b"
+
+
+def test_stats_line_logged_even_when_engine_raises(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(ytdlp_update, "in_use", _no_busy_lock)
+    monkeypatch.setattr(ytdlp_update, "require_executable", lambda: "yt-dlp.exe")
+    monkeypatch.setattr(hls_ytdlp, "_ffmpeg_dir", lambda: "ffmpeg")
+
+    def cancelled(argv, on_line, cancel_event=None, timeout=0):
+        raise hls_ytdlp.DownloadCancelledError()
+
+    monkeypatch.setattr(hls_ytdlp, "_run_download", cancelled)
+    with pytest.raises(hls_ytdlp.DownloadCancelledError):
+        hls_ytdlp.download_playlist("https://cdn.example/a.m3u8", str(tmp_path / "v.mkv"),
+                                    work_dir=str(tmp_path / "w"), ext="mkv", referer=None, connections=2)

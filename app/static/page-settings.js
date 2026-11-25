@@ -258,6 +258,8 @@ async function checkSoftEtherBlockIp() {
 }
 
 async function openSoftEtherManager() {
+  // A status check is already running: say so rather than ignoring the click.
+  if (_softetherBusy) { _feedback('softether-status', t('softether.checking'), 'warning'); return; }
   await loadSoftEtherStatus(true);
 }
 

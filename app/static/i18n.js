@@ -1574,6 +1574,8 @@
     'softether.showManager': ['Mostra gestore VPN', 'Show VPN manager'],
     'softether.closeManager': ['Chiudi gestore VPN', 'Close VPN manager'],
     'softether.hideManager': ['Nascondi nella tray', 'Hide to tray'],
+    'settings.hls.ytdlp.label': ['Scarica i flussi HLS con yt-dlp (sperimentale)', 'Download HLS streams with yt-dlp (experimental)'],
+    'settings.hls.ytdlp.help': ['Usa yt-dlp.exe al posto del downloader interno per i segmenti dei flussi. Stesso numero di connessioni del profilo sorgente. Se yt-dlp fallisce, quel flusso viene riscaricato con il downloader interno.', 'Uses yt-dlp.exe instead of the built-in downloader for stream segments, with the same number of connections as the source profile. If yt-dlp fails, that stream is downloaded again with the built-in downloader.'],
     'softether.hideManagerTitle': ['Riporta il gestore nella tray. Il programma resta in esecuzione.', 'Send the manager back to the tray. The program keeps running.'],
     'softether.hidden': ['Gestore VPN riportato nella tray.', 'VPN manager sent back to the tray.'],
     'softether.notVisible': ['Il gestore VPN non è visibile: è già nella tray.', 'The VPN manager is not visible: it is already in the tray.'],

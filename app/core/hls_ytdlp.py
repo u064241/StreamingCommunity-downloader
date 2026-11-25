@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 
 from app.core import source_budget, ytdlp_update
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 _STREAM_STEM = "hls_stream"
 _MAX_CONNECTIONS = 16  # hard ceiling on -N, whatever the caller asks for
 _PUSHBACK = re.compile(rb"HTTP Error (429|503)\b")
+_FRAGMENT_ERROR = re.compile(rb"unable to download (video )?fragment")
 
 
 class HlsEngineError(RuntimeError):
@@ -100,7 +102,7 @@ def download_playlist(url: str, out_path: str, *, work_dir: str, ext: str, refer
 def _run(url, work, ext, count, referer, cancel_event, progress_factory, phase):
     with ytdlp_update.in_use():
         exe = ytdlp_update.require_executable()
-        argv = [exe, "--ignore-config", "--no-playlist", "--no-part", "--newline",
+        argv = [exe, "--ignore-config", "--no-playlist", "--no-part", "--newline", "-f", "bv*/b",
                 "--no-warnings", "--no-color", "--progress",
                 "--progress-template", PROGRESS_TEMPLATE,
                 "--abort-on-unavailable-fragments",
@@ -135,12 +137,21 @@ def _run(url, work, ext, count, referer, cancel_event, progress_factory, phase):
             delta = max(0, data["done"] - seen["done"])
             seen["bar"].update(n=delta, bytes=delta)
             seen["done"] = data["done"]
+            seen["total_bytes"] = seen.get("total_bytes", 0) + delta
 
+        started = time.monotonic()
+        stderr = b""
         try:
             returncode, stderr = _run_download(argv, on_line, cancel_event)
         finally:
             if seen.get("bar"):
                 seen["bar"].close()
+            # Audio is downloaded separately by the caller: yt-dlp takes video only.
+            elapsed = max(time.monotonic() - started, 1e-6)
+            done = seen.get("total_bytes", 0)
+            logger.info("yt-dlp HLS %s: %.1f MB in %.0f s = %.2f MB/s, %d errori di frammento, conn %d",
+                        phase, done / 1e6, elapsed, done / 1e6 / elapsed,
+                        len(_FRAGMENT_ERROR.findall(stderr or b"")), count)
     return outputs, returncode, stderr
 
 
