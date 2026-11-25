@@ -943,7 +943,8 @@ async function loadPerfSettings() {
   const requests = document.getElementById('setting-source-requests');
   if (requests) requests.value = data.source_requests_per_hour ?? 90;
   const profile = document.getElementById('setting-performance-profile');
-  if (profile) profile.value = Number(data.source_requests_per_hour) === 0 ? 'free' : (Number(data.source_requests_per_hour) <= 60 ? 'conservative' : (Number(data.source_requests_per_hour) <= 90 ? 'balanced' : 'fast'));
+  const matched = matchPerformanceProfile(data);
+  if (profile && matched) profile.value = matched;
   const ack = document.getElementById('free-profile-ack');
   if (ack) ack.checked = data.free_profile_acknowledged === true;
   const disclaimer = document.getElementById('free-profile-disclaimer');
@@ -953,17 +954,32 @@ async function loadPerfSettings() {
 function selectPerformanceProfile(profile) {
   const disclaimer = document.getElementById('free-profile-disclaimer');
   if (disclaimer) disclaimer.hidden = profile !== 'free';
-  const values = {
-    conservative: [1, 4, 60], balanced: [1, 6, 90],
-    fast: [2, 8, 120], free: [4, 16, 0],
-  }[profile];
+  const values = PERFORMANCE_PROFILE_VALUES[profile];
   if (!values) return;
   const concurrent = document.getElementById('setting-max-concurrent');
   const workers = document.getElementById('setting-max-workers');
   const requests = document.getElementById('setting-source-requests');
-  if (concurrent) concurrent.value = values[0];
-  if (workers) workers.value = values[1];
-  if (requests) requests.value = values[2];
+  if (concurrent) concurrent.value = values.max_concurrent_downloads;
+  if (workers) workers.value = values.max_segment_workers;
+  if (requests) requests.value = values.source_requests_per_hour;
+}
+
+// Mirror of PERFORMANCE_PRESETS in app/config.py. Kept in step by
+// tests/test_performance_profiles_frontend.cjs; the server stays authoritative.
+const PERFORMANCE_PROFILE_VALUES = {
+  conservative: {max_concurrent_downloads: 1, max_segment_workers: 4, source_max_connections: 2, source_requests_per_hour: 60},
+  balanced: {max_concurrent_downloads: 1, max_segment_workers: 6, source_max_connections: 3, source_requests_per_hour: 90},
+  fast: {max_concurrent_downloads: 2, max_segment_workers: 8, source_max_connections: 8, source_requests_per_hour: 120},
+  free: {max_concurrent_downloads: 4, max_segment_workers: 16, source_max_connections: 8, source_requests_per_hour: 300},
+};
+
+// The profile whose four values equal the stored ones. No match (a custom mix):
+// null, and the select keeps what it shows rather than inventing one.
+function matchPerformanceProfile(data) {
+  for (const [name, values] of Object.entries(PERFORMANCE_PROFILE_VALUES)) {
+    if (Object.keys(values).every(key => Number(data[key]) === values[key])) return name;
+  }
+  return null;
 }
 
 async function saveFreeAcknowledgement() {
