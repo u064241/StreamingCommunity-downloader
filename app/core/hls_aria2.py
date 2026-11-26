@@ -110,8 +110,10 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
 
     # Refused while aria2c.exe is being replaced (the caller falls back to the built-in downloader).
     with aria2_update.running(), open(log_path, "wb") as log:
+        # No console window for aria2c on Windows (it is a console program).
+        hidden = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
         proc = subprocess.Popen(_command(binary, listing, work_dir, min(connections, len(items)), headers),
-                                stdout=log, stderr=subprocess.STDOUT)
+                                stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **hidden)
         try:
             while proc.poll() is None:
                 if cancel_event is not None and cancel_event.is_set():

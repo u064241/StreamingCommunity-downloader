@@ -3,6 +3,8 @@ import os
 
 from app.core import hls_aria2
 
+FAKE_KWARGS: list[dict] = []
+
 
 def test_executable_is_none_when_neither_managed_nor_on_path(monkeypatch, tmp_path):
     monkeypatch.setattr(hls_aria2.aria2_update, "managed_path", lambda: tmp_path / "missing" / "aria2c.exe")
@@ -33,7 +35,8 @@ def test_command_carries_headers_and_user_agent_separately():
 class _FakeProcess:
     """Stands in for aria2c: writes the listed files and a log with a 429 line."""
 
-    def __init__(self, cmd, stdout=None, stderr=None):
+    def __init__(self, cmd, stdout=None, stderr=None, **kwargs):
+        FAKE_KWARGS.append(kwargs)
         work_dir = cmd[cmd.index("-d") + 1]
         listing = cmd[cmd.index("-i") + 1]
         with open(listing, encoding="utf-8") as fh:
@@ -73,7 +76,8 @@ def test_fetch_chunk_stores_files_and_reports_pushback(monkeypatch, tmp_path):
 class _LiveProcess:
     """aria2c finishing one file per poll and announcing it, as its notice log does."""
 
-    def __init__(self, cmd, stdout=None, stderr=None):
+    def __init__(self, cmd, stdout=None, stderr=None, **kwargs):
+        FAKE_KWARGS.append(kwargs)
         self.work_dir = cmd[cmd.index("-d") + 1]
         self.names = []
         with open(cmd[cmd.index("-i") + 1], encoding="utf-8") as fh:
@@ -124,3 +128,13 @@ def test_command_asks_for_completion_notices_without_colour():
     cmd = hls_aria2._command("aria2c", "list.txt", "work", 4, {})
     assert "--console-log-level=notice" in cmd
     assert "--enable-color=false" in cmd
+
+
+def test_aria2c_runs_without_a_console_window(monkeypatch, tmp_path):
+    monkeypatch.setattr(hls_aria2.subprocess, "Popen", _FakeProcess)
+    FAKE_KWARGS.clear()
+    hls_aria2.fetch_chunk("aria2c", [(0, "https://h/0.ts")], {}, 1, str(tmp_path / "w"), lambda i, p: None)
+    assert FAKE_KWARGS, "aria2c was not started"
+    if os.name == "nt":
+        assert FAKE_KWARGS[-1].get("creationflags") == hls_aria2.subprocess.CREATE_NO_WINDOW
+    assert FAKE_KWARGS[-1].get("stdin") == hls_aria2.subprocess.DEVNULL
