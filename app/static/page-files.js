@@ -117,8 +117,10 @@ function setupFileManager() {
           _selectedPaths.add(_allVisiblePaths[i]);
         }
       } else {
-        if (_selectedPaths.has(path)) _selectedPaths.delete(path);
-        else _selectedPaths.add(path);
+        // A folder carries its whole contents with it, expanded or not.
+        const select = !_selectedPaths.has(path);
+        const group = [path, ...descendantPaths(_cachedTree, path)];
+        group.forEach(p => { if (select) _selectedPaths.add(p); else _selectedPaths.delete(p); });
       }
       if (idx >= 0) _lastSelectedIndex = idx;
       syncSelectionUI();
@@ -357,11 +359,32 @@ function renderFileTree(tree) {
   renderTreeItems(tree, frag, 0);
   pane.innerHTML='';
   pane.appendChild(frag);
-  // Clean stale selections (paths no longer visible)
+  // Clean stale selections (paths no longer in the tree). Pruning by visible
+  // rows would drop the contents of a collapsed folder that was selected.
+  const known = new Set();
+  collectTreePaths(tree, known);
   for (const p of _selectedPaths) {
-    if (!_allVisiblePaths.includes(p)) _selectedPaths.delete(p);
+    if (!known.has(p)) _selectedPaths.delete(p);
   }
   syncSelectionUI();
+}
+
+function collectTreePaths(items, out) {
+  (items || []).forEach(item => {
+    out.add(item.path);
+    collectTreePaths(item.children, out);
+  });
+  return out;
+}
+
+// Every path below *path* in the whole tree, expanded or not.
+function descendantPaths(items, path) {
+  for (const item of items || []) {
+    if (item.path === path) return [...collectTreePaths(item.children, new Set())];
+    const inside = descendantPaths(item.children, path);
+    if (inside.length) return inside;
+  }
+  return [];
 }
 
 function renderTreeItems(items, container, depth) {
