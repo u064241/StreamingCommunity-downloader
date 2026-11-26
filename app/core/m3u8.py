@@ -1494,9 +1494,22 @@ class M3U8_Downloader:
         False means: not used, or it failed; the caller runs the built-in
         downloader for this playlist. An external key is always built-in only.
         """
-        if self.key is not None or not hls_ytdlp.available():
-            return False
         if get_settings().get("hls_use_ytdlp") is not True:
+            return False
+        # The option is on: say why it is not used, once per download, instead
+        # of falling back without a word (the log only showed the built-in
+        # segment lines and the toggle looked ignored).
+        reason = None
+        if self.key is not None:
+            reason = ("questa sorgente usa una chiave di cifratura esterna (enc.key, "
+                      "es. StreamingCommunity/vixcloud), che yt-dlp non gestisce")
+        elif not hls_ytdlp.available():
+            reason = ("yt-dlp.exe non è installato nella cartella dati. "
+                      "Apri Impostazioni > Download > Controlla yt-dlp")
+        if reason is not None:
+            if not getattr(self, "_ytdlp_skip_logged", False):
+                self._ytdlp_skip_logged = True
+                logger.warning("yt-dlp HLS attivo ma non usato: %s. Uso il downloader interno.", reason)
             return False
         work_dir = os.path.join(self.temp_dir, f"ytdlp_{phase}")
         try:

@@ -108,6 +108,35 @@ def test_external_key_stays_on_builtin(monkeypatch):
     assert called == []
 
 
+def test_setting_on_without_ytdlp_logs_why_once(monkeypatch, caplog):
+    monkeypatch.setattr(hls_ytdlp, "available", lambda: False)
+    called = []
+    monkeypatch.setattr(hls_ytdlp, "download_playlist", lambda *a, **k: called.append(a))
+    obj = _segments(monkeypatch, True)
+    with caplog.at_level("WARNING", logger=m3u8.logger.name):
+        assert obj._ytdlp_fetch("u", "o", "video", ".mkv") is False
+        assert obj._ytdlp_fetch("u2", "o2", "audio_it", "mp4") is False
+    lines = [r.getMessage() for r in caplog.records if "yt-dlp HLS attivo" in r.getMessage()]
+    assert len(lines) == 1
+    assert "Controlla yt-dlp" in lines[0] and "downloader interno" in lines[0]
+    assert called == []
+
+
+def test_setting_on_with_external_key_logs_why(monkeypatch, caplog):
+    monkeypatch.setattr(hls_ytdlp, "available", lambda: True)
+    obj = _segments(monkeypatch, True, key=b"k" * 16)
+    with caplog.at_level("WARNING", logger=m3u8.logger.name):
+        assert obj._ytdlp_fetch("u", "o", "video", ".mkv") is False
+    assert any("chiave di cifratura esterna" in r.getMessage() for r in caplog.records)
+
+
+def test_setting_off_logs_nothing(monkeypatch, caplog):
+    monkeypatch.setattr(hls_ytdlp, "available", lambda: False)
+    with caplog.at_level("INFO", logger=m3u8.logger.name):
+        assert _segments(monkeypatch, False, key=b"k" * 16)._ytdlp_fetch("u", "o", "video", ".mkv") is False
+    assert not any("yt-dlp" in r.getMessage() for r in caplog.records)
+
+
 def test_engine_error_falls_back(monkeypatch):
     monkeypatch.setattr(hls_ytdlp, "available", lambda: True)
 
