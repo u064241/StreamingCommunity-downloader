@@ -435,6 +435,11 @@
           <span class="form-text">Motore dei download RaiPlay (yt-dlp.exe). Controllo e aggiornamento su richiesta da GitHub, verificati con SHA-256.</span>
           <div id="ytdlp-status" class="form-text" role="status" aria-live="polite"></div>
         </div>
+        <div class="settings-actions mt-2">
+          <button type="button" class="btn btn-info btn-sm" data-action="cfg:checkAria2">Controlla aria2c</button>
+          <span class="form-text">Motore opzionale per i segmenti HLS (aria2c.exe). Se non è nel PATH, il controllo offre il download da GitHub, verificato con SHA-256.</span>
+          <div id="aria2-status" class="form-text" role="status" aria-live="polite"></div>
+        </div>
       </div>
       <div class="settings-section">
         <p class="settings-section-label" data-i18n="settings.video.conversion.after.download">Conversione video dopo il download</p>

@@ -1597,6 +1597,7 @@ registerActions({
   'cfg:probeHardware': () => probeHardware(),
   'cfg:updateFfmpeg': () => updateFfmpeg(),
   'cfg:checkYtdlp': () => checkYtdlp(),
+  'cfg:checkAria2': () => checkAria2(),
   'cfg:performanceProfile': (d, el) => selectPerformanceProfile(el.value),
   'cfg:resetConservative': () => resetConservativePreset(),
   'cfg:softetherStatus': () => loadSoftEtherStatus(),
@@ -1703,6 +1704,61 @@ async function checkYtdlp() {
   } catch (e) {
     out.className = 'form-text text-danger';
     out.textContent = _settingsError(e, 'Controllo yt-dlp non riuscito.');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+// aria2c (optional, for HLS segment prefetch): present on PATH or managed?
+// Missing -> offer the download; present but older -> offer the update.
+async function checkAria2() {
+  const out = document.getElementById('aria2-status');
+  if (!out) return;
+  const button = document.querySelector('[data-action="cfg:checkAria2"]');
+  if (button) button.disabled = true;
+  out.className = 'form-text';
+  out.textContent = 'Controllo aria2c…';
+  try {
+    const s = await api.get('/api/domain/aria2/status');
+    if (s.error || !s.latest) {
+      out.className = 'form-text text-warning';
+      out.textContent = s.present
+        ? `aria2c ${s.installed || '?'}: ${s.error || 'impossibile leggere l\'ultima versione su GitHub.'}`
+        : `aria2c non è installato: ${s.error || 'GitHub non è raggiungibile.'}`;
+      return;
+    }
+    if (s.present && !s.update_available) {
+      out.className = 'form-text text-success';
+      out.textContent = `aria2c ${s.installed} aggiornato.`;
+      return;
+    }
+    if (!s.can_update) {
+      out.className = 'form-text text-warning';
+      out.textContent = s.present
+        ? `aria2c ${s.installed} installato, ${s.latest} disponibile: aggiornalo dal sistema.`
+        : 'aria2c non è installato: installalo dal sistema e mettilo nel PATH.';
+      return;
+    }
+    if (s.busy) {
+      out.className = 'form-text text-warning';
+      out.textContent = 'Ci sono download con aria2c in corso: riprova quando sono terminati.';
+      return;
+    }
+    const question = s.present
+      ? `Aggiornare aria2c ${s.installed} alla ${s.latest}? Il file viene scaricato da GitHub e verificato con SHA-256.`
+      : `Scaricare aria2c ${s.latest} da GitHub? Il file viene verificato con SHA-256 e installato nella cartella dell'app.`;
+    if (!await scConfirm(question)) {
+      out.className = 'form-text text-warning';
+      out.textContent = s.present ? `aria2c ${s.installed} installato, ${s.latest} disponibile.` : 'aria2c non è installato.';
+      return;
+    }
+    out.textContent = 'Download e verifica di aria2c in corso…';
+    const result = await api.post('/api/domain/aria2/update', {});
+    out.className = 'form-text text-success';
+    out.textContent = `aria2c ${result.version} installato.`;
+  } catch (e) {
+    out.className = 'form-text text-danger';
+    out.textContent = _settingsError(e, 'Controllo aria2c non riuscito.');
   } finally {
     if (button) button.disabled = false;
   }

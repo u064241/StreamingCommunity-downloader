@@ -893,6 +893,26 @@ async def update_ytdlp():
     return {**result, "status": await asyncio.to_thread(ytdlp_update.status)}
 
 
+@router.get("/aria2/status", dependencies=CAN_MANAGE)
+async def aria2_status():
+    """Managed aria2c.exe or aria2c on PATH vs the latest GitHub release. On request only."""
+    from app.core import aria2_update
+    return await asyncio.to_thread(aria2_update.status)
+
+
+@router.post("/aria2/update", dependencies=CAN_MANAGE)
+async def update_aria2():
+    """Install/update aria2c.exe from GitHub (SHA-256 verified). Refused while aria2c downloads run."""
+    from app.core import aria2_update
+    try:
+        result = await asyncio.to_thread(aria2_update.update)
+    except aria2_update.Aria2BusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Aggiornamento aria2c non riuscito: {exc}") from exc
+    return {**result, "status": await asyncio.to_thread(aria2_update.status)}
+
+
 @router.post("/ffmpeg/update", dependencies=CAN_MANAGE)
 async def update_ffmpeg():
     from app.core import ffmpeg_update

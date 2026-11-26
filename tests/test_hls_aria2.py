@@ -4,8 +4,9 @@ import os
 from app.core import hls_aria2
 
 
-def test_executable_is_none_when_not_on_path(monkeypatch):
-    monkeypatch.setattr(hls_aria2.shutil, "which", lambda name: None)
+def test_executable_is_none_when_neither_managed_nor_on_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(hls_aria2.aria2_update, "managed_path", lambda: tmp_path / "missing" / "aria2c.exe")
+    monkeypatch.setattr(hls_aria2.aria2_update.shutil, "which", lambda name: None)
     assert hls_aria2.executable() is None
 
 

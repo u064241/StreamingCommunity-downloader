@@ -18,6 +18,8 @@ import shutil
 import subprocess
 import time
 
+from app.core import aria2_update
+
 logger = logging.getLogger(__name__)
 
 CHUNK_SEGMENTS = 50          # one aria2c process per chunk: cancel and pushback checkpoints
@@ -27,8 +29,8 @@ _PUSHBACK = re.compile(rb"\b(429|503)\b")
 
 
 def executable() -> str | None:
-    """aria2c on PATH, or None: the feature is then simply not used."""
-    return shutil.which("aria2c")
+    """The managed aria2c.exe, else aria2c on PATH, else None: the feature is then not used."""
+    return aria2_update.executable()
 
 
 def connections_for(cap: int) -> int:
@@ -63,7 +65,8 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
         for index, url in items:
             fh.write(f"{url}\n  out=seg{index}.bin\n")
     log_path = os.path.join(work_dir, "aria2c.log")
-    with open(log_path, "wb") as log:
+    # Refused while aria2c.exe is being replaced (the caller falls back to the built-in downloader).
+    with aria2_update.running(), open(log_path, "wb") as log:
         proc = subprocess.Popen(_command(binary, listing, work_dir, min(connections, len(items)), headers),
                                 stdout=log, stderr=subprocess.STDOUT)
         try:
