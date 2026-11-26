@@ -242,3 +242,36 @@ def test_connect_does_not_read_disconnected_as_connected(vpn, client, monkeypatc
     body = client.post("/api/softether/vpngate/profile/connect", headers=_headers(),
                        json={"name": "VPN Gate IT"}).json()
     assert body["connected"] is False
+
+# ── connect waits for the session to come up ─────────────────────────────────
+
+CONNECTING = "Item |Value\nSession Status |Connecting\n"
+
+
+def test_connect_waits_while_the_session_is_still_negotiating(client, monkeypatch):
+    reads = iter([CONNECTING, CONNECTING, CONNECTED])
+
+    def fake_run_vpncmd(*args):
+        if args[0] == "AccountConnect":
+            return _done("The command completed successfully.")
+        return _done(next(reads))
+
+    monkeypatch.setattr(softether, "_run_vpncmd", fake_run_vpncmd)
+    monkeypatch.setattr(softether, "CONNECT_POLL_S", 0.0)
+    body = client.post("/api/softether/vpngate/profile/connect", headers=_headers(),
+                       json={"name": "VPN Gate IT"}).json()
+    assert body["connected"] is True
+
+
+def test_connect_gives_up_after_the_confirmation_window(client, monkeypatch):
+    def fake_run_vpncmd(*args):
+        if args[0] == "AccountConnect":
+            return _done("The command completed successfully.")
+        return _done(CONNECTING)
+
+    monkeypatch.setattr(softether, "_run_vpncmd", fake_run_vpncmd)
+    monkeypatch.setattr(softether, "CONNECT_CONFIRM_S", 0.0)
+    monkeypatch.setattr(softether, "CONNECT_POLL_S", 0.0)
+    body = client.post("/api/softether/vpngate/profile/connect", headers=_headers(),
+                       json={"name": "VPN Gate IT"}).json()
+    assert body["connected"] is False

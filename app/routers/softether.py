@@ -994,14 +994,36 @@ def delete_vpngate_profile(body: VpnGateProfileDelete):
     return {"deleted": True, "name": name}
 
 
+CONNECT_CONFIRM_S = 20.0   # how long to wait for the session to come up
+CONNECT_POLL_S = 1.0
+
+
+def _wait_connected(name: str, timeout: float | None = None) -> bool:
+    """Poll the account until its session is up, or the timeout passes.
+
+    AccountConnect returns while the session is still negotiating: one status
+    read right after it reads "Connecting" and reports a connection that is
+    actually coming up as unconfirmed.
+    """
+    if timeout is None:
+        timeout = CONNECT_CONFIRM_S
+    deadline = time.monotonic() + timeout
+    while True:
+        status = _run_vpncmd("AccountStatusGet", name)
+        # Same parser as the profile list: a bare substring test would read
+        # "Disconnected"/"not connected" as connected.
+        if _parse_connected(status.stdout or "") is True:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(CONNECT_POLL_S)
+
+
 @router.post("/vpngate/profile/connect")
 def connect_vpngate_profile(body: VpnGateProfileDelete):
     name = _validate_profile_name(body.name)
     result = _run_vpncmd("AccountConnect", name)
-    status = _run_vpncmd("AccountStatusGet", name)
-    # Same parser as the profile list: a bare substring test would read
-    # "Disconnected"/"not connected" as connected.
-    connected = _parse_connected(status.stdout or "") is True
+    connected = _wait_connected(name)
     return {"connected": connected, "name": name, "output": result.stdout or ""}
 
 
