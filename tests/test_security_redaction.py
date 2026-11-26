@@ -108,6 +108,7 @@ def test_job_cards_escape_everything_that_comes_from_a_job():
     safe = {
         "borderColor", "badgeClass", "barClass", "animated", "barWidth", "infoTitle",
         "stepsHtml", "fireBtn", "dateLabel", "j.job_id",
+        "engineHidden",  # a fixed ' hidden' or '' attribute, computed from the engine's presence
     }
     for expression in re.findall(r"\$\{([^{}]+)\}", card[card.index("return `<div"):]):
         expression = expression.strip()

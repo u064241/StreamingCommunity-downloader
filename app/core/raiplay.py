@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 from app.core import ytdlp_update
-from app.progress import DownloadCancelledError
+from app.progress import DownloadCancelledError, announce_engine
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +229,7 @@ def _attempt(exe: str, url: str, target_dir: Path, stem: str, work_dir: Path,
             if seen.get("bar"):
                 seen["bar"].close()
             seen.update(key=data["key"], bar=progress_factory(total=data["total"], phase="downloading"), done=0)
+            announce_engine(seen["bar"], "yt-dlp")
         seen["bar"].total = data["total"]
         delta = max(0, data["done"] - seen["done"])
         seen["bar"].update(n=delta, bytes=delta)

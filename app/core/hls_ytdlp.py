@@ -31,7 +31,7 @@ from pathlib import Path
 from app.core import source_budget, ytdlp_update
 from app.core.headers import get_headers
 from app.core.raiplay import PROGRESS_TEMPLATE, _FILE_TAG, _run_download, _outtmpl, parse_progress
-from app.progress import DownloadCancelledError
+from app.progress import DownloadCancelledError, announce_engine
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,7 @@ def _run(url, work, ext, count, referer, cancel_event, progress_factory, phase):
                     seen["bar"].close()
                 seen.update(key=data["key"], bar=progress_factory(total=data["total"], phase=phase),
                             done=0)
+                announce_engine(seen["bar"], "yt-dlp")
             seen["bar"].total = data["total"]
             delta = max(0, data["done"] - seen["done"])
             seen["bar"].update(n=delta, bytes=delta)

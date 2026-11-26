@@ -26,7 +26,7 @@ from app.core.ffmpeg_path import run_ffmpeg, ffmpeg_file_arg, get_ffmpeg_exe
 from app.core.headers import get_headers
 from app.core.hosts import redact
 from app.core.paths import windows_path_problem
-from app.progress import DownloadCancelledError
+from app.progress import DownloadCancelledError, announce_engine
 
 warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
 
@@ -1145,6 +1145,8 @@ class M3U8_Segments:
         progress_counter = bar_factory(total=len(self.segments), unit="seg", desc="Downloading", phase=self.phase)
         self._bar = progress_counter
         self._aria2_prefetch()
+        # aria2c when it delivered any segment, otherwise the built-in downloader.
+        announce_engine(progress_counter, "aria2c" if self._prefetched else "interno")
 
         quit_event = threading.Event()
         timeout_event = threading.Event()

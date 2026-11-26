@@ -46,6 +46,17 @@ def post(queue: asyncio.Queue, loop: Optional[asyncio.AbstractEventLoop], item) 
     return True
 
 
+def announce_engine(bar, name: str) -> None:
+    """Tell the job which downloader is fetching now: "aria2c", "yt-dlp" or "interno".
+
+    Only web bars (WebProgressBar) carry a job; any other bar, such as the CLI's
+    tqdm, is left alone.
+    """
+    emit = getattr(bar, "_emit", None)
+    if callable(emit):
+        emit({"type": "engine", "engine": name})
+
+
 class WebProgressBar:
     """Drop-in tqdm replacement that pushes progress events onto an asyncio.Queue."""
 

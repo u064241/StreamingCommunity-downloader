@@ -70,6 +70,9 @@ function connectGlobalStream() {
         resyncIfUnknownJob(msg.job_id);
         handleProgressEvent(msg);
         break;
+      case 'engine':
+        handleEngineEvent(msg.job_id, msg.engine);
+        break;
       case 'status':
         resyncIfUnknownJob(msg.job_id);
         handlePhaseEvent(msg.job_id, msg.phase);
@@ -356,12 +359,15 @@ function _buildJobCard(j) {
   const dateLabel = j.scheduled_at ? `⏰ ${dateStr}` : dateStr;
 
   const stepsHtml = _buildStepsHtml(j.job_id, j.phases, phase, j.status);
+  // A fixed attribute string, not job data: the engine name itself is escaped below.
+  const engineHidden = j.progress?.engine ? '' : ' hidden';
   return `<div class="card mb-2 job-card${j.status==='done'?' is-done':''}${j.status==='error'?' is-error':''}" id="job-card-${j.job_id}" style="border-left:3px solid ${borderColor} !important">
     <div class="card-body py-2 px-3">
       <div class="d-flex align-items-center gap-2">
         <span class="badge ${isMovie?'bg-blue-lt':isAnimeJob?'bg-purple-lt':'bg-green-lt'} flex-shrink-0">${isMovie?'Film':isAnimeJob?'Anime':'TV'}</span>
         <span class="fw-medium text-truncate flex-1" style="min-width:0" title="${escapeHtml(j.title)}">${escapeHtml(j.title)}</span>
         <span class="badge ${badgeClass} flex-shrink-0" id="job-badge-${j.job_id}">${escapeHtml(label)}</span>
+        <span class="badge bg-secondary-lt flex-shrink-0" id="job-engine-${j.job_id}" title="Motore di download"${engineHidden}>${escapeHtml(_engineLabel(j.progress?.engine))}</span>
         <span id="job-fire-${j.job_id}">${fireBtn}</span>
         ${stopBtn ? `<span id="job-stop-${j.job_id}">${stopBtn}</span>` : `<span id="job-stop-${j.job_id}"></span>`}
       </div>
@@ -696,7 +702,7 @@ function updateActiveBadge() {
 function handleProgressEvent(msg) {
   const job = _jobs.get(msg.job_id);
   if (job) {
-    job.progress = { phase:msg.phase, encoder:msg.encoder, current:msg.current, total:msg.total, pct:msg.pct, speed:msg.speed||0,
+    job.progress = { phase:msg.phase, encoder:msg.encoder, engine:job.progress?.engine || null, current:msg.current, total:msg.total, pct:msg.pct, speed:msg.speed||0,
                      bytes_speed:msg.bytes_speed||0, eta:msg.eta||null,
                      bytes_done:msg.bytes_done||0, bytes_total:msg.bytes_total ?? null,
                      bytes_total_estimated:msg.bytes_total_estimated !== false };
@@ -712,6 +718,20 @@ function handleProgressEvent(msg) {
   // Same builder as the initial render, so a live frame cannot quietly drop
   // the size the card was showing a moment ago.
   if (info) info.textContent = _jobInfoText(job ? job.progress : msg, 'running');
+}
+
+// Which downloader fetches the job now: aria2c, yt-dlp or the built-in one.
+function _engineLabel(engine) {
+  return ({'aria2c': 'aria2c', 'yt-dlp': 'yt-dlp', 'interno': 'downloader interno'})[engine] || engine || '';
+}
+
+function handleEngineEvent(jobId, engine) {
+  const job = _jobs.get(jobId);
+  if (job) job.progress = {...(job.progress || {}), engine: engine || null};
+  const badge = document.getElementById(`job-engine-${jobId}`);
+  if (!badge) return;
+  badge.textContent = _engineLabel(engine);
+  badge.hidden = !engine;
 }
 
 function handlePhaseEvent(jobId, phase) {

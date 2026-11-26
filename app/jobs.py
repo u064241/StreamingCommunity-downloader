@@ -667,10 +667,14 @@ class JobManager:
             if ev.get("type") == "status" and ev.get("phase") == "converting":
                 job.progress = {**job.progress, "phase": "converting", "encoder": None,
                                 "pct": 0, "speed": 0, "bytes_speed": 0, "eta": None}
+            if ev.get("type") == "engine":
+                # Which downloader is fetching now; kept across progress frames.
+                job.progress = {**job.progress, "engine": ev.get("engine")}
             if ev.get("type") == "progress":
                 job.progress = {
                     "phase": ev.get("phase"),
                     "encoder": ev.get("encoder"),
+                    "engine": job.progress.get("engine"),
                     "current": ev["current"],
                     "total": ev["total"],
                     "pct": ev["pct"],
