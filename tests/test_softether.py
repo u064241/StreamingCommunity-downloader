@@ -269,7 +269,7 @@ def test_operator_lookup_failure_keeps_the_public_ip(panel, monkeypatch):
     client, *_ = panel
 
     def fake_get(url, **kwargs):
-        if "ipinfo.io" in url:
+        if "ipinfo.io" in url or "ipwho.is" in url:
             raise softether.requests.ConnectionError("offline")
         return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"ip": "203.0.113.7"})
 
@@ -280,6 +280,69 @@ def test_operator_lookup_failure_keeps_the_public_ip(panel, monkeypatch):
     assert response.status_code == 200
     assert response.json()["current"] == "203.0.113.7"
     assert response.json()["provider"] is None
+
+
+def test_operator_lookup_sends_a_user_agent(panel, monkeypatch):
+    """ipinfo.io answered 403 to the bare default requests User-Agent."""
+    client, *_ = panel
+    sent = {}
+
+    def fake_get(url, **kwargs):
+        if "ipinfo.io" in url:
+            sent["headers"] = kwargs.get("headers") or {}
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"org": "AS64500 Example ISP"})
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"ip": "203.0.113.7"})
+
+    monkeypatch.setattr(softether.requests, "get", fake_get)
+    monkeypatch.setattr(softether, "_original_public_ip", None)
+    monkeypatch.setattr(softether, "_provider_cache", {})
+    client.get("/api/softether/public-ip")
+    assert sent["headers"].get("User-Agent") == "StreamingCommunityDownloader/ip-lookup"
+
+
+def test_operator_falls_back_to_ipwhois_when_ipinfo_refuses(panel, monkeypatch):
+    client, *_ = panel
+    calls = []
+
+    def refuse():
+        raise softether.requests.HTTPError("403 Client Error: Forbidden")
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        if "ipinfo.io" in url:
+            return SimpleNamespace(raise_for_status=refuse, json=lambda: {})
+        if "ipwho.is" in url:
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {
+                "success": True, "connection": {"org": "Example Fallback ISP", "isp": "Other"}})
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"ip": "203.0.113.7"})
+
+    monkeypatch.setattr(softether.requests, "get", fake_get)
+    monkeypatch.setattr(softether, "_original_public_ip", None)
+    monkeypatch.setattr(softether, "_provider_cache", {})
+    response = client.get("/api/softether/public-ip")
+    assert response.status_code == 200
+    assert response.json()["provider"] == "Example Fallback ISP"
+    assert "https://ipwho.is/203.0.113.7" in calls
+    # Cached: a second check asks neither service again.
+    client.get("/api/softether/public-ip")
+    assert sum("ipinfo.io" in u or "ipwho.is" in u for u in calls) == 2
+
+
+def test_operator_fallback_reads_isp_when_org_is_missing(panel, monkeypatch):
+    client, *_ = panel
+
+    def fake_get(url, **kwargs):
+        if "ipinfo.io" in url:
+            raise softether.requests.ConnectionError("offline")
+        if "ipwho.is" in url:
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {
+                "success": True, "connection": {"isp": "Example ISP Only"}})
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"ip": "203.0.113.7"})
+
+    monkeypatch.setattr(softether.requests, "get", fake_get)
+    monkeypatch.setattr(softether, "_original_public_ip", None)
+    monkeypatch.setattr(softether, "_provider_cache", {})
+    assert client.get("/api/softether/public-ip").json()["provider"] == "Example ISP Only"
 
 
 def test_operator_is_asked_once_per_address(panel, monkeypatch):

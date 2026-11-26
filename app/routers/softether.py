@@ -740,26 +740,49 @@ async def download_update(request: Request):
 
 
 _PROVIDER_URL = "https://ipinfo.io/{ip}/json"
+_PROVIDER_FALLBACK_URL = "https://ipwho.is/{ip}"
+# ipinfo.io answers 403 to a request without a User-Agent of its own.
+_PROVIDER_HEADERS = {"User-Agent": "StreamingCommunityDownloader/ip-lookup"}
 _provider_cache: dict[str, str] = {}
 
 
-def _provider_of(ip: str) -> str | None:
-    """Operator (ISP or organisation) of *ip* from ipinfo.io, or None when unknown.
+def _org_from_ipinfo(ip: str) -> str:
+    response = requests.get(_PROVIDER_URL.format(ip=ip), headers=_PROVIDER_HEADERS, timeout=(3, 6))
+    response.raise_for_status()
+    return str(response.json().get("org", "")).strip()
 
-    Only a validated IP address reaches the URL. A successful answer is kept per
-    address, so repeated checks ask once; a failure is not kept and is never an error
-    for the caller: the public address is still shown without its operator.
+
+def _org_from_ipwhois(ip: str) -> str:
+    response = requests.get(_PROVIDER_FALLBACK_URL.format(ip=ip), headers=_PROVIDER_HEADERS,
+                            timeout=(3, 6))
+    response.raise_for_status()
+    data = response.json()
+    if data.get("success") is False:
+        raise ValueError(str(data.get("message") or "ipwho.is: lookup failed"))
+    connection = data.get("connection") or {}
+    return str(connection.get("org") or connection.get("isp") or "").strip()
+
+
+def _provider_of(ip: str) -> str | None:
+    """Operator (ISP or organisation) of *ip*, or None when unknown.
+
+    Asks ipinfo.io first and ipwho.is when that fails or knows nothing. Only a
+    validated IP address reaches the URL. A successful answer is kept per
+    address, so repeated checks ask once; a failure is not kept and is never an
+    error for the caller: the public address is still shown without its operator.
     """
     with _public_ip_lock:
         if ip in _provider_cache:
             return _provider_cache[ip]
-    try:
-        response = requests.get(_PROVIDER_URL.format(ip=ip), timeout=(3, 6))
-        response.raise_for_status()
-        org = str(response.json().get("org", "")).strip()[:120]
-    except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
-        logger.info("Operatore IP non disponibile: %s", exc)
-        return None
+    org = ""
+    for lookup in (_org_from_ipinfo, _org_from_ipwhois):
+        try:
+            org = lookup(ip)[:120]
+        except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
+            logger.info("Operatore IP non disponibile: %s", exc)
+            continue
+        if org:
+            break
     if not org:
         return None
     with _public_ip_lock:

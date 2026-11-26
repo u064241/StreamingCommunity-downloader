@@ -458,3 +458,31 @@ def test_aria2_off_leaves_the_prefetch_out(tmp_path, segment_server, no_sleep, m
     seg = _segments(tmp_path, count=2)
     seg.download_ts()
     assert called == [] and seg._prefetched == set()
+
+
+def test_aria2_engine_is_announced_before_the_prefetch_runs(
+        tmp_path, segment_server, no_sleep, monkeypatch):
+    """The badge read None for the whole download: the engine was announced only
+    after _aria2_prefetch returned, and with aria2c on that is the whole video."""
+    events = []
+
+    class _WebBar(_Bar):
+        def _emit(self, msg):
+            events.append(msg)
+
+    _aria2_on(monkeypatch, deliver={0, 1, 2})
+    real_fetch = m3u8.hls_aria2.fetch_chunk
+    seen_at_fetch = []
+
+    def fetch_and_look(*args, **kwargs):
+        seen_at_fetch.append([e["engine"] for e in events if e.get("type") == "engine"])
+        return real_fetch(*args, **kwargs)
+
+    monkeypatch.setattr(m3u8.hls_aria2, "fetch_chunk", fetch_and_look)
+    seg = _segments(tmp_path, count=3)
+    seg.progress_factory = lambda **kw: _WebBar(**kw)
+
+    seg.download_ts()
+
+    assert seen_at_fetch and seen_at_fetch[0] == ["aria2c"]
+    assert [e["engine"] for e in events if e.get("type") == "engine"][-1] == "aria2c"

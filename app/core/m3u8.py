@@ -1094,6 +1094,9 @@ class M3U8_Segments:
                 if not self._have_segment(i) and not self._info(i).get("byterange")]
         if not todo:
             return
+        # Announced now, not after the prefetch: aria2c can fetch the whole
+        # playlist, and the badge would read nothing until it finished.
+        announce_engine(self._bar, "aria2c")
         work_dir = os.path.join(self.temp_folder, "aria2")
         connections = hls_aria2.connections_for(min(self._workers, _source_max_connections()))
         stored = 0
