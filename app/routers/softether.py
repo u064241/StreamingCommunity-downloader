@@ -739,6 +739,34 @@ async def download_update(request: Request):
     return {"started": True, "version": release["version"]}
 
 
+_PROVIDER_URL = "https://ipinfo.io/{ip}/json"
+_provider_cache: dict[str, str] = {}
+
+
+def _provider_of(ip: str) -> str | None:
+    """Operator (ISP or organisation) of *ip* from ipinfo.io, or None when unknown.
+
+    Only a validated IP address reaches the URL. A successful answer is kept per
+    address, so repeated checks ask once; a failure is not kept and is never an error
+    for the caller: the public address is still shown without its operator.
+    """
+    with _public_ip_lock:
+        if ip in _provider_cache:
+            return _provider_cache[ip]
+    try:
+        response = requests.get(_PROVIDER_URL.format(ip=ip), timeout=(3, 6))
+        response.raise_for_status()
+        org = str(response.json().get("org", "")).strip()[:120]
+    except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
+        logger.info("Operatore IP non disponibile: %s", exc)
+        return None
+    if not org:
+        return None
+    with _public_ip_lock:
+        _provider_cache[ip] = org
+    return org
+
+
 @router.get("/public-ip")
 def public_ip():
     """Read the current public address and compare it with this app session."""
@@ -754,8 +782,9 @@ def public_ip():
         if _original_public_ip is None:
             _original_public_ip = current
         original = _original_public_ip
+    provider = _provider_of(current)
     return {"original": original, "current": current, "changed": current != original,
-            "restored": current == original}
+            "restored": current == original, "provider": provider}
 
 
 class VpnGateProfile(BaseModel):

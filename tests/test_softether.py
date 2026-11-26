@@ -243,21 +243,61 @@ def test_close_really_ends_the_manager_process(monkeypatch):
 
 
 def test_public_ip_asks_only_the_ip_service(panel, monkeypatch):
-    """The "Controlla IP pubblico" button reaches api.ipify.org, never the source."""
+    """The "Controlla IP pubblico" button reaches api.ipify.org and ipinfo.io, never the source."""
     client, *_ = panel
     calls = []
 
     def fake_get(url, **kwargs):
         calls.append(url)
+        if "ipinfo.io" in url:
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"org": "AS64500 Example ISP"})
         return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"ip": "203.0.113.7"})
 
     monkeypatch.setattr(softether.requests, "get", fake_get)
     monkeypatch.setattr(softether, "_original_public_ip", None)
+    monkeypatch.setattr(softether, "_provider_cache", {})
+    response = client.get("/api/softether/public-ip")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current"] == "203.0.113.7"
+    assert body["provider"] == "AS64500 Example ISP"
+    assert calls == ["https://api.ipify.org", "https://ipinfo.io/203.0.113.7/json"]
+    assert not any("streamingcommunity" in url for url in calls)
+
+
+def test_operator_lookup_failure_keeps_the_public_ip(panel, monkeypatch):
+    client, *_ = panel
+
+    def fake_get(url, **kwargs):
+        if "ipinfo.io" in url:
+            raise softether.requests.ConnectionError("offline")
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"ip": "203.0.113.7"})
+
+    monkeypatch.setattr(softether.requests, "get", fake_get)
+    monkeypatch.setattr(softether, "_original_public_ip", None)
+    monkeypatch.setattr(softether, "_provider_cache", {})
     response = client.get("/api/softether/public-ip")
     assert response.status_code == 200
     assert response.json()["current"] == "203.0.113.7"
-    assert calls == ["https://api.ipify.org"]
-    assert not any("streamingcommunity" in url for url in calls)
+    assert response.json()["provider"] is None
+
+
+def test_operator_is_asked_once_per_address(panel, monkeypatch):
+    client, *_ = panel
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        if "ipinfo.io" in url:
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"org": "AS64500 Example ISP"})
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"ip": "203.0.113.7"})
+
+    monkeypatch.setattr(softether.requests, "get", fake_get)
+    monkeypatch.setattr(softether, "_original_public_ip", None)
+    monkeypatch.setattr(softether, "_provider_cache", {})
+    client.get("/api/softether/public-ip")
+    client.get("/api/softether/public-ip")
+    assert sum("ipinfo.io" in url for url in calls) == 1
 
 
 def test_public_ip_unavailable_is_a_503(panel, monkeypatch):

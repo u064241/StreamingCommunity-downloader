@@ -249,7 +249,8 @@ async function checkSoftEtherBlockIp() {
     const ipInfo = await softetherApi.publicIp();
     const status = ipInfo.changed
       ? t('softether.ipChanged', {original: ipInfo.original}) : t('softether.ipUnchanged');
-    _feedback('softether-block-ip', `${t('softether.publicIp')}: ${ipInfo.current} · ${status}`, 'dark');
+    const operator = ipInfo.provider ? ` (${ipInfo.provider})` : '';
+    _feedback('softether-block-ip', `${t('softether.publicIp')}: ${ipInfo.current}${operator} · ${status}`, 'dark');
   } catch (error) {
     _feedback('softether-block-ip', _softetherError(error), 'danger');
   } finally {
@@ -418,7 +419,8 @@ function renderVpnGateIpBanner(ipInfo) {
   const status = ipInfo.changed
     ? t('softether.ipChanged', {original: ipInfo.original})
     : t('softether.ipUnchanged');
-  return `<strong>${escapeHtml(t('softether.publicIp'))}</strong>: ${escapeHtml(ipInfo.current)} · ${escapeHtml(status)}`;
+  const operator = ipInfo.provider ? ` (${escapeHtml(ipInfo.provider)})` : '';
+  return `<strong>${escapeHtml(t('softether.publicIp'))}</strong>: ${escapeHtml(ipInfo.current)}${operator} · ${escapeHtml(status)}`;
 }
 
 async function loadVpnGateServers(options) {
