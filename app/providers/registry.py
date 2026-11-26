@@ -45,12 +45,12 @@ class ProviderRegistry:
         except Exception as exc:
             raise ProviderError(source, ProviderErrorCode.UPSTREAM, "Provider search failed") from exc
 
-    def home(self, source: str) -> HomeResult:
+    def home(self, source: str, **kwargs) -> HomeResult:
         provider = self.get(source)
         if not provider.capabilities.home:
             raise ProviderError(source, ProviderErrorCode.UNSUPPORTED, "Provider home is unavailable")
         try:
-            result = provider.home()
+            result = provider.home(**kwargs)
             if not isinstance(result, HomeResult) or result.source != source:
                 raise ValueError("Invalid home contract result")
             return result

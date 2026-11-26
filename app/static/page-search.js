@@ -32,6 +32,7 @@ function setSource(src) {
   _catalogSection = null;
   _cancelCatalogWork();
   currentSource = src;
+  _rpGenre = null;
   if (typeof resetAnimeBrowse === 'function') resetAnimeBrowse();
   document.getElementById('src-all')?.classList.toggle('active', src === 'all');
   document.getElementById('src-sc').classList.toggle('active', src === 'streamingcommunity');
@@ -455,6 +456,11 @@ async function loadMoreResults() {
 
 let _homeAbort = null;
 const _homeCache = {};   // source -> shelves, for a switch back and forth
+// RaiPlay: the genre whose shelves the start page shows (null = the front page).
+let _rpGenre = null;
+function _homeKey() {
+  return `${currentSource}:${currentDomain || ''}` + (currentSource === 'raiplay' && _rpGenre ? `:g:${_rpGenre.id}` : '');
+}
 
 // When an answer came from the panel's own cache (X-Cache: HIT), how old it is:
 // the server keeps the source's pages for a while to stay polite to it, and
@@ -521,7 +527,7 @@ async function showStartPage() {
   }
 
   _setStartPageVisible(true);
-  const cacheKey = `${currentSource}:${currentDomain || ''}`;
+  const cacheKey = _homeKey();
   const cached = _homeCache[cacheKey];
   if (cached && cached.expires > Date.now()) {
     renderShelves(); renderHomeExtras(cached); return;
@@ -530,6 +536,7 @@ async function showStartPage() {
   if (_homeAbort) _homeAbort.abort();
   _homeAbort = new AbortController();
   const source = currentSource;
+  const genre = currentSource === 'raiplay' && _rpGenre ? _rpGenre.id : null;
   host.innerHTML = _shelfSkeletons();
   try {
     // A 409 with no domain configured throws like any other refusal, and
@@ -537,9 +544,9 @@ async function showStartPage() {
     let stamp = null;
     // "Tutte le fonti": /api/home?source=all stacks StreamingCommunity's
     // shelves, then AnimeUnity's, each tagged with its source.
-    const body = await api.get('/api/home', {source}, {signal: _homeAbort.signal,
+    const body = await api.get('/api/home', genre ? {source, genre} : {source}, {signal: _homeAbort.signal,
                                                        onHeaders: h => { stamp = _cacheStamp(h); }});
-    if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
+    if (homeGeneration !== _catalogGeneration || _homeKey() !== cacheKey || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
     if (source === 'animeunity' && !body.shelves?.length) throw new Error(t('title.sourceUnavailable'));
     _homeCache[cacheKey] = {shelves: body.shelves || [], genres: body.genres || [], stamp,
                             expires: Date.now() + 900000};
@@ -547,7 +554,7 @@ async function showStartPage() {
     renderHomeExtras(_homeCache[cacheKey]);
   } catch (e) {
     if (e.name === 'AbortError') return;
-    if (homeGeneration !== _catalogGeneration || source !== currentSource || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
+    if (homeGeneration !== _catalogGeneration || _homeKey() !== cacheKey || _catalogSection || document.getElementById('search-input')?.value.trim()) return;
     host.innerHTML = `<div class="alert alert-warning" role="alert">${escapeHtml(t('title.sourceUnavailable'))} ` +
       `<button class="btn btn-primary btn-sm ms-2" data-action="search:retryHome">${escapeHtml(t('common.retry'))}</button></div>`;
   }
@@ -591,7 +598,7 @@ function _shelfTitleMarkup(shelf) {
 
 function renderShelves() {
   const host = document.getElementById('home-shelves');
-  const entry = _homeCache[`${currentSource}:${currentDomain || ''}`];
+  const entry = _homeCache[_homeKey()];
   const shelves = entry?.shelves || [];
   host.innerHTML = shelves.length ? _cacheStampMarkup(entry?.stamp) : '';
   // One flat array across every rail, reset once here and appended to in order,
@@ -900,6 +907,8 @@ registerActions({
   'search:source': d => setSource(d.source),
   'search:run':    () => doSearch(),
   'search:retryHome': () => showStartPage(),
+  'rp:genre':      d => openRaiPlayGenre(d.genreId, d.genreName),
+  'rp:allGenres':  () => closeRaiPlayGenre(),
   'search:more':   () => loadMoreResults(),
   'search:kind':   d => setKindFilter(d.kind),
   'search:dub':    d => setDubOnly(d.on === '1'),
@@ -936,7 +945,44 @@ function openCatalog(section, genre) {
   navigate('search', [], {section, genre: genre || null});
 }
 
+// RaiPlay: genre chips above the front page, or a "back" bar above a genre's shelves.
+function renderRaiPlayGenres(entry) {
+  const host = document.getElementById('home-shelves');
+  const extra = document.createElement('div');
+  extra.id = 'home-extra';
+  if (_rpGenre) {
+    extra.innerHTML = '<div class="search-filters">' +
+      `<button class="source-btn" data-action="rp:allGenres"><i class="ti ti-arrow-left" aria-hidden="true"></i> ${escapeHtml(t('raiplay.allGenres'))}</button>` +
+      `<span class="fm-meta ms-2">${escapeHtml(_rpGenre.name)}</span></div>`;
+  } else {
+    extra.innerHTML = '<div class="search-filters" id="home-genres"></div>';
+    const genres = extra.querySelector('#home-genres');
+    (entry.genres || []).forEach(g => {
+      const button = document.createElement('button');
+      button.className = 'source-btn';
+      button.dataset.action = 'rp:genre';
+      button.dataset.genreId = g.id;
+      button.dataset.genreName = g.name;
+      button.textContent = catalogLabel(g.name);
+      genres.appendChild(button);
+    });
+  }
+  host.prepend(extra);
+}
+
+function openRaiPlayGenre(id, name) {
+  if (currentSource !== 'raiplay' || !/^[a-z0-9-]{1,80}$/.test(id || '')) return;
+  _rpGenre = {id, name: name || id};
+  showStartPage();
+}
+
+function closeRaiPlayGenre() {
+  _rpGenre = null;
+  showStartPage();
+}
+
 function renderHomeExtras(entry) {
+  if (currentSource === 'raiplay') return renderRaiPlayGenres(entry);
   if (currentSource !== 'streamingcommunity') return;
   const host = document.getElementById('home-shelves');
   const extra = document.createElement('div');

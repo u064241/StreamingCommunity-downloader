@@ -1,0 +1,124 @@
+{
+ "name": "Documentari",
+ "ID": "Page-a447c292-650c-4506-82fc-6a0204d7db97",
+ "contents": [
+  {
+   "id": "PublishingBlock-2144d315-6ccd-4be4-9d5a-cf93a76345cb",
+   "name": "Storia",
+   "type": "RaiPlay Slider Block",
+   "header": {
+    "label": "Storia",
+    "weblink": "/genere/Documentari---Storia-b1a0fd0c-2bbf-42e9-8954-20955517d578.html",
+    "path_id": "/genere/Documentari---Storia-b1a0fd0c-2bbf-42e9-8954-20955517d578.json",
+    "sub_type": "RaiPlay V2 Genere Page",
+    "link_label": "Vedi tutti"
+   },
+   "contents": [
+    {
+     "id": "ContentItem-0fab490d-063b-4c71-9de0-d83a230156b1",
+     "path_id": "/programmi/sguardiincamera.json",
+     "season_info": {
+      "path_id": "",
+      "block_id": "",
+      "set_id": ""
+     },
+     "rights_management": {
+      "rights": {
+       "offline": {},
+       "geoprotection": {
+        "europe": true,
+        "italy": true
+       }
+      }
+     },
+     "images": {
+      "landscape": "/dl/img/2026/11/09/1794219668268_2048x1152.jpg",
+      "portrait": "",
+      "square": "/dl/img/2026/11/09/1794219670486_2048x2048.jpg",
+      "landscape43": "/dl/img/2026/11/09/1794219668894_2048x1536.jpg",
+      "portrait43": "/dl/img/2026/11/09/1794219669604_1536x2048.jpg",
+      "portrait_logo": "/dl/img/2026/11/09/1794219663763_1536x2048_logo.jpg",
+      "landscape_logo": "/dl/img/2026/11/09/1794219663763_2048x1152_logo.jpg"
+     },
+     "layout": "multi",
+     "name": "Sguardi in camera",
+     "vanity": "La storia italiana attraverso l'obiettivo delle cineprese amatoriali, in una docuserie narrata da Milena Vukotic",
+     "type": "RaiPlay Programma Item",
+     "info_url": "/programmi/info/0fab490d-063b-4c71-9de0-d83a230156b1.json",
+     "login_required": true,
+     "weblink": "/programmi/sguardiincamera"
+    },
+    {
+     "id": "ContentItem-57aea8ac-e9cc-4dae-8201-2bd62cabf8d0",
+     "path_id": "/programmi/eunadomenicaseradinovembre.json",
+     "season_info": {
+      "path_id": "",
+      "block_id": "",
+      "set_id": ""
+     },
+     "rights_management": {
+      "rights": {
+       "offline": {
+        "Web": true,
+        "Smart Tv": true,
+        "Smartphone": true,
+        "Tablet": true
+       },
+       "geoprotection": {}
+      }
+     },
+     "images": {
+      "landscape": "/dl/img/2022/12/01/1669902545511_2048x1152.jpg",
+      "portrait": "",
+      "square": "/dl/img/2022/12/01/1669902465113_2048x2048.jpg",
+      "landscape43": "/dl/img/2022/12/01/1669902465113_2048x1536.jpg",
+      "portrait43": "/dl/img/2022/12/01/1669902465113_1536x2048.jpg",
+      "portrait_logo": "/dl/img/2022/12/01/1669902465114_1536x2048_logo.jpg",
+      "landscape_logo": "/dl/img/2022/12/01/1669902465114_2048x1152_logo.jpg"
+     },
+     "layout": "multi",
+     "name": "È una domenica sera di novembre",
+     "vanity": "Il restauro dell'intenso documentario sul terremoto che sconvolse l'Irpinia il 23 novembre 1980",
+     "type": "RaiPlay Programma Item",
+     "info_url": "/programmi/info/57aea8ac-e9cc-4dae-8201-2bd62cabf8d0.json",
+     "login_required": true,
+     "weblink": "/programmi/eunadomenicaseradinovembre"
+    },
+    {
+     "id": "ContentItem-d19bfd0c-c1f1-4424-9200-af67a19f7f8a",
+     "path_id": "/programmi/angelidelfango.json",
+     "season_info": {
+      "path_id": "",
+      "block_id": "",
+      "set_id": ""
+     },
+     "rights_management": {
+      "rights": {
+       "offline": {},
+       "geoprotection": {
+        "europe": true,
+        "italy": true
+       }
+      }
+     },
+     "images": {
+      "landscape": "/dl/img/2026/11/03/1793694531436_2048x1152.jpg",
+      "portrait": "",
+      "square": "/dl/img/2026/11/03/1793694533780_2048x2048.jpg",
+      "landscape43": "/dl/img/2026/11/03/1793694532110_2048x1536.jpg",
+      "portrait43": "/dl/img/2026/11/03/1793694532733_1536x2048.jpg",
+      "portrait_logo": "/dl/img/2026/11/03/1793694526396_1536x2048_logo.jpg",
+      "landscape_logo": "/dl/img/2026/11/03/1793694526396_2048x1152_logo.jpg"
+     },
+     "layout": "single",
+     "name": "Angeli del fango",
+     "vanity": "La storia di tanti giovani animati dal desiderio di fare la propria parte per salvare la memoria collettiva",
+     "type": "RaiPlay Programma Item",
+     "info_url": "/programmi/info/d19bfd0c-c1f1-4424-9200-af67a19f7f8a.json",
+     "login_required": true,
+     "weblink": "/programmi/angelidelfango"
+    }
+   ]
+  }
+ ]
+}

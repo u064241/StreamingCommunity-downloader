@@ -6,6 +6,7 @@ licences or keys.
 from __future__ import annotations
 
 import logging
+import re
 
 from ..contracts import (
     NOT_DOWNLOADABLE_REASON, HomeResult, ProviderCapabilities, ProviderError, ProviderErrorCode, TitleDetails, search_results,
@@ -58,9 +59,17 @@ class RaiPlayProvider:
         except Exception as exc:
             raise self._error(ProviderErrorCode.UPSTREAM, "Risposta RaiPlay non valida", exc) from exc
 
-    def home(self):
+    def home(self, genre=None):
+        """Front page shelves, or one genre's shelves (``genre`` = its id, no genre list)."""
+        if genre is not None and (not isinstance(genre, str) or not re.fullmatch(r"[a-z0-9-]{1,80}", genre)):
+            raise self._error(ProviderErrorCode.INVALID_REQUEST, "Genere RaiPlay non valido")
         try:
-            shelves, genres = parser.home_shelves(self.client.home())
+            if genre is None:
+                shelves, genres = parser.home_shelves(self.client.home())
+            else:
+                # A genre page lists shelves only; its own genre list is not offered.
+                shelves, _ = parser.home_shelves(self.client.genre(f"/tipologia/{genre}/index.json"))
+                genres = []
             return HomeResult.from_legacy(self.source, shelves, genres)
         except RaiPlayUnavailable as exc:
             raise self._error(ProviderErrorCode.UPSTREAM, "RaiPlay non raggiungibile", exc) from exc

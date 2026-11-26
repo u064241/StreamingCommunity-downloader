@@ -35,6 +35,8 @@ SEARCH_PATH = "/atomatic/raiplay-search-service/api/v1/msearch"
 SEARCH_TEMPLATE_IN = "6470a982e4e0301afe1f81f1"
 SEARCH_TEMPLATE_OUT = "6516ac5d40da6c377b151642"
 
+# The front page of one typology (genre), e.g. /tipologia/storia/index.json.
+_GENRE_PATH = re.compile(r"/tipologia/[a-z0-9-]{1,80}/index\.json")
 # Only these sections can be fetched for a title card.
 _TITLE_PATH = re.compile(r"/(programmi|collezioni)/[A-Za-z0-9][A-Za-z0-9/-]{0,220}\.json")
 _EPISODES_PATH = re.compile(r"/(programmi|collezioni)/[A-Za-z0-9][A-Za-z0-9/-]{0,300}/episodes\.json")
@@ -83,6 +85,12 @@ class RaiPlayClient:
     def title(self, path: str) -> dict:
         if not isinstance(path, str) or not (_TITLE_PATH.fullmatch(path) or _EPISODES_PATH.fullmatch(path)):
             raise ValueError("Refusing a non-catalogue RaiPlay path")
+        return self._get_json(path)
+
+    def genre(self, path: str) -> dict:
+        """Front page JSON of one typology: same shape as the home page."""
+        if not isinstance(path, str) or not _GENRE_PATH.fullmatch(path):
+            raise ValueError("Refusing a non-genre RaiPlay path")
         return self._get_json(path)
 
     def video(self, path: str) -> dict:

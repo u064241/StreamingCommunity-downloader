@@ -29,6 +29,8 @@ async def home(
     # Last and defaulted: tests call these handlers directly, positionally.
     # FastAPI still injects it, by annotation.
     response: Response = None,
+    # RaiPlay only: one typology's shelves (the ids come from the home's genres).
+    genre: str | None = Query(default=None, min_length=1, max_length=80, pattern=r"^[a-z0-9-]+$"),
 ):
     """The shelves the source itself publishes on its front page.
 
@@ -43,8 +45,13 @@ async def home(
     left out and logged; the other is still answered.
     """
     if source == "all":
+        if genre is not None:
+            raise HTTPException(status_code=422, detail="Il genere richiede una sorgente singola")
         return await _home_all(registry, response)
-    result = await call_provider(registry.home, source)
+    if genre is not None and source != "raiplay":
+        raise HTTPException(status_code=422, detail="Genere non disponibile per questa sorgente")
+    kwargs = {"genre": genre} if genre is not None else {}
+    result = await call_provider(registry.home, source, **kwargs)
     _cache_headers(response, [home_core.last_served(source) or {}])
     return result.to_legacy()
 
