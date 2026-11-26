@@ -652,6 +652,7 @@ class M3U8_Segments:
         self.progress_timeout = PROGRESS_TIMEOUT
         self.max_retry = 3
         self._failed_segments = set()
+        self._prefetched = set()   # segment indices aria2c stored and counted
         self._saved_count = 0
         self._failure_streak = 0
         self._failed_lock = threading.Lock()
@@ -1033,6 +1034,8 @@ class M3U8_Segments:
             return
         if self._abort.is_set():
             return
+        if index in self._prefetched:
+            return  # stored and counted by _aria2_prefetch
         ts_url = self.segments[index]
         ts_filename = os.path.join(self.temp_folder, f"{index}.ts")
 
@@ -1076,9 +1079,10 @@ class M3U8_Segments:
     def _aria2_prefetch(self):
         """Fill the missing segments with aria2c when the setting asks for it. Never raises.
 
-        Only writes files; the segment loop then counts them like any segment
-        already on disk, so progress and byte totals stay in one place. Whatever
-        aria2c leaves out is fetched by the loop as usual.
+        Each delivered segment is counted here, on the same bar and byte total
+        the segment loop uses, so the page shows progress, MB/s and ETA while
+        aria2c runs. The loop skips those indices (``_prefetched``) so nothing
+        is counted twice. Whatever aria2c leaves out is fetched by the loop as usual.
         """
         if get_settings().get("hls_use_aria2c") is not True:
             return
@@ -1098,10 +1102,17 @@ class M3U8_Segments:
             nonlocal stored
             try:
                 with open(path, "rb") as fh:
-                    self._write_ts(index, fh.read())
-                stored += 1
+                    data = fh.read()
+                self._write_ts(index, data)
             except Exception as exc:
                 logger.warning("aria2c: segmento %d non salvato: %s", index, redact(str(exc)))
+                return
+            stored += 1
+            self._record_success()
+            with self._failed_lock:
+                self._bytes_fetched += len(data)
+                self._prefetched.add(index)
+            self._bar.update(1, bytes=len(data))
 
         try:
             with _SOURCE_SLOTS.hold(connections):
@@ -1120,6 +1131,7 @@ class M3U8_Segments:
 
     def download_ts(self):
         self._failed_segments = set()
+        self._prefetched = set()
         self._bytes_fetched = 0
         self._phase_started = time.monotonic()
         logger.info("Segment fetch %s: %d segments, connections cap %d, workers %d",

@@ -68,3 +68,59 @@ def test_fetch_chunk_stores_files_and_reports_pushback(monkeypatch, tmp_path):
     assert [index for index, _ in stored] == [0, 1]
     assert all(data == b"x" * 16 for _, data in stored)
     assert not any(name.endswith(".bin") for name in os.listdir(tmp_path / "w"))
+
+
+class _LiveProcess:
+    """aria2c finishing one file per poll and announcing it, as its notice log does."""
+
+    def __init__(self, cmd, stdout=None, stderr=None):
+        self.work_dir = cmd[cmd.index("-d") + 1]
+        self.names = []
+        with open(cmd[cmd.index("-i") + 1], encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip().startswith("out=seg"):
+                    self.names.append(line.strip()[len("out="):])
+        self.log = stdout
+        self.polls = 0
+
+    def poll(self):
+        if self.polls < len(self.names):
+            name = self.names[self.polls]
+            with open(os.path.join(self.work_dir, name), "wb") as out:
+                out.write(b"y" * 8)
+            # The path carries a "503" folder name: not a pushback.
+            self.log.write(f"11/26 02:05:03 [NOTICE] Download complete: "
+                           f"C:/Film 503/tmp/aria2/{name}\r\n".encode())
+            self.log.flush()
+            self.polls += 1
+            return None
+        return 0
+
+    def wait(self):
+        return 0
+
+    def kill(self):
+        pass
+
+
+def test_fetch_chunk_delivers_each_file_while_aria2c_runs(monkeypatch, tmp_path):
+    monkeypatch.setattr(hls_aria2.subprocess, "Popen", _LiveProcess)
+    monkeypatch.setattr(hls_aria2.time, "sleep", lambda s: None)
+    stored = []
+
+    def store(index, path):
+        with open(path, "rb") as fh:
+            stored.append((index, fh.read()))
+
+    items = [(i, f"https://h/{i}.ts") for i in range(3)]
+    pushback = hls_aria2.fetch_chunk("aria2c", items, {}, 2, str(tmp_path / "w"), store)
+    assert pushback is False
+    # Each file exactly once, in the order aria2c finished them.
+    assert [index for index, _ in stored] == [0, 1, 2]
+    assert not any(name.endswith(".bin") for name in os.listdir(tmp_path / "w"))
+
+
+def test_command_asks_for_completion_notices_without_colour():
+    cmd = hls_aria2._command("aria2c", "list.txt", "work", 4, {})
+    assert "--console-log-level=notice" in cmd
+    assert "--enable-color=false" in cmd

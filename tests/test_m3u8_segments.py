@@ -384,3 +384,77 @@ def test_a_clean_download_writes_every_segment(tmp_path, segment_server, no_slee
 
     assert seg._missing_segments() == []
     assert sorted(os.listdir(seg.temp_folder)) == [f"{i}.ts" for i in range(5)]
+
+
+# ── aria2c prefetch: same bar, bytes counted once ─────────────────────────────
+
+def _aria2_on(monkeypatch, deliver):
+    real = m3u8.get_settings
+    monkeypatch.setattr(m3u8, "get_settings", lambda: {**real(), "hls_use_aria2c": True})
+    monkeypatch.setattr(m3u8.hls_aria2, "executable", lambda: "aria2c")
+
+    def fake_fetch(binary, items, headers, connections, work_dir, store, cancel_event=None):
+        os.makedirs(work_dir, exist_ok=True)
+        for index, _url in items:
+            if index in deliver:
+                path = os.path.join(work_dir, f"seg{index}.bin")
+                with open(path, "wb") as fh:
+                    fh.write(b"a" * 7)
+                store(index, path)
+        return False
+
+    monkeypatch.setattr(m3u8.hls_aria2, "fetch_chunk", fake_fetch)
+
+
+def test_aria2_segments_move_the_bar_and_are_counted_once(
+        tmp_path, segment_server, no_sleep, monkeypatch):
+    _, calls = segment_server
+    _aria2_on(monkeypatch, deliver={0, 1, 2, 3})
+    seg = _segments(tmp_path, count=4)
+    bars = []
+    seg.progress_factory = lambda **kw: bars.append(_Bar(**kw)) or bars[-1]
+
+    seg.download_ts()
+
+    assert calls == []                      # nothing left for the built-in loop
+    assert bars[0].n == 4 and bars[0].bytes == 4 * 7
+    assert seg._bytes_fetched == 4 * 7
+    assert seg._missing_segments() == []
+
+
+def test_aria2_gaps_are_filled_by_the_loop_without_double_counting(
+        tmp_path, segment_server, no_sleep, monkeypatch):
+    _, calls = segment_server
+    _aria2_on(monkeypatch, deliver={0, 2})
+    seg = _segments(tmp_path, count=4)
+    bars = []
+    seg.progress_factory = lambda **kw: bars.append(_Bar(**kw)) or bars[-1]
+
+    seg.download_ts()
+
+    assert sorted(calls) == ["https://cdn.example.test/seg-1.ts", "https://cdn.example.test/seg-3.ts"]
+    # 2 from aria2c (7 bytes) + 2 from the loop (_Response default: 10 bytes).
+    assert bars[0].n == 4 and bars[0].bytes == 2 * 7 + 2 * 10
+    assert seg._bytes_fetched == 2 * 7 + 2 * 10
+
+
+def test_aria2_prefetch_reports_progress_before_the_loop_runs(
+        tmp_path, segment_server, no_sleep, monkeypatch):
+    """The bar moves during the prefetch itself, not only once the loop starts."""
+    _aria2_on(monkeypatch, deliver={0, 1, 2})
+    seg = _segments(tmp_path, count=3)
+    seg._bar = _Bar(total=3)
+    seg._bytes_fetched = 0
+
+    seg._aria2_prefetch()
+
+    assert seg._bar.n == 3 and seg._bar.bytes == 3 * 7
+    assert seg._prefetched == {0, 1, 2}
+
+
+def test_aria2_off_leaves_the_prefetch_out(tmp_path, segment_server, no_sleep, monkeypatch):
+    called = []
+    monkeypatch.setattr(m3u8.hls_aria2, "fetch_chunk", lambda *a, **k: called.append(a))
+    seg = _segments(tmp_path, count=2)
+    seg.download_ts()
+    assert called == [] and seg._prefetched == set()

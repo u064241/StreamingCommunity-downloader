@@ -26,6 +26,9 @@ CHUNK_SEGMENTS = 50          # one aria2c process per chunk: cancel and pushback
 MAX_CONNECTIONS = 16         # hard ceiling on -j, whatever the caller asks for
 POLL_S = 0.25
 _PUSHBACK = re.compile(rb"\b(429|503)\b")
+# aria2c's notice for a finished file. Its path can hold any digits (a title
+# folder named "503"), so these lines are dropped before the pushback search.
+_COMPLETE = re.compile(rb"Download complete: (.*?)\s*$")
 
 
 def executable() -> str | None:
@@ -41,8 +44,8 @@ def connections_for(cap: int) -> int:
 def _command(binary: str, listing: str, work_dir: str, connections: int, headers: dict) -> list[str]:
     cmd = [binary, "-i", listing, "-d", work_dir, "-j", str(connections), "-x", "1", "-s", "1",
            "--max-tries=3", "--retry-wait=2", "--allow-overwrite=true", "--auto-file-renaming=false",
-           "--console-log-level=warn", "--show-console-readout=false", "--summary-interval=0",
-           "--download-result=hide"]
+           "--console-log-level=notice", "--enable-color=false", "--show-console-readout=false",
+           "--summary-interval=0", "--download-result=hide"]
     for name, value in headers.items():
         if name.lower() == "user-agent":
             cmd.append(f"--user-agent={value}")
@@ -55,9 +58,12 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
                 work_dir: str, store, cancel_event=None) -> bool:
     """Download *items* ((segment index, absolute URL) pairs) and pass each whole file to *store*.
 
-    *store(index, path)* is called for every file aria2c delivered; the caller
-    reads and removes it. Returns True when a 429 or 503 was seen (pushback).
-    Cancelling kills aria2c and returns False; the caller checks the flag itself.
+    *store(index, path)* is called once for every file aria2c delivered: while
+    aria2c runs, as soon as it reports the file complete (so the caller's
+    progress moves segment by segment), and after it exits for any file not
+    reported yet. The caller reads it; it is removed here. Returns True when a
+    429 or 503 was seen (pushback). Cancelling kills aria2c and returns False;
+    the caller checks the flag itself.
     """
     os.makedirs(work_dir, exist_ok=True)
     listing = os.path.join(work_dir, "segments.txt")
@@ -65,6 +71,43 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
         for index, url in items:
             fh.write(f"{url}\n  out=seg{index}.bin\n")
     log_path = os.path.join(work_dir, "aria2c.log")
+    wanted = {f"seg{index}.bin": index for index, _url in items}
+    delivered: set[int] = set()
+    offset = 0
+    pending = b""
+
+    def deliver(index: int) -> None:
+        if index in delivered:
+            return
+        path = os.path.join(work_dir, f"seg{index}.bin")
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            delivered.add(index)
+            store(index, path)
+        if index in delivered and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def deliver_reported() -> None:
+        """Hand over the files aria2c's log says are complete so far."""
+        nonlocal offset, pending
+        try:
+            with open(log_path, "rb") as fh:
+                fh.seek(offset)
+                data = fh.read()
+        except OSError:
+            return
+        offset += len(data)
+        lines = (pending + data).split(b"\n")
+        pending = lines.pop()          # a line still being written
+        for line in lines:
+            match = _COMPLETE.search(line)
+            if match:
+                name = os.path.basename(match.group(1).decode("utf-8", "replace").replace("\\", "/"))
+                if name in wanted:
+                    deliver(wanted[name])
+
     # Refused while aria2c.exe is being replaced (the caller falls back to the built-in downloader).
     with aria2_update.running(), open(log_path, "wb") as log:
         proc = subprocess.Popen(_command(binary, listing, work_dir, min(connections, len(items)), headers),
@@ -76,16 +119,17 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
                     proc.wait()
                     return False
                 time.sleep(POLL_S)
+                deliver_reported()
         finally:
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
     with open(log_path, "rb") as log:
-        pushback = bool(_PUSHBACK.search(log.read()))
+        output = b"\n".join(line for line in log.read().split(b"\n") if not _COMPLETE.search(line))
+    pushback = bool(_PUSHBACK.search(output))
     for index, _url in items:
+        deliver(index)
         path = os.path.join(work_dir, f"seg{index}.bin")
-        if os.path.isfile(path) and os.path.getsize(path) > 0:
-            store(index, path)
         if os.path.exists(path):
             try:
                 os.remove(path)

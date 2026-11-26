@@ -42,6 +42,7 @@ function connectGlobalStream() {
         updateActiveBadge();
         break;
       case 'job_status':
+        resyncIfUnknownJob(msg.job_id);
         if (_jobs.has(msg.job_id)) {
           const job = _jobs.get(msg.job_id);
           job.status = msg.status;
@@ -55,6 +56,7 @@ function connectGlobalStream() {
       case 'job_queued':
         // Joined the line for a slot: first time, or back from a retry wait.
         // The ticket orders the waiting list and numbers it.
+        resyncIfUnknownJob(msg.job_id);
         if (_jobs.has(msg.job_id)) {
           const job = _jobs.get(msg.job_id);
           job.status = 'queued';
@@ -65,9 +67,11 @@ function connectGlobalStream() {
         }
         break;
       case 'progress':
+        resyncIfUnknownJob(msg.job_id);
         handleProgressEvent(msg);
         break;
       case 'status':
+        resyncIfUnknownJob(msg.job_id);
         handlePhaseEvent(msg.job_id, msg.phase);
         break;
       case 'done':
@@ -106,6 +110,34 @@ function connectGlobalStream() {
     document.querySelector('.stream-dot').style.background='#d63939';
     setTimeout(connectGlobalStream, 3000);
   };
+}
+
+// The server drops the oldest events of a subscriber that falls behind
+// (jobs._fanout), and a job_created can be one of them. The job then streams
+// progress the page has no card for — no bar, no MB/s, no ETA — until a
+// reload. An event naming an unknown job re-reads the list once, quietly.
+// Each id gets one try, so a late frame of a dismissed job cannot loop.
+const _resyncTried = new Set();
+let _resyncPending = null;
+
+function resyncIfUnknownJob(jobId) {
+  if (!jobId || _jobs.has(jobId) || _resyncTried.has(jobId)) return _resyncPending;
+  _resyncTried.add(jobId);
+  if (_resyncPending) return _resyncPending;
+  _resyncPending = (async () => {
+    try {
+      const jobs = await api.get('/api/jobs');
+      _jobs.clear();
+      jobs.forEach(j => _jobs.set(j.job_id, j));
+      renderAllJobCards();
+      updateActiveBadge();
+    } catch (_) {
+      // The next snapshot (reconnect) or the refresh button repairs the list.
+    } finally {
+      _resyncPending = null;
+    }
+  })();
+  return _resyncPending;
 }
 
 // ── Job cards ──────────────────────────────────────────────────────────────────
