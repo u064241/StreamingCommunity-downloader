@@ -319,7 +319,6 @@ class SettingsUpdate(BaseModel):
     video_encoder: Literal["auto", "nvenc", "qsv", "amf", "cpu"] | None = None
     video_quality: Literal["high", "balanced", "compact"] | None = None
     video_cpu_fallback: bool | None = None
-    hls_use_ytdlp: bool | None = None
     hls_use_aria2c: bool | None = None
     max_parallel_conversions: int | None = Field(default=None, strict=True)
     mcp_enabled: bool | None = None
