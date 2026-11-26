@@ -177,6 +177,9 @@ SETTINGS_DEFAULTS = {
     # Downloads HLS playlists with the managed yt-dlp.exe instead of the built-in
     # segment downloader (app/core/hls_ytdlp.py). Off by default: experimental.
     "hls_use_ytdlp": False,
+    # Prefetches the HLS segments with aria2c when it is on the PATH (app/core/hls_aria2.py).
+    # Off by default: experimental, to be measured before it is kept.
+    "hls_use_aria2c": False,
     # The MCP endpoint at /mcp. Off by default: it lets an agent act as a user.
     "mcp_enabled": False,
     "confirmations_enabled": True,

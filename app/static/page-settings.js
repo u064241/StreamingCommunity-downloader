@@ -1006,6 +1006,7 @@ async function loadOutputSettings() {
   document.getElementById('setting-output-container').value = data.output_container || 'mkv';
   document.getElementById('setting-subtitle-mode').value = data.subtitle_mode || 'embed';
   document.getElementById('setting-hls-use-ytdlp').checked = data.hls_use_ytdlp === true;
+  document.getElementById('setting-hls-use-aria2c').checked = data.hls_use_aria2c === true;
 }
 
 async function saveOutputSettings() {
@@ -1021,6 +1022,7 @@ async function saveOutputSettings() {
       output_container: outputContainer,
       subtitle_mode: subtitleMode,
       hls_use_ytdlp: document.getElementById('setting-hls-use-ytdlp').checked,
+      hls_use_aria2c: document.getElementById('setting-hls-use-aria2c').checked,
     });
     _feedback('output-feedback', t('settings.saved'), 'success');
     showToast(t('settings.output.format.saved'), 'success');

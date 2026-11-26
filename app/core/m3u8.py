@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from app.config import get_settings
-from app.core import container, hls_ytdlp, hosts, source_budget
+from app.core import container, hls_aria2, hls_ytdlp, hosts, source_budget
 from app.core._shared import AES128_KEY_BYTES, with_retry
 from app.core.ffmpeg_path import run_ffmpeg, ffmpeg_file_arg, get_ffmpeg_exe
 from app.core.headers import get_headers
@@ -1073,6 +1073,51 @@ class M3U8_Segments:
             self._bytes_fetched += downloaded_bytes
         progress_counter.update(1, bytes=downloaded_bytes)
 
+    def _aria2_prefetch(self):
+        """Fill the missing segments with aria2c when the setting asks for it. Never raises.
+
+        Only writes files; the segment loop then counts them like any segment
+        already on disk, so progress and byte totals stay in one place. Whatever
+        aria2c leaves out is fetched by the loop as usual.
+        """
+        if get_settings().get("hls_use_aria2c") is not True:
+            return
+        binary = hls_aria2.executable()
+        if binary is None:
+            logger.info("hls_use_aria2c attivo ma aria2c non è nel PATH: uso il downloader interno")
+            return
+        todo = [(i, self.segments[i]) for i in range(len(self.segments))
+                if not self._have_segment(i) and not self._info(i).get("byterange")]
+        if not todo:
+            return
+        work_dir = os.path.join(self.temp_folder, "aria2")
+        connections = hls_aria2.connections_for(min(self._workers, _source_max_connections()))
+        stored = 0
+
+        def store(index, path):
+            nonlocal stored
+            try:
+                with open(path, "rb") as fh:
+                    self._write_ts(index, fh.read())
+                stored += 1
+            except Exception as exc:
+                logger.warning("aria2c: segmento %d non salvato: %s", index, redact(str(exc)))
+
+        try:
+            with _SOURCE_SLOTS.hold(connections):
+                for chunk in hls_aria2.chunks(todo):
+                    if (self._cancel and self._cancel.is_set()) or self._abort.is_set():
+                        break
+                    if hls_aria2.fetch_chunk(binary, chunk, self._headers(), connections,
+                                             work_dir, store, self._cancel):
+                        break
+        except Exception as exc:
+            logger.warning("aria2c non ha completato il prefetch (%s): uso il downloader interno",
+                           redact(str(exc)))
+        finally:
+            hls_aria2.cleanup(work_dir)
+        logger.info("aria2c: %d segmenti su %d pre-scaricati", stored, len(todo))
+
     def download_ts(self):
         self._failed_segments = set()
         self._bytes_fetched = 0
@@ -1087,6 +1132,7 @@ class M3U8_Segments:
         bar_factory = self.progress_factory or (lambda **kw: tqdm(**kw))
         progress_counter = bar_factory(total=len(self.segments), unit="seg", desc="Downloading", phase=self.phase)
         self._bar = progress_counter
+        self._aria2_prefetch()
 
         quit_event = threading.Event()
         timeout_event = threading.Event()

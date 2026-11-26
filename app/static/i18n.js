@@ -1578,6 +1578,8 @@
     'softether.hideManager': ['Nascondi nella tray', 'Hide to tray'],
     'settings.hls.ytdlp.label': ['Scarica i flussi HLS con yt-dlp (sperimentale)', 'Download HLS streams with yt-dlp (experimental)'],
     'settings.hls.ytdlp.help': ['Usa yt-dlp.exe al posto del downloader interno per i segmenti dei flussi. Stesso numero di connessioni del profilo sorgente. Se yt-dlp fallisce, quel flusso viene riscaricato con il downloader interno.', 'Uses yt-dlp.exe instead of the built-in downloader for stream segments, with the same number of connections as the source profile. If yt-dlp fails, that stream is downloaded again with the built-in downloader.'],
+    'settings.hls.aria2.label': ['Pre-scarica i segmenti HLS con aria2c (sperimentale)', 'Pre-download HLS segments with aria2c (experimental)'],
+    'settings.hls.aria2.help': ['Usa aria2c, se presente nel PATH, per scaricare in anticipo i segmenti che mancano; il downloader interno completa il resto e gestisce ritentativi e pause. Si ferma subito a un 429 o 503.', 'Uses aria2c, when it is on the PATH, to download the missing segments in advance; the built-in downloader completes the rest and handles retries and pauses. It stops at once on a 429 or 503.'],
     'softether.hideManagerTitle': ['Riporta il gestore nella tray. Il programma resta in esecuzione.', 'Send the manager back to the tray. The program keeps running.'],
     'softether.hidden': ['Gestore VPN riportato nella tray.', 'VPN manager sent back to the tray.'],
     'softether.notVisible': ['Il gestore VPN non è visibile: è già nella tray.', 'The VPN manager is not visible: it is already in the tray.'],
