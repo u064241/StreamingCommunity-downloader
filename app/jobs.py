@@ -177,6 +177,31 @@ def _schedule_external_id(params: dict) -> Optional[str]:
 
 logger = logging.getLogger(__name__)
 
+# Time spent in each phase of a job (video, audio_*, converting ...), logged
+# when the phase ends, so two runs of the same title can be compared. Keyed
+# by job id; dropped when the job ends.
+_PHASE_TIMES: dict[str, dict] = {}
+
+
+def _phase_mark(job_id: str, phase) -> None:
+    if not phase:
+        return
+    state = _PHASE_TIMES.setdefault(job_id, {"name": None, "t": None})
+    if phase == state["name"]:
+        return
+    now = time.monotonic()
+    if state["name"] is not None:
+        logger.info("job %s fase %s: %.1f s", job_id[:8], state["name"], now - state["t"])
+    state["name"], state["t"] = phase, now
+
+
+def _phase_finish(job_id: str, outcome: str) -> None:
+    state = _PHASE_TIMES.pop(job_id, None)
+    if state and state["name"] is not None:
+        logger.info("job %s fase %s: %.1f s (%s)", job_id[:8], state["name"],
+                    time.monotonic() - state["t"], outcome)
+
+
 SCHEDULER_INTERVAL = 30  # seconds
 
 # A failed download is run again this many times, this long after each failure,
@@ -664,6 +689,8 @@ class JobManager:
         bars: list = []
 
         def on_event(ev: dict):
+            if ev.get("type") in ("status", "progress"):
+                _phase_mark(job.job_id, ev.get("phase"))
             if ev.get("type") == "status" and ev.get("phase") == "converting":
                 job.progress = {**job.progress, "phase": "converting", "encoder": None,
                                 "pct": 0, "speed": 0, "bytes_speed": 0, "eta": None}
@@ -1162,12 +1189,15 @@ class JobManager:
                     if result:
                         self._remove_own_output(job, result)
                     raise DownloadCancelledError("Download annullato dall'utente")
+                _phase_finish(job.job_id, "done")
                 self._emit(job, {"type": "done", "output_path": result})
             except DownloadCancelledError:
+                _phase_finish(job.job_id, "annullato")
                 with self._lock:
                     job.status = "cancelled"
                 self._emit(job, {"type": "error", "message": "Annullato"})
             except Exception as e:
+                _phase_finish(job.job_id, f"errore: {type(e).__name__}")
                 with self._lock:
                     cancelled = job.cancel_event.is_set()
                     retry = (not cancelled and job.retries < AUTO_RETRIES and _worth_retrying(e))
