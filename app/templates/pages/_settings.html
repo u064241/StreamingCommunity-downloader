@@ -567,6 +567,14 @@
           </div>
         </div>
         <div class="form-check form-switch mt-3">
+          <input class="form-check-input" type="checkbox" id="setting-hls-use-ytdlp">
+          <label class="form-check-label" for="setting-hls-use-ytdlp" data-i18n="settings.hls.ytdlp.label">Scarica i flussi HLS con yt-dlp (sperimentale)</label>
+          <div class="form-text" data-i18n="settings.hls.ytdlp.help">
+            Usa yt-dlp.exe al posto del downloader interno per i segmenti dei flussi. Stesso numero
+            di connessioni del profilo sorgente. Se yt-dlp fallisce, quel flusso viene riscaricato con il downloader interno.
+          </div>
+        </div>
+        <div class="form-check form-switch mt-3">
           <input class="form-check-input" type="checkbox" id="setting-hls-use-aria2c">
           <label class="form-check-label" for="setting-hls-use-aria2c" data-i18n="settings.hls.aria2.label">Pre-scarica i segmenti HLS con aria2c (sperimentale)</label>
           <div class="form-text" data-i18n="settings.hls.aria2.help">

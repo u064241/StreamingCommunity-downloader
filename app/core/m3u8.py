@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from app.config import get_settings
-from app.core import container, hls_aria2, hosts, source_budget
+from app.core import container, hls_aria2, hls_ytdlp, hosts, source_budget
 from app.core._shared import AES128_KEY_BYTES, with_retry
 from app.core.ffmpeg_path import run_ffmpeg, ffmpeg_file_arg, get_ffmpeg_exe
 from app.core.headers import get_headers
@@ -1488,19 +1488,57 @@ class M3U8_Downloader:
             except OSError:
                 pass
 
+    def _ytdlp_fetch(self, url, out_path, phase, ext) -> bool:
+        """Try the yt-dlp engine for one playlist (opt-in, see app/core/hls_ytdlp.py).
+
+        False means: not used, or it failed; the caller runs the built-in
+        downloader for this playlist. An external AES key (enc.key, vixcloud) is
+        fine here: yt-dlp fetches it from the playlist's EXT-X-KEY itself, with the
+        same referer and user-agent, which was checked on a real episode.
+        """
+        if get_settings().get("hls_use_ytdlp") is not True:
+            return False
+        # The option is on: say why it is not used, once per download, instead
+        # of falling back without a word.
+        reason = None
+        if not hls_ytdlp.available():
+            reason = ("yt-dlp.exe non è installato nella cartella dati. "
+                      "Apri Impostazioni > Download > Controlla yt-dlp")
+        if reason is not None:
+            if not getattr(self, "_ytdlp_skip_logged", False):
+                self._ytdlp_skip_logged = True
+                logger.warning("yt-dlp HLS attivo ma non usato: %s. Uso il downloader interno.", reason)
+            return False
+        work_dir = os.path.join(self.temp_dir, f"ytdlp_{phase}")
+        try:
+            # Holds the same number of source slots as yt-dlp's -N, so every
+            # other download in the process shares what is left under the cap.
+            with _SOURCE_SLOTS.hold(hls_ytdlp.connections_for(_source_max_connections())) as held:
+                hls_ytdlp.download_playlist(url, out_path, work_dir=work_dir, ext=ext,
+                                            referer=self.referer, connections=held,
+                                            cancel_event=self.cancel_event,
+                                            progress_factory=self.progress_factory, phase=phase)
+            logger.info("%s scaricato con yt-dlp", phase)
+            return True
+        except hls_ytdlp.HlsEngineError as exc:
+            logger.warning("yt-dlp non ha scaricato %s (%s): uso il downloader interno", phase, exc)
+            return False
+
     def _assemble(self, work_path, final_path, remux):
         video_temp = os.path.join(self.temp_dir, "video")
-        video_m3u8 = M3U8_Segments(self.m3u8_url, self.key,
-                                    temp_dir=video_temp,
-                                    progress_factory=self.progress_factory,
-                                    referer=self.referer,
-                                    cancel_event=self.cancel_event,
-                                    phase="video")
-        logger.info("Downloading video segments...")
-        video_m3u8.get_info()
-        video_m3u8.download_ts()
-        bar = getattr(video_m3u8, "_bar", None)
-        video_m3u8.join(work_path)
+        bar = None
+        if not self._ytdlp_fetch(self.m3u8_url, work_path, "video", container.extension()):
+            video_m3u8 = M3U8_Segments(self.m3u8_url, self.key,
+                                        temp_dir=video_temp,
+                                        progress_factory=self.progress_factory,
+                                        referer=self.referer,
+                                        cancel_event=self.cancel_event,
+                                        phase="video")
+            logger.info("Downloading video segments...")
+            video_m3u8.get_info()
+            video_m3u8.download_ts()
+            bar = getattr(video_m3u8, "_bar", None)
+            video_m3u8.join(work_path)
 
         if self.audio_track_urls:
             for i, track in enumerate(self.audio_track_urls):
@@ -1510,17 +1548,18 @@ class M3U8_Downloader:
                     bar.emit_status(phase_label)
                 audio_path = os.path.join(self.temp_dir, f"_audio_{i}.mp4")
                 logger.info("Downloading audio track %d (%s)...", i + 1, lang)
-                audio_temp = os.path.join(self.temp_dir, f"audio_{i}")
-                audio_m3u8 = M3U8_Segments(track["url"], self.key,
-                                            temp_dir=audio_temp,
-                                            progress_factory=self.progress_factory,
-                                            referer=self.referer,
-                                            cancel_event=self.cancel_event,
-                                            phase=phase_label,
-                                            emit_join_phase=False)
-                audio_m3u8.get_info()
-                audio_m3u8.download_ts()
-                audio_m3u8.join(audio_path)
+                if not self._ytdlp_fetch(track["url"], audio_path, phase_label, "mp4"):
+                    audio_temp = os.path.join(self.temp_dir, f"audio_{i}")
+                    audio_m3u8 = M3U8_Segments(track["url"], self.key,
+                                                temp_dir=audio_temp,
+                                                progress_factory=self.progress_factory,
+                                                referer=self.referer,
+                                                cancel_event=self.cancel_event,
+                                                phase=phase_label,
+                                                emit_join_phase=False)
+                    audio_m3u8.get_info()
+                    audio_m3u8.download_ts()
+                    audio_m3u8.join(audio_path)
                 self.audio_paths.append({"path": audio_path, "language": lang})
 
         # The remux is the merge, so the phase is announced here rather than in
