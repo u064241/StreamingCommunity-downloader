@@ -226,10 +226,12 @@ pip install -r requirements-dev.txt   # tests only
 pytest -q
 ```
 
-On Windows, `scripts\run-dev-panel.cmd` starts the panel from this folder on the **installed app's
-data folder** (`C:\SW\StreamingCommunity Downloader`), so settings, job history and the managed
-binaries are shared with the installed app. Do not run both at the same time: the database is not
-meant for two processes. See [Configuration](#configuration).
+On Windows, `scripts\run-dev-panel.cmd` starts the panel from this folder on an explicit data folder
+(`C:\SW\StreamingCommunity Downloader`), so settings, job history and the managed binaries are
+shared with the copy of the app that lives there. Once that copy has migrated to the default data
+folder (`%LOCALAPPDATA%\StreamingCommunityDownloader`, see [Configuration](#configuration)), a plain
+`python main.py` uses the same data. Do not run two panels at the same time: the database is not
+meant for two processes.
 
 **Prerequisites:** Python ≥ 3.11, FFmpeg.
 
@@ -304,9 +306,9 @@ failed and why.
 |---|---|---|
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | bind address |
 | `VIDEOS_DIR` | `videos` | download destination |
-| `DB_FILE` | `panel.db` | requests, notifications, channels, hooks — **put this on a persistent volume** |
-| `DATA_FILE` | `data.json` | source domain, libraries, performance settings |
-| `SCHEDULE_FILE` | `schedule.json` | scheduled downloads |
+| `DB_FILE` | `<data folder>\panel.db` | requests, notifications, channels, hooks — **put this on a persistent volume** |
+| `DATA_FILE` | `<data folder>\data.json` | source domain, libraries, performance settings |
+| `SCHEDULE_FILE` | `<data folder>\schedule.json` | scheduled downloads |
 | `TMP_DIR` | `tmp` | HLS segments while a job runs, cleaned up afterwards |
 | `FFMPEG_PATH` | — | full path to `ffmpeg`, when it is not on `PATH` |
 | `FFPROBE_PATH` | — | full path to `ffprobe`; see the note below |
@@ -317,6 +319,13 @@ failed and why.
 | `TRUST_PROXY_HEADERS` | `0` | set to `1` only behind a reverse proxy you control |
 
 The source domain and the Jellyfin library paths are configurable from **Impostazioni** in the UI.
+
+**Where the data lives.** `<data folder>` is `%LOCALAPPDATA%\StreamingCommunityDownloader` on
+Windows, whether the app is installed or portable, so moving or reinstalling the application does
+not lose settings. The managed binaries (`aria2\`, `yt-dlp\`, `ffmpeg\`) and the source state
+files sit in the same folder. The first start copies the settings, database and binaries from the
+folder the app was run from before (the install or portable folder), once: existing files in the
+data folder are never overwritten. Setting `DATA_FILE` or `DB_FILE` explicitly turns that off.
 
 **FFmpeg and ffprobe.** `ffmpeg` is required. On Windows the release includes a conservative
 fallback through `imageio-ffmpeg`, selected for compatibility with older drivers. Users with a

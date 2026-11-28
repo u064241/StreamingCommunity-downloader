@@ -14,8 +14,26 @@ logger = logging.getLogger(__name__)
 VIDEOS_DIR = Path(os.getenv("VIDEOS_DIR", "videos"))
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
-DATA_FILE = Path(os.getenv("DATA_FILE", "data.json"))
-SCHEDULE_FILE = Path(os.getenv("SCHEDULE_FILE", "schedule.json"))
+def default_data_dir(environ=None) -> Path:
+    """Where settings, the database and the managed binaries live by default.
+
+    On Windows: %LOCALAPPDATA%\\StreamingCommunityDownloader, the folder the logs
+    already use. Not under Program Files or the portable folder, so the location
+    does not depend on where the app was installed. Without LOCALAPPDATA (and on
+    other systems) the working directory, as before.
+    """
+    env = os.environ if environ is None else environ
+    local = env.get("LOCALAPPDATA")
+    if os.name == "nt" and local:
+        return Path(local) / "StreamingCommunityDownloader"
+    return Path.cwd()
+
+
+_DATA_DIR = default_data_dir()
+# An explicit DATA_FILE / DB_FILE / SCHEDULE_FILE always wins: the development
+# script and Docker set them, and nothing is migrated in that case.
+DATA_FILE = Path(os.getenv("DATA_FILE") or _DATA_DIR / "data.json")
+SCHEDULE_FILE = Path(os.getenv("SCHEDULE_FILE") or _DATA_DIR / "schedule.json")
 TMP_DIR = Path(os.getenv("TMP_DIR", "tmp"))
 
 # Last known compatible wheel for Pascal/R580 (FFmpeg 7.1). Updates still try
@@ -25,7 +43,52 @@ FFMPEG_COMPATIBLE_FALLBACK = "0.6.0"
 # ── Panel database (requests, notifications, settings) ────────────────────────
 # Must live on a persistent volume when running in Docker, and must not be
 # served to clients: it holds notification and hook URLs, which carry secrets.
-DB_FILE = Path(os.getenv("DB_FILE", "panel.db"))
+DB_FILE = Path(os.getenv("DB_FILE") or _DATA_DIR / "panel.db")
+
+# Files and folders that live beside data.json and move with it. They are the
+# state of the panel and the binaries it manages (see app/core/*_update.py).
+LEGACY_DATA_NAMES = (
+    "data.json", "schedule.json", "panel.db", "source_fields.json",
+    "source_history.json", "source_version.json", "aria2", "yt-dlp", "ffmpeg",
+)
+
+
+def migrate_legacy_data(old_dir: Path, new_dir: Path) -> list[str]:
+    """Copy the state from the old working folder to the new data folder, once.
+
+    Copies (never moves) what exists in ``old_dir`` and is not yet in
+    ``new_dir``. A file already in the new folder is never overwritten, so this
+    is safe to run on every start. Returns the names copied.
+    """
+    import shutil
+
+    old_dir, new_dir = Path(old_dir), Path(new_dir)
+    if old_dir.resolve() == new_dir.resolve() or not old_dir.is_dir():
+        return []
+    # Only when the new folder has no settings yet: a second run must not bring
+    # back an old file the user has since deleted.
+    if (new_dir / "data.json").exists():
+        return []
+    copied = []
+    for name in LEGACY_DATA_NAMES:
+        src = old_dir / name
+        if not src.exists():
+            continue
+        dst = new_dir / name
+        new_dir.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        else:
+            shutil.copy2(src, dst)
+            # SQLite side files, if the old panel left any behind.
+            for suffix in ("-wal", "-shm"):
+                side = old_dir / (name + suffix)
+                if side.exists():
+                    shutil.copy2(side, new_dir / (name + suffix))
+        copied.append(name)
+    if copied:
+        logger.info("Dati migrati da %s a %s: %s", old_dir, new_dir, ", ".join(copied))
+    return copied
 
 # Honour X-Forwarded-Host when checking the Host a request was made to. Only
 # enable when the panel sits behind a reverse proxy you control — otherwise the

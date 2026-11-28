@@ -95,6 +95,12 @@ if __name__ == "__main__":
         os.environ.setdefault("SC_PANEL_PORTAL_TOKEN", secrets.token_urlsafe(32))
     else:
         os.environ.pop("SC_PANEL_PORTAL_TOKEN", None)
+    # Settings used to sit in the working folder (next to the installed exe, or
+    # the portable folder). Copy them to the data folder once, unless the
+    # environment chose the files explicitly.
+    from app.config import DATA_FILE, migrate_legacy_data
+    if not (os.getenv("DATA_FILE") or os.getenv("DB_FILE")):
+        migrate_legacy_data(Path.cwd(), DATA_FILE.parent)
     from app.main import app
 
     server = uvicorn.Server(

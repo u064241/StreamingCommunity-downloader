@@ -150,6 +150,9 @@ def test_success_returns_true_with_source_cap(monkeypatch):
 
     monkeypatch.setattr(hls_ytdlp, "download_playlist", ok)
     monkeypatch.setattr(m3u8, "_source_max_connections", lambda: 5)
+    # The slot pool is sized at import from the settings file; pin it so the test
+    # does not depend on whatever settings the machine has.
+    monkeypatch.setattr(m3u8, "_SOURCE_SLOTS", m3u8.SourceSlots(5))
     assert _segments(monkeypatch, True)._ytdlp_fetch("u", "o", "audio_it", "mp4") is True
     assert seen["connections"] == 5 and seen["ext"] == "mp4" and seen["phase"] == "audio_it"
     assert seen["work_dir"].endswith("ytdlp_audio_it")
