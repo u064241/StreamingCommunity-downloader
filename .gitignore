@@ -38,6 +38,9 @@ build/
 ffmpeg/
 # Managed yt-dlp.exe, written by app/core/ytdlp_update.py (same place as ffmpeg/).
 yt-dlp/
+# Managed aria2c.exe, written by app/core/aria2_update.py (the panel run from this repo
+# keeps its data folder here, like ffmpeg/ and yt-dlp/).
+aria2/
 
 # Runtime state, never committed
 panel.db.bak-*
