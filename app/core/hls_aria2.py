@@ -89,9 +89,11 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
             except OSError:
                 pass
 
+    pushed = False
+
     def deliver_reported() -> None:
         """Hand over the files aria2c's log says are complete so far."""
-        nonlocal offset, pending
+        nonlocal offset, pending, pushed
         try:
             with open(log_path, "rb") as fh:
                 fh.seek(offset)
@@ -107,6 +109,9 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
                 name = os.path.basename(match.group(1).decode("utf-8", "replace").replace("\\", "/"))
                 if name in wanted:
                     deliver(wanted[name])
+            elif _PUSHBACK.search(line):
+                # Seen while aria2c runs: stop it now, not after the whole list.
+                pushed = True
 
     # Refused while aria2c.exe is being replaced (the caller falls back to the built-in downloader).
     with aria2_update.running(), open(log_path, "wb") as log:
@@ -122,13 +127,17 @@ def fetch_chunk(binary: str, items: list[tuple[int, str]], headers: dict, connec
                     return False
                 time.sleep(POLL_S)
                 deliver_reported()
+                if pushed:
+                    proc.kill()
+                    proc.wait()
+                    break
         finally:
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
     with open(log_path, "rb") as log:
         output = b"\n".join(line for line in log.read().split(b"\n") if not _COMPLETE.search(line))
-    pushback = bool(_PUSHBACK.search(output))
+    pushback = pushed or bool(_PUSHBACK.search(output))
     for index, _url in items:
         deliver(index)
         path = os.path.join(work_dir, f"seg{index}.bin")

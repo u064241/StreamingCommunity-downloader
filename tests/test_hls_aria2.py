@@ -138,3 +138,45 @@ def test_aria2c_runs_without_a_console_window(monkeypatch, tmp_path):
     if os.name == "nt":
         assert FAKE_KWARGS[-1].get("creationflags") == hls_aria2.subprocess.CREATE_NO_WINDOW
     assert FAKE_KWARGS[-1].get("stdin") == hls_aria2.subprocess.DEVNULL
+
+
+class _Pushback429Process:
+    """aria2c that reports a 429 on its first poll and then never exits on its own."""
+
+    def __init__(self, cmd, stdout=None, stderr=None, **kwargs):
+        FAKE_KWARGS.append(kwargs)
+        self.log = stdout
+        self.killed = False
+
+    def poll(self):
+        if self.killed:
+            return -9
+        self.log.write(b"11/28 10:00:00 [ERROR] Download aborted. 429 Too Many Requests\r\n")
+        self.log.flush()
+        return None
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        return -9
+
+
+def test_pushback_stops_aria2c_while_it_runs(monkeypatch, tmp_path):
+    # The whole list is one aria2c process now: a 429 must stop it at once,
+    # not after it has worked through every segment.
+    monkeypatch.setattr(hls_aria2.subprocess, "Popen", _Pushback429Process)
+    monkeypatch.setattr(hls_aria2.time, "sleep", lambda s: None)
+    items = [(i, f"https://h/{i}.ts") for i in range(5)]
+    procs = []
+    real = _Pushback429Process
+
+    def spy(cmd, **kwargs):
+        proc = real(cmd, **kwargs)
+        procs.append(proc)
+        return proc
+
+    monkeypatch.setattr(hls_aria2.subprocess, "Popen", spy)
+    pushback = hls_aria2.fetch_chunk("aria2c", items, {}, 2, str(tmp_path / "w"), lambda i, p: None)
+    assert pushback is True
+    assert len(procs) == 1 and procs[0].killed is True

@@ -1119,7 +1119,10 @@ class M3U8_Segments:
 
         try:
             with _SOURCE_SLOTS.hold(connections):
-                for chunk in hls_aria2.chunks(todo):
+                # One aria2c process for the whole list: no barrier between blocks
+                # (a block used to wait for its slowest segment and restart the
+                # connections). Pushback still stops it at once, see fetch_chunk.
+                for chunk in hls_aria2.chunks(todo, size=len(todo)):
                     if (self._cancel and self._cancel.is_set()) or self._abort.is_set():
                         break
                     if hls_aria2.fetch_chunk(binary, chunk, self._headers(), connections,
