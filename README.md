@@ -226,12 +226,10 @@ pip install -r requirements-dev.txt   # tests only
 pytest -q
 ```
 
-On Windows, `scripts\run-dev-panel.cmd` starts the panel from this folder on an explicit data folder
-(`C:\SW\StreamingCommunity Downloader`), so settings, job history and the managed binaries are
-shared with the copy of the app that lives there. Once that copy has migrated to the default data
-folder (`%LOCALAPPDATA%\StreamingCommunityDownloader`, see [Configuration](#configuration)), a plain
-`python main.py` uses the same data. Do not run two panels at the same time: the database is not
-meant for two processes.
+On Windows, `scripts\run-dev-panel.cmd` starts the panel from this folder on the default data folder
+(`%LOCALAPPDATA%\StreamingCommunityDownloader`, see [Configuration](#configuration)), the same one the
+installed app uses, so settings, job history and the managed binaries are shared. Do not run two
+panels at the same time: the database is not meant for two processes.
 
 **Prerequisites:** Python ≥ 3.11, FFmpeg.
 
