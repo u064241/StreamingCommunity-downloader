@@ -105,6 +105,7 @@
 - **Plot, genres, rating, artwork and trailers** on the title page — no API key required
 - Automatic quality selection (1080p → 720p → 480p → 360p)
 - Parallel HLS segment download with AES-CBC decryption
+- Optional download engines for HLS streams: **yt-dlp** and **aria2c**, both off by default (see [Download engines](#download-engines))
 - Multi-audio track merge via FFmpeg
 - Subtitle download (`.vtt`) for non-Italian audio tracks
 - Real-time download progress with per-phase steps (video → audio → merge)
@@ -225,6 +226,11 @@ pip install -r requirements-dev.txt   # tests only
 pytest -q
 ```
 
+On Windows, `scripts\run-dev-panel.cmd` starts the panel from this folder on the **installed app's
+data folder** (`C:\SW\StreamingCommunity Downloader`), so settings, job history and the managed
+binaries are shared with the installed app. Do not run both at the same time: the database is not
+meant for two processes. See [Configuration](#configuration).
+
 **Prerequisites:** Python ≥ 3.11, FFmpeg.
 
 ---
@@ -320,6 +326,25 @@ lets the panel inspect the audio and subtitle tracks already present in a file.
 
 `panel.db` holds notification-channel and webhook URLs, which often carry tokens: keep it out of
 any web-served directory and off world-readable storage.
+
+### Download engines
+
+Two optional engines sit next to the built-in HLS downloader. Both are off by default and are
+switched in **Impostazioni → Download**.
+
+| Setting | Engine | What it does |
+|---|---|---|
+| `hls_use_ytdlp` | yt-dlp | Downloads HLS video and audio with the managed `yt-dlp.exe`, including playlists with an external AES key (vixcloud). If yt-dlp fails or is not installed, the built-in downloader takes over for that playlist. |
+| `hls_use_aria2c` | aria2c | Pre-fetches the segments of the built-in downloader with `aria2c`, in one process. A 429 or 503 from the source stops it at once. |
+
+- **RaiPlay** always uses yt-dlp, whatever the setting: it has no built-in path.
+- With yt-dlp on, aria2c is used only as a fallback. Enabling both is therefore not useful.
+- Managed binaries live in the data folder: `yt-dlp\yt-dlp.exe` and `aria2\aria2c.exe`. Install or
+  update them with the **Controlla yt-dlp** and **Controlla aria2c** buttons. The Windows setup does
+  not include them. aria2c is also picked up if it is on `PATH`.
+- Our measurements on one film, a single run per configuration, were mixed for yt-dlp (faster on
+  video in one comparison, slower on the total in another) and slower in every run with aria2c
+  (6–23%). Treat them as a starting point, not a benchmark.
 
 **Run one process.** Download state is held in memory by a single process, so do not add
 `--workers` or scale the service — a second replica would neither see nor report on the first's
